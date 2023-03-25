@@ -11,10 +11,22 @@ function mouseHighlight()
   local offsetX = (mousepoint.x + 180 > rect.x + rect.w) and -40 or 16
   local offsetY = (mousepoint.y + 180 > rect.y + rect.h) and -40 or 16
 
+  -- Function to get the text color based on the battery percentage and charging status
+  local function getTextColor()
+    local batteryPercentage = hs.battery.percentage()
+    local isCharging = hs.battery.isCharging()
+
+    if batteryPercentage <= 30 and not isCharging then
+      return {red = 1, alpha = 1}
+    else
+      return {white = 1, alpha = 1}
+    end
+  end
+
   -- Create the styled text object for hours
   local hoursString = hs.styledtext.new(os.date("%H"), {
     font = {name = "Helvetica Neue", size = 16},
-    color = {white = 1, alpha = 1},
+    color = getTextColor(),
     shadow = {
       offset = {h = -1, w = 0},
       blurRadius = 2,
@@ -33,12 +45,12 @@ function mouseHighlight()
   -- Function to calculate the position of the hours text
   local function getHoursTextPosition(mousepoint, angle)
     local x = mousepoint.x + radius * math.sin(math.rad(angle)) - 8 -- Subtract half the width of the bounding box (40 / 2)
-    local y = mousepoint.y - radius * math.cos(math.rad(angle)) - 8 -- Subtract half the height of the bounding box (40 / 2)
+    local y = mousepoint.y - radius * math.cos(math.rad(angle)) - 9 -- Subtract half the height of the bounding box (40 / 2)
     return hs.geometry.point(x, y)
   end
 
   local hoursTextPosition = getHoursTextPosition(mousepoint, getMinuteHandleAngle())
-  local hoursText = hs.drawing.text(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 16), hoursString)
+  local hoursText = hs.drawing.text(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18), hoursString)
 
   -- Set the appearance of the hours text
   hoursText:setTextSize(24)
@@ -52,7 +64,7 @@ function mouseHighlight()
     -- Update the hours string
     hoursString = hs.styledtext.new(os.date("%H"), {
       font = {name = "Helvetica Neue", size = 16},
-      color = {white = 1, alpha = 1},
+      color = getTextColor(),
       shadow = {
         offset = {h = -1, w = 0},
         blurRadius = 2,
@@ -118,6 +130,12 @@ function mouseHighlight()
 
   mouseTap:start()
 
+  -- Create a timer to periodically check the battery percentage and charging status
+  local batteryCheckTimer = hs.timer.new(60, function()
+    updateHoursText()
+  end)
+  batteryCheckTimer:start()
+
   -- Create an eventtap to listen for key events
   local keyTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
     -- Hide the hours text when typing starts
@@ -128,6 +146,7 @@ function mouseHighlight()
   keyTap:start()
   return {mouseTap, keyTap}
 end
+
 
 -- Hide the Hammerspoon Dock icon
 hs.dockicon.hide()
