@@ -7,10 +7,6 @@ function mouseHighlight()
   local screen = hs.mouse.getCurrentScreen()
   local rect = screen:fullFrame()
 
-  -- Calculate offsets to keep the time visible when close to the right or bottom screen edges
-  local offsetX = (mousepoint.x + 180 > rect.x + rect.w) and -40 or 16
-  local offsetY = (mousepoint.y + 180 > rect.y + rect.h) and -40 or 16
-
   -- Function to get the text color based on the battery percentage and charging status
   local function getTextColor()
     local batteryPercentage = hs.battery.percentage()
@@ -44,10 +40,12 @@ function mouseHighlight()
 
   -- Function to calculate the position of the hours text
   local function getHoursTextPosition(mousepoint, angle)
-    local x = mousepoint.x + radius * math.sin(math.rad(angle)) - 8 -- Subtract half the width of the bounding box (40 / 2)
-    local y = mousepoint.y - radius * math.cos(math.rad(angle)) - 9 -- Subtract half the height of the bounding box (40 / 2)
+    local x = mousepoint.x + radius * math.sin(math.rad(angle)) - 8
+    local y = mousepoint.y - radius * math.cos(math.rad(angle)) - 9
+  
     return hs.geometry.point(x, y)
   end
+  
 
   local hoursTextPosition = getHoursTextPosition(mousepoint, getMinuteHandleAngle())
   local hoursText = hs.drawing.text(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18), hoursString)
@@ -83,19 +81,11 @@ function mouseHighlight()
     hoursText:show()
   end
 
-  -- Create an eventtap to listen for mouse events
-  local mouseTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
-    -- Update the hours text only when the mouse is moved
-    if event:getType() == hs.eventtap.event.types.mouseMoved or event:getType() == hs.eventtap.event.types.leftMouseDragged then
-      mousepoint = hs.mouse.absolutePosition()
-      updateHoursText()
-    end
-    return false
-  end)
 
-  local fadeOutDuration = 0.25 -- Duration of the fade-out effect in seconds
-  local fadeOutStep = 0.0125 -- Time between each fade-out step in seconds
-  local fadeOutAlphaStep = fadeOutStep / fadeOutDuration -- Decrease in alpha value at each step
+
+  local fadeOutDuration = 0.25
+  local fadeOutStep = 0.0125
+  local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
 
   local function fadeOutText()
     local currentAlpha = hoursText:alpha()
@@ -108,7 +98,7 @@ function mouseHighlight()
     end
   end
 
-  local hideTextTimer = hs.timer.delayed.new(2.5, function()
+  local hideTextTimer = hs.timer.delayed.new(2, function()
     fadeOutText()
   end)
 
@@ -148,8 +138,6 @@ function mouseHighlight()
 end
 
 
--- Hide the Hammerspoon Dock icon
-hs.dockicon.hide()
 local mouseEventTap = mouseHighlight()
 
 function screenWatcherCallback(eventType)
