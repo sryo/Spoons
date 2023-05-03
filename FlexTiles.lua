@@ -55,20 +55,24 @@ function tileWindows()
 end
 
 local previousFocusedAppName = nil
+local lastWindowRaiseTimestamps = {}
 
 function raiseNonFocusedWindowsForNewApp(currentFocusedAppName, focusedWindow)
-  if previousFocusedAppName ~= currentFocusedAppName then
-      if focusedWindow and isAppInWhitelist(focusedWindow:application():name()) then
-          local windowsFromSameApp = focusedWindow:application():allWindows()
-          for _, otherWindow in ipairs(windowsFromSameApp) do
-              if otherWindow:isVisible() and not otherWindow:isFullscreen() and otherWindow:id() ~= focusedWindow:id() then
-                  otherWindow:raise()
-              end
-          end
-          focusedWindow:focus() -- Focus on the selected window at the end
-      end
-  end
-  previousFocusedAppName = currentFocusedAppName
+    if focusedWindow and isAppInWhitelist(focusedWindow:application():name()) then
+        local currentTime = os.time()
+        local lastRaiseTimestamp = lastWindowRaiseTimestamps[currentFocusedAppName] or 0
+        if previousFocusedAppName ~= currentFocusedAppName or currentTime - lastRaiseTimestamp > 1 then
+            local windowsFromSameApp = focusedWindow:application():allWindows()
+            for _, otherWindow in ipairs(windowsFromSameApp) do
+                if otherWindow:isVisible() and not otherWindow:isFullscreen() and otherWindow:id() ~= focusedWindow:id() then
+                    otherWindow:raise()
+                end
+            end
+            focusedWindow:focus() -- Focus on the selected window at the end
+            lastWindowRaiseTimestamps[currentFocusedAppName] = currentTime
+        end
+    end
+    previousFocusedAppName = currentFocusedAppName
 end
 
 
