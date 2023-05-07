@@ -1,6 +1,7 @@
 -- TimeTrail
 -- This Hammerspoon script displays the current time near the mouse pointer as you move it across the screen.
 
+
 function mouseHighlight()
   -- Get the current co-ordinates of the mouse pointer
   local mousepoint = hs.mouse.absolutePosition()
@@ -50,17 +51,12 @@ function mouseHighlight()
   local hoursTextPosition = getHoursTextPosition(mousepoint, getMinuteHandleAngle())
   local hoursText = hs.drawing.text(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18), hoursString)
 
-  -- Set the appearance of the hours text
-  hoursText:setTextSize(24)
-
   -- Show the hours text
   hoursText:bringToFront()
   hoursText:show()
 
-  -- Function to update the hours text
-  local function updateHoursText()
-    -- Update the hours string
-    hoursString = hs.styledtext.new(os.date("%H"), {
+  local function updateHoursString(newString)
+    hoursString = hs.styledtext.new(newString, {
       font = {name = "Helvetica Neue", size = 16},
       color = getTextColor(),
       shadow = {
@@ -69,18 +65,30 @@ function mouseHighlight()
         color = {alpha = 1}
       }
     })
-
+  
     -- Update the hours text object
     hoursText:setStyledText(hoursString)
-
-    -- Update the position of the hours text
-    local minuteHandleAngle = getMinuteHandleAngle()
-    local hoursTextPosition = getHoursTextPosition(mousepoint, minuteHandleAngle)
-    hoursText:setTopLeft(hoursTextPosition)
-    hoursText:bringToFront()
-    hoursText:show()
   end
 
+  -- Function to update the hours text
+  local function updateHoursText()
+  -- Update the hours string
+  updateHoursString(os.date("%H"))
+
+  -- Update the position of the hours text
+  local minuteHandleAngle = getMinuteHandleAngle()
+  local hoursTextPosition = getHoursTextPosition(mousepoint, minuteHandleAngle)
+  hoursText:setTopLeft(hoursTextPosition)
+  hoursText:bringToFront()
+  hoursText:show()
+end
+
+local function displayTemporaryString(newString, duration)
+  updateHoursString(newString)
+  hs.timer.doAfter(duration, function() updateHoursText() end)
+end
+
+-- displayTemporaryString("Hello", 5)
 
 
   local fadeOutDuration = 0.25
