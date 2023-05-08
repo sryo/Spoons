@@ -37,7 +37,7 @@ function tileWindows()
         if isAppInWhitelist(app:name()) then
             local windows = app:allWindows()
             for _, window in ipairs(windows) do
-                if window:isVisible() and not window:isFullscreen() then
+                if window:isVisible() and not window:isFullscreen() and window:role() == "AXWindow" then -- Added role check
                     if isCollapsed(window) then
                         table.insert(collapsedWindows, window)
                     else
@@ -46,10 +46,19 @@ function tileWindows()
                 end
             end
         end
-    end
+    end    
 
-    local numWindows = #windowsToTile
-    local numCollapsedWindows = #collapsedWindows
+-- Sort windows by process ID and then by window ID
+table.sort(windowsToTile, function(a, b)
+    if a:application():pid() == b:application():pid() then
+        return a:id() < b:id()
+    else
+        return a:application():pid() < b:application():pid()
+    end
+end)
+
+local numWindows = #windowsToTile + 1  -- Add 1 for extra space
+local numCollapsedWindows = #collapsedWindows
     local gap = 8 -- Set the gap size between windows
 
     -- Tile non-collapsed windows
@@ -59,13 +68,14 @@ function tileWindows()
         if isHorizontal then
             newFrame.w = (mainScreenFrame.w - (numWindows - 1) * gap) / numWindows
             newFrame.x = mainScreenFrame.x + (i - 1) * (newFrame.w + gap)
-            if numCollapsedWindows == 0 then
-                newFrame.h = mainScreenFrame.h
+            if numCollapsedWindows > 0 then
+                newFrame.h = mainScreenFrame.h - gap - 12 * numCollapsedWindows - (numCollapsedWindows + 1) * gap -- Subtract one more gap
+                newFrame.y = mainScreenFrame.y -- Added this line to set the y value
             else
-                newFrame.h = mainScreenFrame.h - gap - 12
+                newFrame.h = mainScreenFrame.h
             end
         else
-            newFrame.h = (mainScreenFrame.h - (numWindows - 1) * gap) / numWindows
+            newFrame.h = (mainScreenFrame.h - (numWindows - 1) * gap - 12 * numCollapsedWindows - (numCollapsedWindows + 1) * gap) / numWindows -- Add one more gap for the collapsed windows
             newFrame.y = mainScreenFrame.y + (i - 1) * (newFrame.h + gap)
         end
 
@@ -93,6 +103,7 @@ function tileWindows()
     end
 end
 
+
 local previousFocusedAppName = nil
 local lastWindowRaiseTimestamps = {}
 
@@ -102,6 +113,12 @@ function raiseNonFocusedWindowsForNewApp(currentFocusedAppName, focusedWindow)
         local lastRaiseTimestamp = lastWindowRaiseTimestamps[currentFocusedAppName] or 0
         if previousFocusedAppName ~= currentFocusedAppName or currentTime - lastRaiseTimestamp > 1 then
             local windowsFromSameApp = focusedWindow:application():allWindows()
+            
+            -- Sort windows by their position
+            table.sort(windowsFromSameApp, function(a, b)
+                return a:frame().y < b:frame().y
+            end)
+
             for _, otherWindow in ipairs(windowsFromSameApp) do
                 if otherWindow:isVisible() and not otherWindow:isFullscreen() and otherWindow:id() ~= focusedWindow:id() then
                     otherWindow:raise()
@@ -117,17 +134,20 @@ end
 tileWindows() -- Tile windows when the configuration is loaded
 
 -- Tile windows when a new window is added or removed
-hs.window.filter.new(customFilter)
-:setDefaultFilter{visible=true, fullscreen=false}
-:subscribe(hs.window.filter.windowCreated, function()
-    tileWindows()
-end)
-:subscribe(hs.window.filter.windowDestroyed, function()
-    tileWindows()
-end)
-:subscribe(hs.window.filter.windowFocused, function(window)
-    local currentFocusedAppName = window:application():name()
-    if isAppInWhitelist(currentFocusedAppName) then
-        raiseNonFocusedWindowsForNewApp(currentFocusedAppName, window)
-    end
-end)
+local windowFilter = hs.window.filter.new(customFilter)
+    :setDefaultFilter{visible=true, fullscreen=false}
+    :subscribe(hs.window.filter.windowCreated, function()
+        tileWindows()
+    end)
+    :subscribe(hs.window.filter.windowDestroyed, function()
+        tileWindows()
+    end)
+    :subscribe(hs.window.filter.windowFocused, function(window)
+        local currentFocusedAppName = window:application():name()
+        if isAppInWhitelist(currentFocusedAppName) then
+            tileWindows() -- Added call to tileWindows() when a whitelisted window is focused
+            raiseNonFocusedWindowsForNewApp(currentFocusedAppName, window)
+        end
+    end)
+
+local lastWindowFrames = {}
