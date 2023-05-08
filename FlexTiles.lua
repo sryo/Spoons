@@ -109,7 +109,7 @@ local lastWindowRaiseTimestamps = {}
 
 function raiseNonFocusedWindowsForNewApp(currentFocusedAppName, focusedWindow)
     if focusedWindow and isAppInWhitelist(focusedWindow:application():name()) then
-        local currentTime = os.time()
+        local currentTime = hs.timer.secondsSinceEpoch()
         local lastRaiseTimestamp = lastWindowRaiseTimestamps[currentFocusedAppName] or 0
         if previousFocusedAppName ~= currentFocusedAppName or currentTime - lastRaiseTimestamp > 1 then
             local windowsFromSameApp = focusedWindow:application():allWindows()
@@ -149,5 +149,3 @@ local windowFilter = hs.window.filter.new(customFilter)
             raiseNonFocusedWindowsForNewApp(currentFocusedAppName, window)
         end
     end)
-
-local lastWindowFrames = {}
