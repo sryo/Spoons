@@ -1,151 +1,215 @@
 -- This script automatically tiles windows of whitelisted applications.
 
-local whitelist = {
-    "Finder",
-    "Notas Adhesivas",
-    -- Add more app names to the whitelist here
+local application = require("hs.application")
+local window = require("hs.window")
+local screen = require("hs.screen")
+local geometry = require("hs.geometry")
+local logger = hs.logger.new("windowTiler", "debug")
+
+local tileGap = 8
+local collapsedWindowHeight = 12
+
+local whitelistedApps = {
+    ["com.apple.finder"] = true,
+    ["com.apple.Stickies"] = true,
+    ["com.apple.Terminal"] = true,
+    -- Add more apps here if needed
 }
 
-function isAppInWhitelist(appName)
-    for _, whitelistedAppName in ipairs(whitelist) do
-        if appName == whitelistedAppName then
-            return true
-        end
+local function isAppWhitelisted(app)
+  local bundleID = app:bundleID()
+  local appName = app:name()
+  local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
+  print(string.format("Checking app: %s (%s), Whitelisted: %s", appName, bundleID, tostring(isInWhitelist)))
+  return isInWhitelist
+end
+
+local function getScreenOrientation()
+  local mainScreen = screen.mainScreen()
+  local mainScreenSize = mainScreen:frame().size
+
+  if mainScreenSize.w > mainScreenSize.h then
+    return "horizontal"
+  else
+    return "vertical"
+  end
+end
+
+local function getVisibleWindows()
+  local visibleWindows = {}
+  local focusedWindow = window.focusedWindow()
+  for _, win in ipairs(window.orderedWindows()) do
+    if win:isVisible() and isAppWhitelisted(win:application()) then
+      table.insert(visibleWindows, win)
     end
-    return false
+  end
+  -- Sort visible windows based on their window ID
+  table.sort(visibleWindows, function(a, b) return a:id() < b:id() end)
+  return visibleWindows
 end
 
-function isCollapsed(window)
-    local windowHeight = window:frame().h
-    local titleBarHeightThreshold = 12 -- Set a height threshold for collapsed windows
-
-    return windowHeight <= titleBarHeightThreshold
+local function getCollapsedWindows(visibleWindows)
+  local collapsedWindows = {}
+  for _, win in ipairs(visibleWindows) do
+    if win:size().h <= collapsedWindowHeight then
+      table.insert(collapsedWindows, win)
+    end
+  end
+  return collapsedWindows
 end
 
-function tileWindows()
-    local mainScreen = hs.screen.mainScreen()
-    local mainScreenFrame = mainScreen:frame()
+local function logWindowGeometryChange(win, actionEmoji)
+  local frame = win:frame()
+  logger.i(
+    string.format(
+      "%s %s (%d): x=%d, y=%d, w=%d, h=%d",
+      actionEmoji,
+      win:application():bundleID(),
+      win:id(),
+      frame.x,
+      frame.y,
+      frame.w,
+      frame.h
+    )
+  )
+end
 
-    -- Determine if the screen is horizontal or vertical
-    local isHorizontal = mainScreenFrame.w > mainScreenFrame.h
+local function printVisibleWindowsInfo()
+  local visibleWindows = getVisibleWindows()
+  logger.i("Visible windows:")
+  for _, win in ipairs(visibleWindows) do
+    local frame = win:frame()
+    logger.i(
+      string.format(
+        "  %s (%d): x=%d, y=%d, w=%d, h=%d",
+        win:application():bundleID(),
+        win:id(),
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h
+      )
+    )
+  end
+end
 
-    local apps = hs.application.runningApplications()
-    local windowsToTile = {}
-    local collapsedWindows = {}
+local function tileWindows()
+  local orientation = getScreenOrientation()
+  local visibleWindows = getVisibleWindows()
+  local collapsedWindows = getCollapsedWindows(visibleWindows)
+  local nonCollapsedWindows = #visibleWindows - #collapsedWindows
 
-    for _, app in ipairs(apps) do
-        if isAppInWhitelist(app:name()) then
-            local windows = app:allWindows()
-            for _, window in ipairs(windows) do
-                if window:isVisible() and not window:isFullscreen() and window:role() == "AXWindow" then -- Added role check
-                    if isCollapsed(window) then
-                        table.insert(collapsedWindows, window)
-                    else
-                        table.insert(windowsToTile, window)
-                    end
-                end
-            end
-        end
-    end    
+  local mainScreen = screen.mainScreen()
+  local mainScreenFrame = mainScreen:frame()
+  local tileWidth, tileHeight
 
--- Sort windows by process ID and then by window ID
-table.sort(windowsToTile, function(a, b)
-    if a:application():pid() == b:application():pid() then
-        return a:id() < b:id()
+  if orientation == "horizontal" then
+    tileWidth = (mainScreenFrame.w - (nonCollapsedWindows - 1) * tileGap) / (nonCollapsedWindows + 1)
+    tileHeight = mainScreenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
+  else
+    tileWidth = mainScreenFrame.w
+    tileHeight = (mainScreenFrame.h - (nonCollapsedWindows - 1) * tileGap) / (nonCollapsedWindows + 1)
+  end
+
+  print("Orientation:", orientation, "Tile width:", tileWidth, "Tile height:", tileHeight)
+
+  local nonCollapsedWinX, nonCollapsedWinY = mainScreenFrame.x, mainScreenFrame.y
+  local collapsedWinX, collapsedWinY
+  if orientation == "horizontal" then
+    collapsedWinX, collapsedWinY = mainScreenFrame.x, mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight
+  else
+    collapsedWinX, collapsedWinY = mainScreenFrame.x, mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight - tileGap
+  end
+
+  local initialCollapsedWidth = collapsedWindows[1] and collapsedWindows[1]:frame().w or tileWidth
+
+  for _, win in ipairs(visibleWindows) do
+    local winHeight = win:size().h
+    local isCollapsed = winHeight <= collapsedWindowHeight
+    local newFrame = geometry.rect(nonCollapsedWinX, nonCollapsedWinY, tileWidth, tileHeight)
+
+    if isCollapsed then
+      if orientation == "horizontal" then
+        newFrame = geometry.rect(collapsedWinX, collapsedWinY, initialCollapsedWidth, collapsedWindowHeight)
+        collapsedWinX = collapsedWinX + initialCollapsedWidth + tileGap
+      else
+        newFrame = geometry.rect(collapsedWinX, collapsedWinY, tileWidth, collapsedWindowHeight)
+        collapsedWinY = collapsedWinY - collapsedWindowHeight - tileGap
+      end
+
     else
-        return a:application():pid() < b:application():pid()
-    end
-end)
-
-local numWindows = #windowsToTile + 1  -- Add 1 for extra space
-local numCollapsedWindows = #collapsedWindows
-    local gap = 8 -- Set the gap size between windows
-
-    -- Tile non-collapsed windows
-    for i, window in ipairs(windowsToTile) do
-        local newFrame = mainScreenFrame:copy()
-
-        if isHorizontal then
-            newFrame.w = (mainScreenFrame.w - (numWindows - 1) * gap) / numWindows
-            newFrame.x = mainScreenFrame.x + (i - 1) * (newFrame.w + gap)
-            if numCollapsedWindows > 0 then
-                newFrame.h = mainScreenFrame.h - gap - 12 * numCollapsedWindows - (numCollapsedWindows + 1) * gap -- Subtract one more gap
-                newFrame.y = mainScreenFrame.y -- Added this line to set the y value
-            else
-                newFrame.h = mainScreenFrame.h
-            end
-        else
-            newFrame.h = (mainScreenFrame.h - (numWindows - 1) * gap - 12 * numCollapsedWindows - (numCollapsedWindows + 1) * gap) / numWindows -- Add one more gap for the collapsed windows
-            newFrame.y = mainScreenFrame.y + (i - 1) * (newFrame.h + gap)
-        end
-
-        window:setFrame(newFrame)
+      if orientation == "horizontal" then
+        nonCollapsedWinX = nonCollapsedWinX + tileWidth + tileGap
+      else
+        nonCollapsedWinY = nonCollapsedWinY + tileHeight + tileGap
+      end
     end
 
-    -- Tile collapsed windows
-    local collapsedWindowHeight = 12
-    for i, window in ipairs(collapsedWindows) do
-        local newFrame = mainScreenFrame:copy()
+    print("Setting frame for", win:application():bundleID(), win:id(), "to", newFrame)
+    win:setFrame(newFrame)
+    logWindowGeometryChange(win, "📐")
+  end
+end
 
-        if isHorizontal then
-            newFrame.w = (mainScreenFrame.w - (numCollapsedWindows - 1) * gap) / numCollapsedWindows
-            newFrame.x = mainScreenFrame.x + (i - 1) * (newFrame.w + gap)
-            newFrame.h = collapsedWindowHeight
-            newFrame.y = mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight
-        else
-            newFrame.h = collapsedWindowHeight
-            newFrame.y = mainScreenFrame.y + mainScreenFrame.h - (i * (collapsedWindowHeight + gap))
-            newFrame.w = mainScreenFrame.w
-            newFrame.x = mainScreenFrame.x
-        end
+local function handleWindowCreated(win)
+  if isAppWhitelisted(win:application()) then
+    logWindowGeometryChange(win, "🆕")
+    tileWindows()
+  end
+end
 
-        window:setFrame(newFrame)
-    end
+local function handleWindowFocused(win)
+  if isAppWhitelisted(win:application()) then
+    logWindowGeometryChange(win, "👀")
+
+    local focusedApp = win:application()
+    focusedApp:activate(true)
+
+    tileWindows()
+  end
+end
+
+local function handleWindowDestroyed(win)
+  if isAppWhitelisted(win:application()) then
+    logWindowGeometryChange(win, "🗑")
+    tileWindows()
+  end
+end
+
+window.filter.default:subscribe(window.filter.windowCreated, handleWindowCreated)
+window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
+window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
+
+printVisibleWindowsInfo()
+tileWindows()
+
+local function toggleFocusedWindowInWhitelist()
+  local focusedWindow = window.focusedWindow()
+  local focusedApp = focusedWindow:application()
+  local bundleID = focusedApp:bundleID()
+  local appName = focusedApp:name()
+  
+  if whitelistedApps[bundleID] or whitelistedApps[appName] then
+    whitelistedApps[bundleID] = nil
+    whitelistedApps[appName] = nil
+    print("Removed", appName, "from whitelist")
+  else
+    whitelistedApps[bundleID] = true
+    print("Added", appName, "to whitelist")
+  end
+
+  tileWindows()
 end
 
 
-local previousFocusedAppName = nil
-local lastWindowRaiseTimestamps = {}
+local function bindHotkeys()
+  hs.hotkey.bind({"cmd", "shift"}, "A", function()
+    toggleFocusedWindowInWhitelist()
+  end)
 
-function raiseNonFocusedWindowsForNewApp(currentFocusedAppName, focusedWindow)
-    if focusedWindow and isAppInWhitelist(focusedWindow:application():name()) then
-        local currentTime = hs.timer.secondsSinceEpoch()
-        local lastRaiseTimestamp = lastWindowRaiseTimestamps[currentFocusedAppName] or 0
-        if previousFocusedAppName ~= currentFocusedAppName or currentTime - lastRaiseTimestamp > 1 then
-            local windowsFromSameApp = focusedWindow:application():allWindows()
-            
-            -- Sort windows by their position
-            table.sort(windowsFromSameApp, function(a, b)
-                return a:frame().y < b:frame().y
-            end)
-
-            for _, otherWindow in ipairs(windowsFromSameApp) do
-                if otherWindow:isVisible() and not otherWindow:isFullscreen() and otherWindow:id() ~= focusedWindow:id() then
-                    otherWindow:raise()
-                end
-            end
-            focusedWindow:focus() -- Focus on the selected window at the end
-            lastWindowRaiseTimestamps[currentFocusedAppName] = currentTime
-        end
-    end
-    previousFocusedAppName = currentFocusedAppName
+  hs.hotkey.bind({"cmd", "shift"}, "R", function()
+    toggleFocusedWindowInWhitelist()
+  end)
 end
 
-tileWindows() -- Tile windows when the configuration is loaded
-
--- Tile windows when a new window is added or removed
-local windowFilter = hs.window.filter.new(customFilter)
-    :setDefaultFilter{visible=true, fullscreen=false}
-    :subscribe(hs.window.filter.windowCreated, function()
-        tileWindows()
-    end)
-    :subscribe(hs.window.filter.windowDestroyed, function()
-        tileWindows()
-    end)
-    :subscribe(hs.window.filter.windowFocused, function(window)
-        local currentFocusedAppName = window:application():name()
-        if isAppInWhitelist(currentFocusedAppName) then
-            tileWindows() -- Added call to tileWindows() when a whitelisted window is focused
-            raiseNonFocusedWindowsForNewApp(currentFocusedAppName, window)
-        end
-    end)
+bindHotkeys()
