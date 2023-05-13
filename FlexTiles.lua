@@ -4,6 +4,7 @@ local application = require("hs.application")
 local window = require("hs.window")
 local screen = require("hs.screen")
 local geometry = require("hs.geometry")
+local canvas = require("hs.canvas")
 local logger = hs.logger.new("windowTiler", "debug")
 
 local tileGap = 8
@@ -13,6 +14,7 @@ local whitelistedApps = {
     ["com.apple.finder"] = true,
     ["com.apple.Stickies"] = true,
     ["com.apple.Terminal"] = true,
+    ["net.whatsapp.WhatsApp"] = true,
     -- Add more apps here if needed
 }
 
@@ -20,7 +22,9 @@ local function isAppWhitelisted(app)
   local bundleID = app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
-  print(string.format("Checking app: %s (%s), Whitelisted: %s", appName, bundleID, tostring(isInWhitelist)))
+  local emoji = isInWhitelist and "🫡" or "🫥"
+  print(string.format("%s Checking app: %s (%s), Whitelisted: %s", emoji, appName, bundleID, tostring(isInWhitelist)))
+  
   return isInWhitelist
 end
 
@@ -81,7 +85,7 @@ local function printVisibleWindowsInfo()
     local frame = win:frame()
     logger.i(
       string.format(
-        "  %s (%d): x=%d, y=%d, w=%d, h=%d",
+        "🪟  %s (%d): x=%d, y=%d, w=%d, h=%d",
         win:application():bundleID(),
         win:id(),
         frame.x,
@@ -90,6 +94,44 @@ local function printVisibleWindowsInfo()
         frame.h
       )
     )
+  end
+end
+
+local outlineCanvas = nil
+
+local function drawFocusedWindowOutline()
+  local focusedWindow = hs.window.focusedWindow()
+  
+  if focusedWindow then
+    local winFrame = focusedWindow:frame()
+
+    local strokeWidth = 8
+    local outlineFrame = hs.geometry.rect(
+      winFrame.x - strokeWidth / 2,
+      winFrame.y - strokeWidth / 2,
+      winFrame.w + strokeWidth,
+      winFrame.h + strokeWidth
+    )
+
+    if not outlineCanvas then
+      outlineCanvas = canvas.new(outlineFrame):show()
+      outlineCanvas[1] = {
+        id = "outline",
+        type = "rectangle",
+        action = "stroke",
+        fillColor = { alpha = 0 },
+        strokeColor = { blue = 1, alpha = 0.8 },
+        strokeWidth = strokeWidth,
+        roundedRectRadii = { xRadius = 6, yRadius = 6 },
+        frame = { x = 0, y = 0, h = "100%", w = "100%" },
+      }
+    else
+      outlineCanvas:frame(outlineFrame)
+    end
+  else
+    if outlineCanvas then
+      outlineCanvas:hide()
+    end
   end
 end
 
@@ -136,7 +178,6 @@ local function tileWindows()
         newFrame = geometry.rect(collapsedWinX, collapsedWinY, tileWidth, collapsedWindowHeight)
         collapsedWinY = collapsedWinY - collapsedWindowHeight - tileGap
       end
-
     else
       if orientation == "horizontal" then
         nonCollapsedWinX = nonCollapsedWinX + tileWidth + tileGap
@@ -161,21 +202,31 @@ end
 local function handleWindowFocused(win)
   if isAppWhitelisted(win:application()) then
     logWindowGeometryChange(win, "👀")
-
     local focusedApp = win:application()
     focusedApp:activate(true)
-
     tileWindows()
+    drawFocusedWindowOutline()
   end
 end
+
 
 local function handleWindowDestroyed(win)
   if isAppWhitelisted(win:application()) then
     logWindowGeometryChange(win, "🗑")
     tileWindows()
+    drawFocusedWindowOutline()
   end
 end
 
+local function handleWindowMoved(win)
+  if isAppWhitelisted(win:application()) then
+    if win == hs.window.focusedWindow() then
+      drawFocusedWindowOutline()
+    end
+  end
+end
+
+window.filter.default:subscribe(window.filter.windowMoved, handleWindowMoved)
 window.filter.default:subscribe(window.filter.windowCreated, handleWindowCreated)
 window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
 window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
