@@ -1,4 +1,5 @@
-These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, and automatically tile windows of whitelisted applications.
+These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
+
 # TimeTrail
 `TimeTrail.lua` displays the current time near the mouse pointer as you move it across the screen. The text color of the time display changes based on the battery percentage and charging status, providing you with a visual cue to stay aware of your device's battery life.
 
@@ -7,6 +8,9 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 # FlexTiles
 `FlexTiles.lua` automatically tiles windows of whitelisted applications, creating a clean and organized workspace for increased productivity. The script efficiently handles tiling non-collapsed and collapsed windows separately and raises non-focused windows from the same application when a new application is focused, allowing for seamless multitasking.
+
+# Linkmaster
+`Linkmaster.lua` intercepts clicked URLs and presents a chooser that allows you to open the link in a specific browser (including incognito or private browsing mode) or copy the link to your clipboard.
 
 ## FAQ
 
