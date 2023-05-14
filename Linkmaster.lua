@@ -1,71 +1,76 @@
-function handleUrlEvent(_, event, params)
-    hs.printf("URL event received: %s", event)
-    hs.printf("URL event params: %s", hs.inspect(params))
+function handleUrlEvent(scheme, host, params, fullURL)
+    hs.printf("URL event received: %s", fullURL)
 
     local browsers = {
-        { name = "Arc", bundleID = "company.thebrowser.Browser", args = "" },
-        { name = "Google Chrome", bundleID = "com.google.Chrome", args = "" },
-        { name = "Google Chrome Incognito", bundleID = "com.google.Chrome", args = "--incognito" },
-        { name = "Google Chrome Profile 1", bundleID = "com.google.Chrome", args = "--profile-directory=\"Profile 1\"" },
-        { name = "Google Chrome Profile 2", bundleID = "com.google.Chrome", args = "--profile-directory=\"Profile 2\"" },
-        { name = "Firefox", bundleID = "org.mozilla.firefox", args = "" },
-        { name = "Safari", bundleID = "com.apple.Safari", args = "" },
+        { name = "Arc", bundleID = "company.thebrowser.Browser" },
+        { name = "Google Chrome", bundleID = "com.google.Chrome" },
+        { name = "Firefox", bundleID = "org.mozilla.firefox" },
+        { name = "Safari", bundleID = "com.apple.Safari" },
+        { name = "Copy to Clipboard", action = "clipboard" },
     }
 
-    local function generateChoices(timeLeft)
+    local function generateChoices(browsers)
         local choices = {}
-        for i, browser in ipairs(browsers) do
-            local icon = hs.image.imageFromAppBundle(browser.bundleID)
-            local subText = "Open link in " .. browser.name
-            if i == 1 then
-                subText = subText .. " (" .. tostring(timeLeft) .. "s remaining)"
-            end
+        for _, browser in ipairs(browsers) do
+            local icon = browser.bundleID and hs.image.imageFromAppBundle(browser.bundleID) or nil
             table.insert(choices, {
                 ["text"] = browser.name,
-                ["subText"] = subText,
+                ["subText"] = "Open link in " .. browser.name,
                 ["image"] = icon,
                 ["bundleID"] = browser.bundleID,
-                ["args"] = browser.args
+                ["action"] = browser.action,
             })
         end
         return choices
     end
 
-    local function handleBrowserSelection(choice)
-        if timer then
-            timer:stop()
-        end
-        if choice then
-            hs.printf("Selected browser: %s", choice.text)
-            local command = "/usr/bin/open -b " .. choice.bundleID .. " \"" .. event .. "\" --args " .. choice.args
-            hs.printf("Executing command: %s", command)
-            hs.execute(command)
-        end
+    local function generateChoicesWithCountdown(countdown, browsers)
+        local choices = generateChoices(browsers)
+        choices[1].subText = choices[1].subText .. " (" .. countdown .. ")"
+        return choices
     end
 
     local countdown = 5
-    local browserChooser = hs.chooser.new(handleBrowserSelection)
-    local timer
+    local countdownTimer
+    local browserChooser
 
-    local function updateCountdown()
-        if countdown == 0 then
-            timer:stop()
+    local function handleBrowserSelection(choice)
+        if choice then
+            hs.printf("Selected browser: %s", choice.text)
+            if choice.action == "clipboard" then
+                hs.pasteboard.setContents(fullURL)
+            else
+                hs.urlevent.openURLWithBundle(fullURL, choice.bundleID)
+            end
+            countdownTimer:stop()
             browserChooser:hide()
-            handleBrowserSelection(browserChooser:choices()[1])
-        else
-            browserChooser:choices(generateChoices(countdown))
-            browserChooser:refreshChoicesCallback()
-            countdown = countdown - 1
         end
     end
 
-    browserChooser:choices(generateChoices(countdown))
-    browserChooser:queryChangedCallback(function() end) -- Disable filtering
+    browserChooser = hs.chooser.new(handleBrowserSelection)
+    browserChooser:choices(generateChoices(browsers))
     browserChooser:show()
 
-    timer = hs.timer.new(1, updateCountdown, true):start()
-end
+    countdownTimer = hs.timer.new(1, function()
+        countdown = countdown - 1
+        if countdown == 0 then
+            countdownTimer:stop()
+            browserChooser:select(1)
+        else
+            browserChooser:choices(generateChoicesWithCountdown(countdown, browsers))
+            browserChooser:refreshChoicesCallback()
+        end
+    end)
 
+    countdownTimer:start()
+
+    hs.chooser.globalCallback = function(chooser, eventType)
+        if eventType == "didClose" then
+            countdownTimer:stop()
+        end
+        hs.chooser._defaultGlobalCallback(chooser, eventType)
+    end
+end
 hs.urlevent.setDefaultHandler('http')
 hs.urlevent.setDefaultHandler('https')
 hs.urlevent.httpCallback = handleUrlEvent
