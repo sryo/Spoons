@@ -8,6 +8,7 @@ local logger = hs.logger.new("windowTiler", "debug")
 
 local tileGap = 8
 local collapsedWindowHeight = 12
+local whitelistMode = true
 
 local whitelistedApps = {
     ["com.apple.finder"] = true,
@@ -21,11 +22,14 @@ local function isAppWhitelisted(app)
   local bundleID = app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
-  local emoji = isInWhitelist and "🫡" or "🫥"
-  print(string.format("%s Checking app: %s (%s), Whitelisted: %s", emoji, appName, bundleID, tostring(isInWhitelist)))
+  local shouldConsiderApp = (whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist)
   
-  return isInWhitelist
+  local emoji = shouldConsiderApp and "🫡" or "🫥"
+  print(string.format("%s Checking app: %s (%s), Considered: %s", emoji, appName, bundleID, tostring(shouldConsiderApp)))
+  
+  return shouldConsiderApp
 end
+
 
 local function getScreenOrientation()
   local mainScreen = screen.mainScreen()
@@ -201,8 +205,14 @@ local function toggleFocusedWindowInWhitelist()
   tileWindows()
 end
 
+local function toggleWhitelistMode()
+  whitelistMode = not whitelistMode
+  print("Toggled mode to", whitelistMode and "whitelist" or "blacklist")
+  tileWindows()
+end
+
 local function bindHotkeys()
-  hs.hotkey.bind({"fn"}, "<", function()
+  hs.hotkey.bind({"cmd"}, "<", function()
     toggleFocusedWindowInWhitelist()
   end)
 end
