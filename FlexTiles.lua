@@ -8,13 +8,15 @@ local logger = hs.logger.new("windowTiler", "debug")
 
 local tileGap = 8
 local collapsedWindowHeight = 12
-local whitelistMode = true
+local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
 local whitelistedApps = {
-    ["com.apple.finder"] = true,
-    ["com.apple.Stickies"] = true,
-    ["com.apple.Terminal"] = true,
-    ["net.whatsapp.WhatsApp"] = true,
+    ["org.hammerspoon.Hammerspoon"] = true,
+    ["company.thebrowser.Browser"] = true,
+    --["com.apple.finder"] = true,
+    --["com.apple.Stickies"] = true,
+    --["com.apple.Terminal"] = true,
+    --["net.whatsapp.WhatsApp"] = true,
     -- Add more apps here if needed
 }
 
@@ -29,7 +31,6 @@ local function isAppWhitelisted(app)
   
   return shouldConsiderApp
 end
-
 
 local function getScreenOrientation()
   local mainScreen = screen.mainScreen()
