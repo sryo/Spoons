@@ -20,15 +20,19 @@ local whitelistedApps = {
     -- Add more apps here if needed
 }
 
-local function isAppWhitelisted(app)
+local function isAppWhitelisted(app, win)
   local bundleID = app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
   local shouldConsiderApp = (whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist)
-  
+
+  if win:subrole() == "AXDialog" then
+    shouldConsiderApp = false
+  end
+
   local emoji = shouldConsiderApp and "🫡" or "🫥"
   print(string.format("%s Checking app: %s (%s), Considered: %s", emoji, appName, bundleID, tostring(shouldConsiderApp)))
-  
+
   return shouldConsiderApp
 end
 
@@ -47,7 +51,7 @@ local function getVisibleWindows()
   local visibleWindows = {}
   local focusedWindow = window.focusedWindow()
   for _, win in ipairs(window.orderedWindows()) do
-    if win:isVisible() and isAppWhitelisted(win:application()) then
+    if win:isVisible() and isAppWhitelisted(win:application(), win) then
       table.insert(visibleWindows, win)
     end
   end
@@ -159,14 +163,14 @@ local function tileWindows()
 end
 
 local function handleWindowCreated(win)
-  if isAppWhitelisted(win:application()) then
+  if isAppWhitelisted(win:application(), win) then
     logWindowGeometryChange(win, "🆕")
     tileWindows()
   end
 end
 
 local function handleWindowFocused(win)
-  if isAppWhitelisted(win:application()) then
+  if isAppWhitelisted(win:application(), win) then
     logWindowGeometryChange(win, "👀")
     local focusedApp = win:application()
     focusedApp:activate(true)
@@ -175,7 +179,7 @@ local function handleWindowFocused(win)
 end
 
 local function handleWindowDestroyed(win)
-  if isAppWhitelisted(win:application()) then
+  if isAppWhitelisted(win:application(), win) then
     logWindowGeometryChange(win, "🗑")
     tileWindows()
   end
