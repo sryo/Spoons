@@ -1,4 +1,4 @@
--- TimeTrail
+-- TimeTrail: https://github.com/sryo/Spoons/blob/main/TimeTrail.lua
 -- This Hammerspoon script displays the current time near the mouse pointer as you move it across the screen.
 -- The text turns red if the battery is low, fades out if the mouse is idle and disappears during typing.
 
@@ -7,7 +7,7 @@ function displayTimeNearMouse()
   local screen = hs.mouse.getCurrentScreen()
   local rect = screen:fullFrame()
 
-  local function getTextColor()
+  local function checkBatteryStatus()
     local batteryPercentage = hs.battery.percentage()
     local isCharging = hs.battery.isCharging()
 
@@ -18,15 +18,21 @@ function displayTimeNearMouse()
     end
   end
 
-  local hoursString = hs.styledtext.new(os.date("%H"), {
-    font = {size = 16},
-    color = getTextColor(),
-    shadow = {
-      offset = {h = -1, w = 0},
-      blurRadius = 2,
-      color = {alpha = 1}
-    }
-  })
+  local hoursString
+
+  local function updateHoursString(newString)
+    hoursString = hs.styledtext.new(newString, {
+      font = {name = "Helvetica Neue", size = 16},
+      color = checkBatteryStatus(),
+      shadow = {
+        offset = {h = -1, w = 0},
+        blurRadius = 2,
+        color = {alpha = 1}
+      }
+    })
+  end
+
+  updateHoursString(os.date("%H"))
 
   local textPositionRadius = 30
 
@@ -45,25 +51,10 @@ function displayTimeNearMouse()
   local hoursTextPosition = getHoursTextPosition(mousePosition, getMinutesAngle())
 
   local hoursText = hs.canvas.new(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18))
-
   hoursText[1] = {
     type = "text",
     text = hoursString,
   }
-
-  local function updateHoursString(newString)
-    hoursString = hs.styledtext.new(newString, {
-      font = {name = "Helvetica Neue", size = 16},
-      color = getTextColor(),
-      shadow = {
-        offset = {h = -1, w = 0},
-        blurRadius = 2,
-        color = {alpha = 1}
-      }
-    })
-
-    hoursText[1].text = hoursString
-  end
 
   local function updateHoursText()
     updateHoursString(os.date("%H"))
@@ -88,17 +79,13 @@ function displayTimeNearMouse()
     end
   end
 
-  local hideTextTimer = hs.timer.delayed.new(2, function()
-    fadeOutText()
-  end)
+  local hideTextTimer = hs.timer.delayed.new(2, fadeOutText)
 
   -- Update the hours text only when the mouse is moved
   local mouseTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
     if event:getType() == hs.eventtap.event.types.mouseMoved or event:getType() == hs.eventtap.event.types.leftMouseDragged then
       mousePosition = hs.mouse.absolutePosition()
       updateHoursText()
-
-      -- Show the hours
       hoursText:alpha(1)
       hideTextTimer:stop()
       hideTextTimer:start()
