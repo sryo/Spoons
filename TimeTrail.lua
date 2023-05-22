@@ -58,6 +58,7 @@ function displayTimeNearMouse()
 
   local function updateHoursText()
     updateHoursString(os.date("%H"))
+    hoursText[1].text = hoursString
     local minuteHandleAngle = getMinutesAngle()
     local hoursTextPosition = getHoursTextPosition(mousePosition, minuteHandleAngle)
     hoursText:topLeft(hoursTextPosition)
