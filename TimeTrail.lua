@@ -81,8 +81,7 @@ function displayTimeNearMouse()
 
   local hideTextTimer = hs.timer.delayed.new(2, fadeOutText)
 
-  -- Update the hours text only when the mouse is moved
-  local mouseTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
+  local updateOnMouseMove = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
     if event:getType() == hs.eventtap.event.types.mouseMoved or event:getType() == hs.eventtap.event.types.leftMouseDragged then
       mousePosition = hs.mouse.absolutePosition()
       updateHoursText()
@@ -93,24 +92,22 @@ function displayTimeNearMouse()
     return false
   end)
 
-  mouseTap:start()
+  updateOnMouseMove:start()
 
-  -- Check the battery percentage and charging status
   local batteryCheckTimer = hs.timer.new(60, function()
     updateHoursString(os.date("%H"))
   end)
 
   batteryCheckTimer:start()
 
-  -- Hide the hours text when typing starts
-  local keyTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
+  local hideOnKeyDown = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
     hoursText:hide()
     return false
   end)
 
-  keyTap:start()
+  hideOnKeyDown:start()
 
-  return {mouseTap, keyTap}
+  return {updateOnMouseMove, hideOnKeyDown}
 end
 
 local mouseEventTap = displayTimeNearMouse()
