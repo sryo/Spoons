@@ -1,14 +1,12 @@
 -- TimeTrail
 -- This Hammerspoon script displays the current time near the mouse pointer as you move it across the screen.
+-- The text turns red if the battery is low, fades out if the mouse is idle and disappears during typing.
 
-
-function mouseHighlight()
-  -- Get the current co-ordinates of the mouse pointer
-  local mousepoint = hs.mouse.absolutePosition()
+function displayTimeNearMouse()
+  local mousePosition = hs.mouse.absolutePosition()
   local screen = hs.mouse.getCurrentScreen()
   local rect = screen:fullFrame()
 
-  -- Function to get the text color based on the battery percentage and charging status
   local function getTextColor()
     local batteryPercentage = hs.battery.percentage()
     local isCharging = hs.battery.isCharging()
@@ -20,9 +18,8 @@ function mouseHighlight()
     end
   end
 
-  -- Create the styled text object for hours
   local hoursString = hs.styledtext.new(os.date("%H"), {
-    font = {name = "Helvetica Neue", size = 16},
+    font = {size = 16},
     color = getTextColor(),
     shadow = {
       offset = {h = -1, w = 0},
@@ -31,29 +28,28 @@ function mouseHighlight()
     }
   })
 
-  local radius = 30
+  local textPositionRadius = 30
 
-  -- Function to calculate the angle of the minute handle
-  local function getMinuteHandleAngle()
+  local function getMinutesAngle()
     local currentTime = os.date("*t")
     return (currentTime.min * 6) + (currentTime.sec * 0.1)
   end
 
-  -- Function to calculate the position of the hours text
-  local function getHoursTextPosition(mousepoint, angle)
-    local x = mousepoint.x + radius * math.sin(math.rad(angle)) - 8
-    local y = mousepoint.y - radius * math.cos(math.rad(angle)) - 9
+  local function getHoursTextPosition(mousePosition, angle)
+    local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 10
+    local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 9
   
     return hs.geometry.point(x, y)
   end
-  
 
-  local hoursTextPosition = getHoursTextPosition(mousepoint, getMinuteHandleAngle())
-  local hoursText = hs.drawing.text(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18), hoursString)
+  local hoursTextPosition = getHoursTextPosition(mousePosition, getMinutesAngle())
 
-  -- Show the hours text
-  hoursText:bringToFront()
-  hoursText:show()
+  local hoursText = hs.canvas.new(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18))
+
+  hoursText[1] = {
+    type = "text",
+    text = hoursString,
+  }
 
   local function updateHoursString(newString)
     hoursString = hs.styledtext.new(newString, {
@@ -65,31 +61,17 @@ function mouseHighlight()
         color = {alpha = 1}
       }
     })
-  
-    -- Update the hours text object
-    hoursText:setStyledText(hoursString)
+
+    hoursText[1].text = hoursString
   end
 
-  -- Function to update the hours text
   local function updateHoursText()
-  -- Update the hours string
-  updateHoursString(os.date("%H"))
-
-  -- Update the position of the hours text
-  local minuteHandleAngle = getMinuteHandleAngle()
-  local hoursTextPosition = getHoursTextPosition(mousepoint, minuteHandleAngle)
-  hoursText:setTopLeft(hoursTextPosition)
-  hoursText:bringToFront()
-  hoursText:show()
-end
-
-local function displayTemporaryString(newString, duration)
-  updateHoursString(newString)
-  hs.timer.doAfter(duration, function() updateHoursText() end)
-end
-
--- displayTemporaryString("Hello", 5)
-
+    updateHoursString(os.date("%H"))
+    local minuteHandleAngle = getMinutesAngle()
+    local hoursTextPosition = getHoursTextPosition(mousePosition, minuteHandleAngle)
+    hoursText:topLeft(hoursTextPosition)
+    hoursText:show()
+  end
 
   local fadeOutDuration = 0.25
   local fadeOutStep = 0.0125
@@ -99,7 +81,7 @@ end
     local currentAlpha = hoursText:alpha()
 
     if currentAlpha > 0 then
-      hoursText:setAlpha(currentAlpha - fadeOutAlphaStep)
+      hoursText:alpha(currentAlpha - fadeOutAlphaStep)
       hs.timer.doAfter(fadeOutStep, fadeOutText)
     else
       hoursText:hide()
@@ -110,16 +92,14 @@ end
     fadeOutText()
   end)
 
-  -- Create an eventtap to listen for mouse events
+  -- Update the hours text only when the mouse is moved
   local mouseTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
-    -- Update the hours text only when the mouse is moved
     if event:getType() == hs.eventtap.event.types.mouseMoved or event:getType() == hs.eventtap.event.types.leftMouseDragged then
-      mousepoint = hs.mouse.absolutePosition()
+      mousePosition = hs.mouse.absolutePosition()
       updateHoursText()
 
-      -- Show the hours text, set the alpha value to 1, and reset the hide timer
-      hoursText:show()
-      hoursText:setAlpha(1)
+      -- Show the hours
+      hoursText:alpha(1)
       hideTextTimer:stop()
       hideTextTimer:start()
     end
@@ -128,25 +108,25 @@ end
 
   mouseTap:start()
 
-  -- Create a timer to periodically check the battery percentage and charging status
+  -- Check the battery percentage and charging status
   local batteryCheckTimer = hs.timer.new(60, function()
-    updateHoursText()
+    updateHoursString(os.date("%H"))
   end)
+
   batteryCheckTimer:start()
 
-  -- Create an eventtap to listen for key events
+  -- Hide the hours text when typing starts
   local keyTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
-    -- Hide the hours text when typing starts
     hoursText:hide()
     return false
   end)
 
   keyTap:start()
+
   return {mouseTap, keyTap}
 end
 
-
-local mouseEventTap = mouseHighlight()
+local mouseEventTap = displayTimeNearMouse()
 
 function screenWatcherCallback(eventType)
   if eventType == hs.caffeinate.watcher.screensDidUnlock then
