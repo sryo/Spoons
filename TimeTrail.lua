@@ -42,8 +42,8 @@ function displayTimeNearMouse()
   end
 
   local function getHoursTextPosition(mousePosition, angle)
-    local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 10
-    local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 9
+    local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 8
+    local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 7
   
     return hs.geometry.point(x, y)
   end
