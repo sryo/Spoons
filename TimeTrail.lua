@@ -8,7 +8,7 @@ local canvasHeight = 18
 function displayTimeNearMouse()
   local mousePosition = hs.mouse.absolutePosition()
   local screen = hs.mouse.getCurrentScreen()
-  local rect = screen:fullFrame()
+  screenBounds = screen:fullFrame()
 
   local function checkBatteryStatus()
     local batteryPercentage = hs.battery.percentage()
@@ -47,20 +47,7 @@ function displayTimeNearMouse()
   local function getHoursTextPosition(mousePosition, angle)
     local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 8
     local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 7
-  
-    -- boundary check
-    if x < 0 then
-      x = 0
-    elseif x + canvasWidth > rect.w then
-      x = rect.w - canvasWidth
-    end
-  
-    if y < 0 then
-      y = 0
-    elseif y + canvasHeight > rect.h then
-      y = rect.h - canvasHeight
-    end
-  
+
     return hs.geometry.point(x, y)
   end
 
