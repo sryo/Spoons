@@ -2,6 +2,9 @@
 -- This Hammerspoon script displays the current time near the mouse pointer as you move it across the screen.
 -- The text turns red if the battery is low, fades out if the mouse is idle and disappears during typing.
 
+local canvasWidth = 20
+local canvasHeight = 18
+
 function displayTimeNearMouse()
   local mousePosition = hs.mouse.absolutePosition()
   local screen = hs.mouse.getCurrentScreen()
@@ -22,7 +25,7 @@ function displayTimeNearMouse()
 
   local function updateHoursString(newString)
     hoursString = hs.styledtext.new(newString, {
-      font = {name = "Helvetica Neue", size = 16},
+      font = {size = 16},
       color = checkBatteryStatus(),
       shadow = {
         offset = {h = -1, w = 0},
@@ -45,12 +48,25 @@ function displayTimeNearMouse()
     local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 8
     local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 7
   
+    -- boundary check
+    if x < 0 then
+      x = 0
+    elseif x + canvasWidth > rect.w then
+      x = rect.w - canvasWidth
+    end
+  
+    if y < 0 then
+      y = 0
+    elseif y + canvasHeight > rect.h then
+      y = rect.h - canvasHeight
+    end
+  
     return hs.geometry.point(x, y)
   end
 
   local hoursTextPosition = getHoursTextPosition(mousePosition, getMinutesAngle())
 
-  local hoursText = hs.canvas.new(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, 20, 18))
+  local hoursText = hs.canvas.new(hs.geometry.rect(hoursTextPosition.x, hoursTextPosition.y, canvasWidth, canvasHeight))
   hoursText[1] = {
     type = "text",
     text = hoursString,
@@ -82,8 +98,8 @@ function displayTimeNearMouse()
 
   local hideTextTimer = hs.timer.delayed.new(2, fadeOutText)
 
-  local updateOnMouseMove = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged}, function(event)
-    if event:getType() == hs.eventtap.event.types.mouseMoved or event:getType() == hs.eventtap.event.types.leftMouseDragged then
+  local updateOnMouseMove = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
+    if event:getType() == hs.eventtap.event.types.mouseMoved then
       mousePosition = hs.mouse.absolutePosition()
       updateHoursText()
       hoursText:alpha(1)
@@ -101,7 +117,7 @@ function displayTimeNearMouse()
 
   batteryCheckTimer:start()
 
-  local hideOnKeyDown = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
+  local hideOnKeyDown = hs.eventtap.new({hs.eventtap.event.types.keyDown, hs.eventtap.event.types.leftMouseDragged}, function(event)
     hoursText:hide()
     return false
   end)
