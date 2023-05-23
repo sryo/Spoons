@@ -48,8 +48,24 @@ function displayTimeNearMouse()
     local x = mousePosition.x + textPositionRadius * math.sin(math.rad(angle)) - 8
     local y = mousePosition.y - textPositionRadius * math.cos(math.rad(angle)) - 7
 
+    -- boundary check
+    screenBounds = hs.mouse.getCurrentScreen():fullFrame()
+    local edgeMargin = 8
+
+    if x < edgeMargin then
+      x = edgeMargin
+    elseif x + canvasWidth > screenBounds.w then
+      x = screenBounds.w - edgeMargin - canvasWidth
+    end
+
+    if y < edgeMargin then
+      y = edgeMargin
+    elseif y + canvasHeight > screenBounds.h then
+      y = screenBounds.h - edgeMargin - canvasHeight
+    end
+
     return hs.geometry.point(x, y)
-  end
+end
 
   local hoursTextPosition = getHoursTextPosition(mousePosition, getMinutesAngle())
 
