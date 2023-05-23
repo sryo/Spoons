@@ -54,13 +54,13 @@ function displayTimeNearMouse()
 
     if x < edgeMargin then
       x = edgeMargin
-    elseif x + canvasWidth > screenBounds.w then
+    elseif x + canvasWidth > screenBounds.w - edgeMargin then
       x = screenBounds.w - edgeMargin - canvasWidth
     end
 
     if y < edgeMargin then
       y = edgeMargin
-    elseif y + canvasHeight > screenBounds.h then
+    elseif y + canvasHeight > screenBounds.h - edgeMargin then
       y = screenBounds.h - edgeMargin - canvasHeight
     end
 
