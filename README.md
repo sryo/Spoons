@@ -12,6 +12,10 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 # Linkmaster
 `Linkmaster.lua` intercepts clicked URLs and presents a chooser that allows you to open the link in a specific browser (including incognito or private browsing mode) or copy the link to your clipboard.
 
+# MouseTunnel
+
+`MouseTunnel.lua` allows your mouse cursor to seamlessly "tunnel" from one edge of your screen to the other, creating a limitless workspace.
+
 ## FAQ
 
 **Q:** How do I use these scripts?
