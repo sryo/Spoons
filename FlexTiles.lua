@@ -6,7 +6,7 @@ local screen = require("hs.screen")
 local geometry = require("hs.geometry")
 local logger = hs.logger.new("windowTiler", "debug")
 
-local tileGap = 8
+local tileGap = 4
 local collapsedWindowHeight = 12
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
@@ -24,11 +24,8 @@ local function isAppWhitelisted(app, win)
   local bundleID = app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
-  local shouldConsiderApp = (whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist)
-
-  if win:subrole() == "AXDialog" then
-    shouldConsiderApp = false
-  end
+  
+  local shouldConsiderApp = win:isStandard() and ((whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist))
 
   local emoji = shouldConsiderApp and "🫡" or "🫥"
   print(string.format("%s Checking app: %s (%s), Considered: %s", emoji, appName, bundleID, tostring(shouldConsiderApp)))
