@@ -21,6 +21,11 @@ local whitelistedApps = {
 }
 
 local function isAppWhitelisted(app, win)
+  if app == nil then
+    print("Application for the window is nil")
+    return false
+  end
+
   local bundleID = app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
@@ -30,6 +35,10 @@ local function isAppWhitelisted(app, win)
   local emoji = shouldConsiderApp and "🫡" or "🫥"
   print(string.format("%s Checking app: %s (%s), Considered: %s", emoji, appName, bundleID, tostring(shouldConsiderApp)))
 
+  if not shouldConsiderApp then
+    print("Application " .. appName .. " (" .. bundleID .. ") is not considered")
+  end
+  
   return shouldConsiderApp
 end
 
@@ -166,20 +175,24 @@ local function handleWindowCreated(win)
   end
 end
 
+local prevFocusedWindow = nil
+
 local function handleWindowFocused(win)
+  if prevFocusedWindow and prevFocusedWindow:isStandard() and isAppWhitelisted(prevFocusedWindow:application(), prevFocusedWindow) then
+    logWindowGeometryChange(prevFocusedWindow, "🙈")
+  end
   if isAppWhitelisted(win:application(), win) then
-    logWindowGeometryChange(win, "👀")
+    logWindowGeometryChange(win, "👁️")
     local focusedApp = win:application()
     focusedApp:activate(true)
-    tileWindows()
   end
+  tileWindows()
+  prevFocusedWindow = win
 end
 
 local function handleWindowDestroyed(win)
-  if isAppWhitelisted(win:application(), win) then
-    logWindowGeometryChange(win, "🗑")
-    tileWindows()
-  end
+  logWindowGeometryChange(win, "💔")
+  tileWindows()
 end
 
 window.filter.default:subscribe(window.filter.windowCreated, handleWindowCreated)
