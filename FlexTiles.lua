@@ -26,7 +26,7 @@ local function isAppWhitelisted(app, win)
     return false
   end
 
-  local bundleID = app:bundleID()
+  local bundleID = app and app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
   
@@ -77,19 +77,23 @@ local function getCollapsedWindows(visibleWindows)
 end
 
 local function logWindowGeometryChange(win, actionEmoji)
-  local frame = win:frame()
-  logger.i(
-    string.format(
-      "%s %s (%d): x=%d, y=%d, w=%d, h=%d",
-      actionEmoji,
-      win:application():bundleID(),
-      win:id(),
-      frame.x,
-      frame.y,
-      frame.w,
-      frame.h
+  if win and win:application() then
+    local frame = win:frame()
+    local windowTitle = win:title() or "No title"
+    logger.i(
+      string.format(
+        "%s %s %s (%d): x=%d, y=%d, w=%d, h=%d",
+        actionEmoji,
+        win:application():bundleID(),
+        windowTitle,
+        win:id(),
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h
+      )
     )
-  )
+  end
 end
 
 local function printVisibleWindowsInfo()
@@ -190,14 +194,14 @@ local function handleWindowFocused(win)
   prevFocusedWindow = win
 end
 
-local function handleWindowDestroyed(win)
-  logWindowGeometryChange(win, "💔")
-  tileWindows()
-end
-
 window.filter.default:subscribe(window.filter.windowCreated, handleWindowCreated)
 window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
-window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
+window.filter.default:subscribe(window.filter.windowDestroyed, tileWindows)
+window.filter.default:subscribe(window.filter.windowHidden, tileWindows)
+window.filter.default:subscribe(window.filter.windowUnhidden, tileWindows)
+window.filter.default:subscribe(window.filter.windowMinimized, tileWindows)
+window.filter.default:subscribe(window.filter.windowUnminimized, tileWindows)
+window.filter.default:subscribe(window.filter.windowMoved, tileWindows)
 
 printVisibleWindowsInfo()
 tileWindows()
