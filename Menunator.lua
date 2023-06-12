@@ -10,10 +10,11 @@ ev_top = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
     end
 end):start()
 
--- Prevent Dock from appearing when the mouse is close to the bottom of the screen
--- ev_bottom = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
---     local screen_frame = hs.screen.primaryScreen():fullFrame()
---     if e:location().y > screen_frame.h - 4 then
---         hs.mouse.setAbsolutePosition(hs.geometry.point(e:location().x, screen_frame.h - 4))
---     end
--- end):start()
+-- Prevent Dock from appearing when the mouse is close to the bottom of the screen, but only if the currently focused window is fullscreened
+ev_bottom = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
+    local win = hs.window.focusedWindow()
+    local screen_frame = hs.screen.primaryScreen():fullFrame()
+    if win and win:isFullScreen() and e:location().y > screen_frame.h - 4 then
+        hs.mouse.absolutePosition(hs.geometry.point(screen_frame.h - 4)) -- Yup, produces an error, but works.
+    end
+end):start()
