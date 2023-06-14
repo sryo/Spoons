@@ -1,4 +1,4 @@
--- This script stops the menu bar and dock from appearing when you move your mouse close.
+-- This script stops the menu bar and dock from reappearing when you move your mouse close.
 
 local killMenu = true           -- prevent the menu bar from appearing
 local killDock = true           -- prevent the dock from appearing
