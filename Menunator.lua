@@ -1,20 +1,21 @@
--- This script stops the menu bar from appearing at the top of the screen when you move your mouse there and prevents the Dock from appearing when the mouse is at the bottom edge of the screen.
+-- This script stops the menu bar and dock from appearing when you move your mouse close.
 
--- Hide menu bar when the mouse is close to the top of the screen, but only if the currently focused window is fullscreened
-ev_top = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
-    local win = hs.window.focusedWindow()
-    if win and win:isFullScreen() then
-        return e:location().y < 4
-    else
-        return false
-    end
-end):start()
+local killMenu = true           -- prevent the menu bar from appearing
+local killDock = true           -- prevent the dock from appearing
+local onlyFullscreen = true     -- but only on fullscreen spaces
+local buffer = 4                -- increase if you still manage to activate them
 
--- Prevent Dock from appearing when the mouse is close to the bottom of the screen, but only if the currently focused window is fullscreened
-ev_bottom = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
+ev_tap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
     local win = hs.window.focusedWindow()
-    local screen_frame = hs.screen.primaryScreen():fullFrame()
-    if win and win:isFullScreen() and e:location().y > screen_frame.h - 4 then
-        hs.mouse.absolutePosition(hs.geometry.point(screen_frame.h - 4)) -- Yup, produces an error, but works.
+    local screenHeight = hs.screen.mainScreen():frame().h
+    if onlyFullscreen and win and win:isFullScreen() then
+        if killMenu and e:location().y < buffer then
+            hs.console.printStyledtext("🔪🍔 Menu bar killed")
+            return true
+        elseif killDock and (screenHeight - e:location().y) < buffer then
+            hs.console.printStyledtext("🔪🚢 Dock killed")
+            return true
+        end
     end
+    return false
 end):start()
