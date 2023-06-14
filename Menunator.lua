@@ -7,7 +7,7 @@ local buffer = 4                -- increase if you still manage to activate them
 
 ev_tap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
     local win = hs.window.focusedWindow()
-    local screenHeight = hs.screen.mainScreen():frame().h
+    local screenHeight = win:screen():fullFrame().h
     if onlyFullscreen and win and win:isFullScreen() then
         if killMenu and e:location().y < buffer then
             hs.console.printStyledtext("🔪🍔 Menu bar killed")
