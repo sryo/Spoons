@@ -8,10 +8,10 @@ local buffer = 4                -- increase if you still manage to activate them
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "D", function()
     if ev_tap:isEnabled() then
       ev_tap:stop()
-      hs.alert.show("Menunator OFF: They live!")
+      hs.alert.show("BarNone OFF: They live!")
     else
       ev_tap:start()
-      hs.alert.show("Menunator ON: They're dead.")
+      hs.alert.show("BarNone ON: They're dead.")
     end
   end)
 

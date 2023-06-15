@@ -6,13 +6,13 @@ local screen = require("hs.screen")
 local geometry = require("hs.geometry")
 local logger = hs.logger.new("windowTiler", "debug")
 
-local tileGap = 4
+local tileGap = 0
 local collapsedWindowHeight = 12
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
 local whitelistedApps = {
     ["org.hammerspoon.Hammerspoon"] = true,
-    ["company.thebrowser.Browser"] = true,
+    --["company.thebrowser.Browser"] = true,
     --["com.apple.finder"] = true,
     --["com.apple.Stickies"] = true,
     --["com.apple.Terminal"] = true,
@@ -126,11 +126,11 @@ local function tileWindows()
   local tileWidth, tileHeight
 
   if orientation == "horizontal" then
-    tileWidth = (mainScreenFrame.w - (nonCollapsedWindows - 1) * tileGap) / (nonCollapsedWindows + 1)
+    tileWidth = (mainScreenFrame.w - (nonCollapsedWindows) * tileGap) / (nonCollapsedWindows)
     tileHeight = mainScreenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
   else
     tileWidth = mainScreenFrame.w
-    tileHeight = (mainScreenFrame.h - (nonCollapsedWindows - 1) * tileGap) / (nonCollapsedWindows + 1)
+    tileHeight = (mainScreenFrame.h - (nonCollapsedWindows) * tileGap) / (nonCollapsedWindows)
   end
 
   print("Orientation:", orientation, "Tile width:", tileWidth, "Tile height:", tileHeight)
