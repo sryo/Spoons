@@ -5,6 +5,16 @@ local killDock = true           -- prevent the dock from appearing
 local onlyFullscreen = true     -- but only on fullscreen spaces
 local buffer = 4                -- increase if you still manage to activate them
 
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "D", function()
+    if ev_tap:isEnabled() then
+      ev_tap:stop()
+      hs.alert.show("Menunator OFF: They live!")
+    else
+      ev_tap:start()
+      hs.alert.show("Menunator ON: They're dead.")
+    end
+  end)
+
 function getDockPosition()
     local handle = io.popen("defaults read com.apple.dock orientation")
     local result = handle:read("*a")
