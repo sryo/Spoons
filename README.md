@@ -4,7 +4,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 `TimeTrail.lua` displays the current time near the mouse pointer as you move it across the screen. The text color of the time display changes based on the battery percentage and charging status, providing you with a visual cue to stay aware of your device's battery life.
 
 # 🚫🍔 Menunator
-`Menunator.lua` declutters your workspace by stopping the menu bar from appearing at the top of the screen when you move your mouse there. It also includes commented-out code that can be used to prevent the Dock from appearing when the mouse is at the bottom edge of the screen, further reducing distractions.
+`Menunator.lua` declutters your workspace by stopping the menu bar and dock from appearing when you move your mouse near the edges of the screen.
 
 # 🪄🧩 FlexTiles
 `FlexTiles.lua` automatically tiles windows of whitelisted applications, creating a clean and organized workspace for increased productivity. The script efficiently handles tiling non-collapsed and collapsed windows separately and raises non-focused windows from the same application when a new application is focused, allowing for seamless multitasking.
@@ -13,7 +13,6 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 `Linkmaster.lua` intercepts clicked URLs and presents a chooser that allows you to open the link in a specific browser (including incognito or private browsing mode) or copy the link to your clipboard.
 
 # 🕳️🐁 MouseTunnel
-
 `MouseTunnel.lua` allows your mouse cursor to seamlessly "tunnel" from one edge of your screen to the other, creating a limitless workspace.
 
 ## FAQ
