@@ -26,9 +26,9 @@ local dockPos = getDockPosition()
 
 ev_tap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(e)
     local win = hs.window.focusedWindow()
-    local screenFrame = win:screen():fullFrame()
-    local screenHeight = screenFrame.h
-    local screenWidth = screenFrame.w
+    local screenFrame = win and win:screen():fullFrame()
+    local screenHeight = screenFrame and screenFrame.h
+    local screenWidth = screenFrame and screenFrame.w
 
     if onlyFullscreen and win and win:isFullScreen() then
         if killMenu and e:location().y < buffer then
