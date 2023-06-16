@@ -15,6 +15,9 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 # 🕳️🐁 EdgeHopper
 `EdgeHopper.lua` lets your mouse cursor leap from one edge of your screen to the other.
 
+# 🎛️🖱️ FittsQuit
+`FittsQuit` utilizes your screen's corners as hot zones, implementing Fitts' Law to improve your accuracy. Close, maximize or minimize applications with a quick mouse swoop.
+
 ## FAQ
 
 **Q:** How do I use these scripts?
