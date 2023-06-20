@@ -1,5 +1,3 @@
--- This script defines hot corners with their actions and messages.
-
 local hotCorners = {
     topLeft = {
         action = function() hs.window.focusedWindow():close() end,
@@ -22,14 +20,31 @@ local hotCorners = {
             return "Minimize " .. (window and window:title() or "Window")
         end
     },
+    bottomLeft = {
+        action = function()
+            local app = hs.application.frontmostApplication()
+            app:kill()
+        end,
+        message = function()
+            local app = hs.application.frontmostApplication()
+            return "Kill " .. app:name()
+        end
+    }
 }
 
 local lastTooltipTime = 0
 local lastCorner = nil
 
 local screenSize = hs.screen.mainScreen():fullFrame()
+local screenWatcher = hs.screen.watcher.new(function()
+    screenSize = hs.screen.mainScreen():fullFrame()
+end)
+screenWatcher:start()
+
 function checkForHotCorner(x, y)
-    return (x <= 4 and y <= 4 and "topLeft") or (x >= screenSize.w - 4 and y <= 4 and "topRight") or (x >= screenSize.w - 4 and y >= screenSize.h - 4 and "bottomRight")
+    return (x <= 4 and y <= 4 and "topLeft") or (x >= screenSize.w - 4 and y <= 4 and "topRight") or 
+           (x >= screenSize.w - 4 and y >= screenSize.h - 4 and "bottomRight") or 
+           (x <= 4 and y >= screenSize.h - 4 and "bottomLeft")
 end
 
 function showTooltip(corner)
