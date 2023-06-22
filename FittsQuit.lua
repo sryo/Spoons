@@ -1,3 +1,7 @@
+-- This script defines hot corners with their actions for managing the currently selected window.
+
+local showTooltips = true -- Set this to false to improve performance if necessary.
+
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
     local title = window and window:title() or "Window"
@@ -85,11 +89,13 @@ function showTooltip(corner)
     end
 end
 
-mouseEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
-    local point = hs.mouse.getAbsolutePosition()
-    lastCorner = checkForHotCorner(point.x, point.y)
-    if lastCorner then showTooltip(lastCorner) end
-end):start()
+if showTooltips then
+    mouseEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
+        local point = hs.mouse.getAbsolutePosition()
+        lastCorner = checkForHotCorner(point.x, point.y)
+        if lastCorner then showTooltip(lastCorner) end
+    end):start()
+end
 
 cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
     if lastCorner then
