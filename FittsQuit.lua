@@ -1,39 +1,59 @@
+local function getWindowTitle(cornerAction)
+    local window = hs.window.focusedWindow()
+    local title = window and window:title() or "Window"
+    return title, cornerAction .. " " .. title
+end
+
+local function getAppName(cornerAction)
+    local app = hs.application.frontmostApplication()
+    local appName = app and app:name() or "App"
+    return appName, cornerAction .. " " .. appName
+end
+
 local hotCorners = {
     topLeft = {
         action = function()
-            local window = hs.window.focusedWindow()
-            local title = window and window:title() or "Window"
-            window:close()
-            return "Closed " .. title
+            local title, message = getWindowTitle("Closed")
+            hs.window.focusedWindow():close()
+            return message
         end,
-        message = "Close current window"
+        message = function()
+            local _, message = getWindowTitle("Close")
+            return message
+        end
     },
     topRight = {
         action = function()
-            local window = hs.window.focusedWindow()
-            local title = window and window:title() or "Window"
+            local title, message = getWindowTitle("Toggled Fullscreen for")
             hs.eventtap.keyStroke({"ctrl", "cmd"}, "F")
-            return "Toggled Fullscreen for " .. title
+            return message
         end,
-        message = "Toggle Fullscreen for current window"
+        message = function()
+            local _, message = getWindowTitle("Toggle Fullscreen for")
+            return message
+        end
     },
     bottomRight = {
         action = function()
-            local window = hs.window.focusedWindow()
-            local title = window and window:title() or "Window"
-            window:minimize()
-            return "Minimized " .. title
+            local title, message = getWindowTitle("Minimized")
+            hs.window.focusedWindow():minimize()
+            return message
         end,
-        message = "Minimize current window"
+        message = function()
+            local _, message = getWindowTitle("Minimize")
+            return message
+        end
     },
     bottomLeft = {
         action = function()
-            local app = hs.application.frontmostApplication()
-            local appName = app and app:name() or "App"
-            app:kill()
-            return "Killed " .. appName
+            local appName, message = getAppName("Killed")
+            hs.application.frontmostApplication():kill()
+            return message
         end,
-        message = "Kill current application"
+        message = function()
+            local _, message = getAppName("Kill")
+            return message
+        end
     }
 }
 
@@ -60,7 +80,7 @@ end
 function showTooltip(corner)
     local currentTime = hs.timer.secondsSinceEpoch()
     if currentTime - lastTooltipTime >= 1 then
-        hs.alert.show(hotCorners[corner].message, 1)
+        hs.alert.show(hotCorners[corner].message(), 1)
         lastTooltipTime = currentTime
     end
 end
