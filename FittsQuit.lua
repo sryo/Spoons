@@ -35,9 +35,9 @@ local hotCorners = {
 local lastTooltipTime = 0
 local lastCorner = nil
 
-local screenSize = hs.screen.mainScreen():fullFrame()
+local screenSize = hs.screen.mainScreen():currentMode()
 local screenWatcher = hs.screen.watcher.new(function()
-    screenSize = hs.screen.mainScreen():fullFrame()
+    screenSize = hs.screen.mainScreen():currentMode()
 end)
 screenWatcher:start()
 
