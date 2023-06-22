@@ -1,6 +1,6 @@
 -- This script defines hot corners with their actions for managing the currently selected window.
 
-local showTooltips = true -- Set this to false to improve performance if necessary.
+local showTooltips = true -- set this to false to improve performance if necessary.
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -14,11 +14,21 @@ local function getAppName(cornerAction)
     return appName, cornerAction .. " " .. appName
 end
 
+local function isDesktop()
+    local window = hs.window.focusedWindow()
+    return window and window:role() == "AXScrollArea"
+end
+
 local hotCorners = {
     topLeft = {
         action = function()
+            local window = hs.window.focusedWindow()
+            if not window or isDesktop() then return "No action" end
             local title, message = getWindowTitle("Closed")
-            hs.window.focusedWindow():close()
+            window:close()
+            -- Switch to the next window
+            local nextWindow = hs.window.orderedWindows()[2]
+            if nextWindow then nextWindow:focus() end
             return message
         end,
         message = function()
@@ -28,6 +38,8 @@ local hotCorners = {
     },
     topRight = {
         action = function()
+            local window = hs.window.focusedWindow()
+            if not window or isDesktop() then return "No action" end
             local title, message = getWindowTitle("Toggled Fullscreen for")
             hs.eventtap.keyStroke({"ctrl", "cmd"}, "F")
             return message
@@ -39,8 +51,10 @@ local hotCorners = {
     },
     bottomRight = {
         action = function()
+            local window = hs.window.focusedWindow()
+            if not window or isDesktop() then return "No action" end
             local title, message = getWindowTitle("Minimized")
-            hs.window.focusedWindow():minimize()
+            window:minimize()
             return message
         end,
         message = function()
@@ -50,8 +64,10 @@ local hotCorners = {
     },
     bottomLeft = {
         action = function()
+            local app = hs.application.frontmostApplication()
+            if not app then return "No action" end
             local appName, message = getAppName("Killed")
-            hs.application.frontmostApplication():kill()
+            app:kill()
             return message
         end,
         message = function()
@@ -60,9 +76,6 @@ local hotCorners = {
         end
     }
 }
-
-local lastCorner = nil
-local lastTooltipTime = 0
 
 local screenSize = hs.screen.mainScreen():currentMode()
 
@@ -81,11 +94,12 @@ function checkForHotCorner(x, y)
            (x <= 4 and y >= screenSize.h - 4 and "bottomLeft")
 end
 
+local lastTooltipCorner = nil
+
 function showTooltip(corner)
-    local currentTime = hs.timer.secondsSinceEpoch()
-    if currentTime - lastTooltipTime >= 1 then
+    if corner ~= lastTooltipCorner then
         hs.alert.show(hotCorners[corner].message(), 1)
-        lastTooltipTime = currentTime
+        lastTooltipCorner = corner
     end
 end
 
@@ -93,12 +107,12 @@ if showTooltips then
     mouseEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
         local point = hs.mouse.getAbsolutePosition()
         lastCorner = checkForHotCorner(point.x, point.y)
-        if lastCorner then showTooltip(lastCorner) end
+        if lastCorner and not isDesktop() then showTooltip(lastCorner) end
     end):start()
 end
 
 cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
-    if lastCorner then
+    if lastCorner and not isDesktop() then
         local message = hotCorners[lastCorner].action()
         hs.alert.show(message, 1)
         return true
