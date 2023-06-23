@@ -139,7 +139,7 @@ cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, functi
 end):start()
 
 if showTooltips then
-    mouseEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDown, hs.eventtap.event.types.leftMouseUp}, function(event)
+    tooltipEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
         local point = hs.mouse.getAbsolutePosition()
         lastCorner = checkForHotCorner(point.x, point.y)
         if lastCorner and not isDesktop() then 
@@ -170,15 +170,18 @@ if showTooltips then
             end
         end
 
-        if event:getType() == hs.eventtap.event.types.leftMouseDown then
-            if lastCorner and not isDesktop() then
-                print("Clicked in corner: " .. lastCorner)
-                local message = hotCorners[lastCorner].action()
-                hs.alert.show(message, 1)
-                return true
-            end
-        end
-
         return false
     end):start()
 end
+
+cornerClickEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
+    local point = hs.mouse.getAbsolutePosition()
+    lastCorner = checkForHotCorner(point.x, point.y)
+    if lastCorner and not isDesktop() then
+        print("Clicked in corner: " .. lastCorner)
+        local message = hotCorners[lastCorner].action()
+        hs.alert.show(message, 1)
+        return true
+    end
+    return false
+end):start()
