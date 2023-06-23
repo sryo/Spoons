@@ -3,8 +3,8 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 # ⏱️↖️ TimeTrail
 `TimeTrail.lua` gives you a moving clock right next to your mouse, because who needs a stationary clock?
 
-# 🙅‍♂️🍔 BarNone
-`BarNone.lua` keeps the menu bar and dock out of your way.
+# 🖥️🐙 FrameMaster
+`FrameMaster.lua` - Take control of your Mac's 'hot corners', menu bar, and dock, replacing both BarNone and FittsQuit. Master your screen frame and manage your workflow with minimal distractions.
 
 # 🪄🌇 WindowScape
 `WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
@@ -15,8 +15,11 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 # 🕳️🐁 EdgeHopper
 `EdgeHopper.lua` lets your mouse cursor leap from one edge of your screen to the other.
 
+# 🙅‍♂️🍔 BarNone
+`BarNone.lua` keeps the menu bar and dock out of your way.
+
 # 🎛️🖱️ FittsQuit
-`FittsQuit` utilizes your screen's corners as hot zones, implementing Fitts' Law to improve your accuracy. Close, maximize or minimize applications with a quick mouse swoop.
+`FittsQuit.lua` utilizes your screen's corners as hot zones, implementing Fitts' Law to improve your accuracy. Close, maximize or minimize applications with a quick mouse swoop.
 
 ## FAQ
 
