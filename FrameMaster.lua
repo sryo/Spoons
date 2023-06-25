@@ -96,36 +96,19 @@ local hotCorners = {
     }
 }
 
-local screenSize = nil
+local lastCorner = nil
+local lastTooltipTime = 0
+local lastTooltipCorner = nil
+local screenSize = hs.screen.mainScreen():currentMode()
 
-function setupScreen()
-    local function updateScreenSize()
-        screenSize = hs.screen.mainScreen():currentMode()
-    end
-
-    updateScreenSize()
-
-    local screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
-    screenWatcher:start()
-
-    local loginWatcher = hs.caffeinate.watcher.new(function(event)
-        if event == hs.caffeinate.watcher.screensDidUnlock or event == hs.caffeinate.watcher.systemDidWake then
-            print("Screen unlocked or system woke up")
-            updateScreenSize()
-        end
-    end)
-    loginWatcher:start()
-
-    local wakeWatcher = hs.screen.watcher.new(function(event)
-        if event == hs.screen.watcher.screenDidWake then
-            print("Screen woke up")
-            updateScreenSize()
-        end
-    end)
-    wakeWatcher:start()
+function updateScreenSize()
+    screenSize = hs.screen.mainScreen():currentMode()
 end
 
-setupScreen()
+updateScreenSize()
+
+local screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
+screenWatcher:start()
 
 function checkForHotCorner(x, y)
     updateScreenSize()
@@ -139,12 +122,13 @@ function showTooltip(corner)
     if corner ~= lastTooltipCorner or hs.timer.secondsSinceEpoch() - lastTooltipTime >= 1 then
         local message = hotCorners[corner].message()
         if message ~= "" then
-            hs.alert.show(message, 1)
+            showMessage(lastCorner, message)
             lastTooltipTime = hs.timer.secondsSinceEpoch()
             lastTooltipCorner = corner
         end
     end
 end
+
 
 cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
     if lastCorner and not isDesktop() then
@@ -155,6 +139,76 @@ cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, functi
     end
     return false
 end):start()
+
+local tooltipAlert = nil
+tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 300, h = 20})
+tooltipAlert[1] = {
+    type = "rectangle",
+    action = "fill",
+    fillColor = { white = 0, alpha = 0.75 }
+}
+
+tooltipAlert[2] = {
+    type = "text",
+    textAlignment = "center",
+    textLineBreak = "truncateTail",
+    textColor = { white = 1, alpha = 1 }
+}
+
+function showMessage(corner, message)
+    local fontSize = 20
+    local approxCharWidth = fontSize * 0.5
+    local styledMessage = hs.styledtext.new(message, {
+      font = {size = fontSize},
+      color = {white = 1, alpha = 1},
+      shadow = {
+        offset = {h = -1, w = 0},
+        blurRadius = 2,
+        color = {alpha = 1}
+      }
+    })
+
+    local approxTextWidth = math.min(#message * approxCharWidth, screenSize.w - buffer * 2)
+    local tooltipHeight = 24
+    local tooltipX = corner == "topLeft" or corner == "bottomLeft" and buffer or screenSize.w - approxTextWidth - buffer
+    local tooltipY = corner == "topLeft" or corner == "topRight" and buffer or screenSize.h - tooltipHeight - buffer
+    local textFrame = hs.geometry.rect(tooltipX, tooltipY, approxTextWidth, tooltipHeight)
+
+    tooltipAlert:frame(textFrame)
+    tooltipAlert[1].fillColor.alpha = 0.75
+    tooltipAlert[2].text = styledMessage
+    tooltipAlert[2].textColor.alpha = 1
+    tooltipAlert:alpha(1)
+    tooltipAlert:show()
+
+    if hideTooltipTimer then
+        hideTooltipTimer:stop()
+    end
+    hideTooltipTimer = hs.timer.doAfter(2.5, hideTooltip)
+end
+
+function fadeOutTooltip()
+    local fadeOutDuration = 0.25
+    local fadeOutStep = 0.0125
+    local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
+    local currentAlpha = 1.0
+
+    local function fade()
+        currentAlpha = currentAlpha - fadeOutAlphaStep
+        tooltipAlert:alpha(currentAlpha)
+        if currentAlpha > 0 then
+            hs.timer.doAfter(fadeOutStep, fade)
+        else
+            tooltipAlert:hide()
+        end
+    end
+
+    fade()
+end
+
+function hideTooltip()
+    fadeOutTooltip()
+end
 
 if showTooltips then
     tooltipEventTap = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
@@ -198,7 +252,7 @@ cornerClickEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, f
     if lastCorner and not isDesktop() then
         print("Clicked in corner: " .. lastCorner)
         local message = hotCorners[lastCorner].action()
-        hs.alert.show(message, 1)
+        showMessage(lastCorner, message)
         return true
     end
     return false
