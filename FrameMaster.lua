@@ -129,17 +129,6 @@ function showTooltip(corner)
     end
 end
 
-
-cornerEventTap = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
-    if lastCorner and not isDesktop() then
-        print("Clicked in corner: " .. lastCorner)
-        local message = hotCorners[lastCorner].action()
-        hs.alert.show(message, 1)
-        return true
-    end
-    return false
-end):start()
-
 local tooltipAlert = nil
 tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 300, h = 20})
 tooltipAlert[1] = {
@@ -184,7 +173,7 @@ function showMessage(corner, message)
     if hideTooltipTimer then
         hideTooltipTimer:stop()
     end
-    hideTooltipTimer = hs.timer.doAfter(2.5, hideTooltip)
+    hideTooltipTimer = hs.timer.doAfter(0.5, hideTooltip)
 end
 
 function fadeOutTooltip()
