@@ -219,13 +219,13 @@ if showTooltips then
                 return true
             elseif killDock then
                 if dockPos == "bottom" and (screenHeight - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenWidth - buffer) then
-                    print("Preventing dock from appearing")
+                    print("Preventing dock from appearing on the bottom")
                     return true
                 elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenHeight - buffer) then
-                    print("Preventing dock from appearing bottomLeft")
+                    print("Preventing dock from appearing on the left")
                     return true
                 elseif dockPos == "right" and (screenWidth - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenHeight - buffer) then
-                    print("Preventing dock from appearing bottomRight")
+                    print("Preventing dock from appearing on the right")
                     return true
                 end
             end
