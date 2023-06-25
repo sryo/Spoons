@@ -96,21 +96,39 @@ local hotCorners = {
     }
 }
 
-local lastCorner = nil
-local lastTooltipTime = 0
-local lastTooltipCorner = nil
-local screenSize = hs.screen.mainScreen():currentMode()
+local screenSize = nil
 
-function updateScreenSize()
-    screenSize = hs.screen.mainScreen():currentMode()
+function setupScreen()
+    local function updateScreenSize()
+        screenSize = hs.screen.mainScreen():currentMode()
+    end
+
+    updateScreenSize()
+
+    local screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
+    screenWatcher:start()
+
+    local loginWatcher = hs.caffeinate.watcher.new(function(event)
+        if event == hs.caffeinate.watcher.screensDidUnlock or event == hs.caffeinate.watcher.systemDidWake then
+            print("Screen unlocked or system woke up")
+            updateScreenSize()
+        end
+    end)
+    loginWatcher:start()
+
+    local wakeWatcher = hs.screen.watcher.new(function(event)
+        if event == hs.screen.watcher.screenDidWake then
+            print("Screen woke up")
+            updateScreenSize()
+        end
+    end)
+    wakeWatcher:start()
 end
 
-updateScreenSize()
-
-local screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
-screenWatcher:start()
+setupScreen()
 
 function checkForHotCorner(x, y)
+    updateScreenSize()
     return ((x <= 1 and y <= buffer) and "topLeft") or 
            ((x >= screenSize.w - 1 and y <= buffer) and "topRight") or 
            ((x >= screenSize.w - 1 and y >= screenSize.h - buffer) and "bottomRight") or 
