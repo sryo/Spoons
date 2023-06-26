@@ -96,7 +96,7 @@ local hotCorners = {
                 return "Minimize " .. getWindowTitle()
             end
         end
-    },  
+    },
     bottomLeft = {
         action = function()
             if hs.eventtap.checkKeyboardModifiers().shift then
@@ -121,7 +121,7 @@ local hotCorners = {
                 return "Open Finder"
             end
         end
-    } 
+    }
 }
 
 local lastCorner = nil
@@ -219,6 +219,11 @@ function hideTooltip()
     local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
     local currentAlpha = 1.0
     local function fade()
+        local point = hs.mouse.getAbsolutePosition()
+        if lastCorner == checkForHotCorner(point.x, point.y) then
+            -- cursor still in corner, return without fading tooltip.
+            return
+        end
         currentAlpha = currentAlpha - fadeOutAlphaStep
         tooltipAlert:alpha(currentAlpha)
         if currentAlpha > 0 then
@@ -233,11 +238,15 @@ end
 if showTooltips then
     cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
         local point = hs.mouse.getAbsolutePosition()
-        lastCorner = checkForHotCorner(point.x, point.y)
-        if lastCorner and not isDesktop() then 
-            print("Hit corner: " .. lastCorner) 
-            local truncatedMessage = truncateString(hotCorners[lastCorner].message())
-            showMessage(lastCorner, truncatedMessage) 
+        local currentCorner = checkForHotCorner(point.x, point.y)
+        if currentCorner and not isDesktop() then 
+            print("Hit corner: " .. currentCorner) 
+            local truncatedMessage = truncateString(hotCorners[currentCorner].message())
+            showMessage(currentCorner, truncatedMessage)
+            lastCorner = currentCorner
+        elseif lastCorner and not currentCorner then
+            hideTooltip()
+            lastCorner = nil
         end
 
         local win = hs.window.focusedWindow()
