@@ -99,19 +99,29 @@ local hotCorners = {
     },  
     bottomLeft = {
         action = function()
-            local app = hs.application.get("System Preferences")
-            if not app then
-                hs.application.launchOrFocus("System Preferences")
-                return "Launched System Preferences"
+            if hs.eventtap.checkKeyboardModifiers().shift then
+                local app = hs.application.get("System Preferences")
+                if not app then
+                    hs.application.launchOrFocus("System Preferences")
+                    return "Launched System Preferences"
+                else
+                    app:activate()
+                    return "Focused System Preferences"
+                end
             else
-                app:activate()
-                return "Focused System Preferences"
+                local app = hs.application.get("Finder")
+                hs.application.launchOrFocus("Finder")
+                return "Launched Finder"
             end
         end,
         message = function()
-            return "System Preferences"
+            if hs.eventtap.checkKeyboardModifiers().shift then
+                return "Open System Preferences"
+            else
+                return "Open Finder"
+            end
         end
-    }    
+    } 
 }
 
 local lastCorner = nil
