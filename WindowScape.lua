@@ -130,7 +130,7 @@ local function tileWindows()
     tileHeight = mainScreenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
   else
     tileWidth = mainScreenFrame.w
-    tileHeight = (mainScreenFrame.h - (nonCollapsedWindows) * tileGap) / (nonCollapsedWindows)
+    tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows) * tileGap) / nonCollapsedWindows
   end
 
   print("Orientation:", orientation, "Tile width:", tileWidth, "Tile height:", tileHeight)
