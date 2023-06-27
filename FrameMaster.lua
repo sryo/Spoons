@@ -41,10 +41,10 @@ local hotCorners = {
             local nextWindow = hs.window.orderedWindows()[2]
     
             local executedActionMessage
-            if hs.eventtap.checkKeyboardModifiers().shift or not window then
-                app:kill()
+            if hs.eventtap.checkKeyboardModifiers().shift then
+                app:kill9()
                 if nextWindow then nextWindow:focus() end
-                executedActionMessage = "Killed " .. getAppName()
+                executedActionMessage = "Force Killed " .. getAppName()
             else
                 hs.eventtap.keyStroke({"cmd"}, "w")
                 hs.timer.usleep(100000)  -- Wait a little for the close action to complete
@@ -55,7 +55,7 @@ local hotCorners = {
                         table.insert(visibleWindows, win)
                     end
                 end
-                if #visibleWindows == 0 then
+                if #visibleWindows == 0 or not window then
                     app:kill()
                     if nextWindow then nextWindow:focus() end
                     executedActionMessage = "Killed " .. getAppName()
@@ -65,14 +65,18 @@ local hotCorners = {
             end
     
             hs.timer.doAfter(.5, function()
-            local currentMousePosition = hs.mouse.getAbsolutePosition()
-            hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()                end)
+                local currentMousePosition = hs.mouse.getAbsolutePosition()
+                hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()
+            end)
 
             return executedActionMessage
         end,
         message = function()
             local app = hs.application.frontmostApplication()
-            if hs.eventtap.checkKeyboardModifiers().shift or not app or not app:focusedWindow() then
+            if hs.eventtap.checkKeyboardModifiers().shift then
+                return "Force Kill " .. getAppName()
+                
+            elseif not app or not app:focusedWindow() then
                 return "Kill " .. getAppName()
             else
                 return "Close " .. getWindowTitle()
