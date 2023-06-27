@@ -166,39 +166,40 @@ function truncateString(input, maxLength)
     return input
 end
 
-tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 300, h = 20})
+tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 1, h = 1})
 tooltipAlert[1] = {
     type = "rectangle",
     action = "fill",
     roundedRectRadii = { xRadius = 4, yRadius = 4 },
-    fillColor = { white = 0, alpha = 0.75 }
+    fillColor = { white = 0, alpha = 0.75 },
+    frame = textFrame
 }
 
 tooltipAlert[2] = {
     type = "text",
-    textAlignment = "center",
-    textLineBreak = "truncateMiddle",
-    textColor = { white = 1, alpha = 1 }
+    text = styledMessage,
+    textLineBreak = "clip",
+    textColor = { white = 1, alpha = 1 },
+    frame = textFrame
 }
 
 function showMessage(corner, message)
     local fontSize = 20
-    local approxCharWidth = fontSize * 0.5
     local styledMessage = hs.styledtext.new(message, {
       font = {size = fontSize},
       color = {white = 1, alpha = 1},
-      shadow = {
+        shadow = {
         offset = {h = -1, w = 0},
         blurRadius = 2,
         color = {alpha = 1}
       }
     })
 
-    local approxTextWidth = math.min(#message * approxCharWidth, screenSize.w - buffer * 2)
+    local textSize = hs.drawing.getTextDrawingSize(styledMessage)
     local tooltipHeight = 24
-    local tooltipX = corner == "topLeft" or corner == "bottomLeft" and buffer or screenSize.w - approxTextWidth - buffer
+    local tooltipX = corner == "topLeft" or corner == "bottomLeft" and buffer or screenSize.w - textSize.w - buffer
     local tooltipY = corner == "topLeft" or corner == "topRight" and buffer or screenSize.h - tooltipHeight - buffer
-    local textFrame = hs.geometry.rect(tooltipX, tooltipY, approxTextWidth, tooltipHeight)
+    local textFrame = hs.geometry.rect(tooltipX, tooltipY, textSize.w, tooltipHeight)
 
     tooltipAlert:frame(textFrame)
     tooltipAlert[1].fillColor.alpha = 0.75
