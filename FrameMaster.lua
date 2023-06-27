@@ -34,21 +34,45 @@ local dockPos = getDockPosition()
 local hotCorners = {
     topLeft = {
         action = function()
-            local window = hs.window.focusedWindow()
-            if not window or isDesktop() then return "No action" end
+            local app = hs.application.frontmostApplication()
+            if not app or isDesktop() then return "No action" end
+    
+            local window = app:focusedWindow()
             local nextWindow = hs.window.orderedWindows()[2]
-            if hs.eventtap.checkKeyboardModifiers().shift then
-                window:application():kill()
+    
+            local executedActionMessage
+            if hs.eventtap.checkKeyboardModifiers().shift or not window then
+                app:kill()
                 if nextWindow then nextWindow:focus() end
-                return "Killed " .. getAppName()
+                executedActionMessage = "Killed " .. getAppName()
             else
-                window:close()
-                if nextWindow then nextWindow:focus() end
-                return "Closed " .. getWindowTitle()
+                hs.eventtap.keyStroke({"cmd"}, "w")
+                hs.timer.usleep(100000)  -- Wait a little for the close action to complete
+                local allWindows = app:allWindows()
+                local visibleWindows = {}
+                for i, win in ipairs(allWindows) do
+                    if win:isVisible() then
+                        table.insert(visibleWindows, win)
+                    end
+                end
+                if #visibleWindows == 0 then
+                    app:kill()
+                    if nextWindow then nextWindow:focus() end
+                    executedActionMessage = "Killed " .. getAppName()
+                else
+                    executedActionMessage = "Closed " .. getWindowTitle()
+                end
             end
+    
+            hs.timer.doAfter(.5, function()
+            local currentMousePosition = hs.mouse.getAbsolutePosition()
+            hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()                end)
+
+            return executedActionMessage
         end,
         message = function()
-            if hs.eventtap.checkKeyboardModifiers().shift then
+            local app = hs.application.frontmostApplication()
+            if hs.eventtap.checkKeyboardModifiers().shift or not app or not app:focusedWindow() then
                 return "Kill " .. getAppName()
             else
                 return "Close " .. getWindowTitle()
@@ -240,8 +264,6 @@ if showTooltips then
     cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged}, function(event)
         local point = hs.mouse.getAbsolutePosition()
         local currentCorner = checkForHotCorner(point.x, point.y)
-        local flags = event:getFlags()
-        shiftKeyPressed = flags.shift
     
         -- If the mouse is in a corner, update the tooltip message and the last corner
         if currentCorner and not isDesktop() then 
@@ -255,29 +277,23 @@ if showTooltips then
     
         -- If Shift key status changed while the mouse is in a corner, update the tooltip message
         if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
-            hs.timer.doAfter(0.1, function()
+            hs.timer.doAfter(0.01, function()
                 showMessage(lastCorner, truncateString(hotCorners[lastCorner].message()))
             end)
         end
 
         local win = hs.window.focusedWindow()
         local screenFrame = win and win:screen():fullFrame()
-        local screenHeight = screenFrame and screenFrame.h
-        local screenWidth = screenFrame and screenFrame.w
-
+    
         if onlyFullscreen and win and win:isFullScreen() then
-            if killMenu and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenWidth - buffer) then
-                print("Preventing menubar from appearing")
+            if killMenu and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                 return true
             elseif killDock then
-                if dockPos == "bottom" and (screenHeight - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenWidth - buffer) then
-                    print("Preventing dock from appearing on the bottom")
+                if dockPos == "bottom" and (screenFrame.h - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                     return true
-                elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenHeight - buffer) then
-                    print("Preventing dock from appearing on the left")
+                elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
                     return true
-                elseif dockPos == "right" and (screenWidth - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenHeight - buffer) then
-                    print("Preventing dock from appearing on the right")
+                elseif dockPos == "right" and (screenFrame.w - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
                     return true
                 end
             end
@@ -291,7 +307,6 @@ cornerClick = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(
     local point = hs.mouse.getAbsolutePosition()
     lastCorner = checkForHotCorner(point.x, point.y)
     if lastCorner and not isDesktop() then
-        print("Clicked in corner: " .. lastCorner)
         local message = truncateString(hotCorners[lastCorner].action())
         showMessage(lastCorner, message)
         return true
