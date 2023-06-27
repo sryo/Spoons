@@ -236,17 +236,27 @@ function hideTooltip()
 end
 
 if showTooltips then
-    cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
+    cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged}, function(event)
         local point = hs.mouse.getAbsolutePosition()
         local currentCorner = checkForHotCorner(point.x, point.y)
+        local flags = event:getFlags()
+        shiftKeyPressed = flags.shift
+    
+        -- If the mouse is in a corner, update the tooltip message and the last corner
         if currentCorner and not isDesktop() then 
-            print("Hit corner: " .. currentCorner) 
-            local truncatedMessage = truncateString(hotCorners[currentCorner].message())
-            showMessage(currentCorner, truncatedMessage)
             lastCorner = currentCorner
+            showMessage(currentCorner, truncateString(hotCorners[lastCorner].message()))
+        -- If the mouse moved out from the last corner, hide the tooltip and clear the last corner
         elseif lastCorner and not currentCorner then
             hideTooltip()
             lastCorner = nil
+        end
+    
+        -- If Shift key status changed while the mouse is in a corner, update the tooltip message
+        if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
+            hs.timer.doAfter(0.1, function()
+                showMessage(lastCorner, truncateString(hotCorners[lastCorner].message()))
+            end)
         end
 
         local win = hs.window.focusedWindow()
