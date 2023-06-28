@@ -4,7 +4,8 @@ local killMenu          = true  -- prevent the menu bar from appearing
 local killDock          = true  -- prevent the dock from appearing
 local onlyFullscreen    = true  -- but only on fullscreen spaces
 local buffer            = 4     -- increase if you still manage to activate them
-local showTooltips      = true  -- set this to false to improve performance if necessary.
+local showTooltips      = true  -- set this to false to improve performance if necessary
+local tooltipMaxLength  = 50    -- maximum length for tooltip messages
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -213,7 +214,7 @@ tooltipAlert[2] = {
 
 function showMessage(corner, message)
     local fontSize = 20
-    local styledMessage = hs.styledtext.new(message, {
+    local styledMessage = hs.styledtext.new(truncateString(message, tooltipMaxLength), {
       font = {size = fontSize},
       color = {white = 1, alpha = 1},
         shadow = {
@@ -225,8 +226,8 @@ function showMessage(corner, message)
 
     local textSize = hs.drawing.getTextDrawingSize(styledMessage)
     local tooltipHeight = 24
-    local tooltipX = corner == "topLeft" or corner == "bottomLeft" and buffer or screenSize.w - textSize.w - buffer
-    local tooltipY = corner == "topLeft" or corner == "topRight" and buffer or screenSize.h - tooltipHeight - buffer
+    local tooltipX = corner == "topLeft" or corner == "bottomLeft" or screenSize.w - textSize.w
+    local tooltipY = corner == "topLeft" or corner == "topRight" or screenSize.h - tooltipHeight
     local textFrame = hs.geometry.rect(tooltipX, tooltipY, textSize.w, tooltipHeight)
 
     tooltipAlert:frame(textFrame)
@@ -272,7 +273,7 @@ if showTooltips then
         -- If the mouse is in a corner, update the tooltip message and the last corner
         if currentCorner and not isDesktop() then 
             lastCorner = currentCorner
-            showMessage(currentCorner, truncateString(hotCorners[lastCorner].message()))
+            showMessage(lastCorner, hotCorners[lastCorner].message())
         -- If the mouse moved out from the last corner, hide the tooltip and clear the last corner
         elseif lastCorner and not currentCorner then
             hideTooltip()
@@ -282,7 +283,7 @@ if showTooltips then
         -- If Shift key status changed while the mouse is in a corner, update the tooltip message
         if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
             hs.timer.doAfter(0.01, function()
-                showMessage(lastCorner, truncateString(hotCorners[lastCorner].message()))
+                showMessage(lastCorner, hotCorners[lastCorner].message())
             end)
         end
 
@@ -290,9 +291,9 @@ if showTooltips then
         local screenFrame = win and win:screen():fullFrame()
     
         if onlyFullscreen and win and win:isFullScreen() then
-            if killMenu and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
+            if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                 return true
-            elseif killDock then
+            elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
                 if dockPos == "bottom" and (screenFrame.h - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                     return true
                 elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
