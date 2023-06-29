@@ -2,8 +2,16 @@
 -- This Hammerspoon script displays the current time near the mouse pointer as you move it across the screen.
 -- The text turns red if the battery is low, fades out if the mouse is idle and disappears during typing.
 
-local canvasWidth = 20
-local canvasHeight = 18
+local is24HourFormat      = true
+local fontName            = nil
+local fontSize            = 16
+local textPositionRadius  = 30
+local normalColor         = {white = 1, alpha = 1}  
+local lowBatteryColor     = {red = 1, alpha = 1}  
+local batteryThreshold    = 30
+local hideTextDelay       = 2
+local canvasWidth         = fontSize + 4
+local canvasHeight        = fontSize + 2
 
 function displayTimeNearMouse()
   local mousePosition = hs.mouse.absolutePosition()
@@ -14,10 +22,10 @@ function displayTimeNearMouse()
     local batteryPercentage = hs.battery.percentage()
     local isCharging = hs.battery.isCharging()
 
-    if batteryPercentage <= 30 and not isCharging then
-      return {red = 1, alpha = 1}
+    if batteryPercentage <= batteryThreshold and not isCharging then
+      return lowBatteryColor
     else
-      return {white = 1, alpha = 1}
+      return normalColor
     end
   end
 
@@ -25,7 +33,7 @@ function displayTimeNearMouse()
 
   local function updateHoursString(newString)
     hoursString = hs.styledtext.new(newString, {
-      font = {size = 16},
+      font = {name = fontName, size = fontSize},
       color = checkBatteryStatus(),
       shadow = {
         offset = {h = -1, w = 0},
@@ -35,9 +43,10 @@ function displayTimeNearMouse()
     })
   end
 
-  updateHoursString(os.date("%H"))
+  local formatString = is24HourFormat and "%H" or "%I"
+  updateHoursString(os.date(formatString))
 
-  local textPositionRadius = 30
+  local textPositionRadius = textPositionRadius
 
   local function getMinutesAngle()
     local currentTime = os.date("*t")
@@ -76,7 +85,7 @@ end
   }
 
   local function updateHoursText()
-    updateHoursString(os.date("%H"))
+    updateHoursString(os.date(formatString))
     hoursText[1].text = hoursString
     local minuteHandleAngle = getMinutesAngle()
     local hoursTextPosition = getHoursTextPosition(mousePosition, minuteHandleAngle)
@@ -99,7 +108,7 @@ end
     end
   end
 
-  local hideTextTimer = hs.timer.delayed.new(2, fadeOutText)
+  local hideTextTimer = hs.timer.delayed.new(hideTextDelay, fadeOutText)
 
   local updateOnMouseMove = hs.eventtap.new({hs.eventtap.event.types.mouseMoved}, function(event)
     if event:getType() == hs.eventtap.event.types.mouseMoved then
@@ -115,7 +124,7 @@ end
   updateOnMouseMove:start()
 
   local batteryCheckTimer = hs.timer.new(60, function()
-    updateHoursString(os.date("%H"))
+    updateHoursString(os.date(formatString))
   end)
 
   batteryCheckTimer:start()
