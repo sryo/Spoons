@@ -10,15 +10,34 @@ local tileGap = 0
 local collapsedWindowHeight = 12
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
-local whitelistedApps = {
-    ["org.hammerspoon.Hammerspoon"] = true,
-    --["company.thebrowser.Browser"] = true,
-    --["com.apple.finder"] = true,
-    --["com.apple.Stickies"] = true,
-    --["com.apple.Terminal"] = true,
-    --["net.whatsapp.WhatsApp"] = true,
-    -- Add more apps here if needed
-}
+-- Initialize whitelistedApps as an empty table
+local whitelistedApps = {}
+
+local function saveWhitelistToFile()
+  local whitelistFile = io.open("whitelist.txt", "w")
+  for app, _ in pairs(whitelistedApps) do
+    whitelistFile:write(app .. "\n")
+  end
+  whitelistFile:close()
+  print("Whitelist saved to file")
+end
+
+local function loadWhitelistFromFile()
+  local whitelistFile = io.open("whitelist.txt", "r")
+  if whitelistFile then
+    for line in whitelistFile:lines() do
+      whitelistedApps[line] = true
+    end
+    whitelistFile:close()
+    print("Whitelist loaded from file")
+  else
+    whitelistedApps["org.hammerspoon.Hammerspoon"] = true
+    saveWhitelistToFile()
+    print("Whitelist file created with example")
+  end
+end
+
+loadWhitelistFromFile()
 
 local function isAppWhitelisted(app, win)
   if app == nil then
@@ -221,6 +240,7 @@ local function toggleFocusedWindowInWhitelist()
     print("Added", appName, "to whitelist")
   end
 
+  saveWhitelistToFile()
   tileWindows()
 end
 
