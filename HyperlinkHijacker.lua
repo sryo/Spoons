@@ -41,7 +41,12 @@ end
 
 function handleUrlEvent(scheme, host, params, fullURL)
     hs.printf("🔗 URL: %s", fullURL)
-
+    local modifiers = hs.eventtap.checkKeyboardModifiers()
+    if modifiers["shift"] then
+        hs.printf("🚀 Launching %s", browsers[1].appName)
+        hs.urlevent.openURLWithBundle(fullURL, browsers[1].bundleID)
+        return
+    end
     for _, passthrough in pairs(passthroughs) do
         if string.sub(fullURL, 1, string.len(passthrough.url)) == passthrough.url then
             hs.printf("🚀 Launching %s", passthrough.appName)
