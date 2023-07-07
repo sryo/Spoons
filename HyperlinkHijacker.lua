@@ -1,63 +1,77 @@
+local passthroughs = {
+    spotify = { url = "https://open.spotify.com/", appName = "Spotify", bundleID = "com.spotify.client" },
+    -- Add more passthroughs here if needed
+}
+
+local browsers = {
+    { name = "Arc", appName = "Arc", bundleID = "company.thebrowser.Browser", args = {""} },
+    { name = "Google Chrome", appName = "Google Chrome", bundleID = "com.google.Chrome", args = {""} },
+    { name = "Google Chrome (Incognito)", appName = "Google Chrome", bundleID = "com.google.Chrome", args = {"--incognito"} },
+    { name = "Firefox", appName = "Firefox", bundleID = "org.mozilla.firefox", args = {""} },
+    { name = "Firefox (Private)", appName = "Firefox", bundleID = "org.mozilla.firefox", args = {"-private"} },
+    { name = "Safari", appName = "Safari", bundleID = "com.apple.Safari", args = {""} },
+    { name = "Copy to Clipboard", action = "clipboard", args = {""} },
+    -- Add more options here if needed
+}
+
+local contdownValue = 5
+
+local function generateChoices(browsers)
+    local choices = {}
+    for _, browser in ipairs(browsers) do
+        local icon = browser.bundleID and hs.image.imageFromAppBundle(browser.bundleID) or nil
+        table.insert(choices, {
+            ["text"] = browser.name,
+            ["subText"] = "Open link in " .. browser.name,
+            ["image"] = icon,
+            ["bundleID"] = browser.bundleID,
+            ["action"] = browser.action,
+            ["args"] = browser.args,
+            ["appName"] = browser.appName,
+        })
+    end
+    return choices
+end
+
+local function generateChoicesWithCountdown(countdown, browsers)
+    local choices = generateChoices(browsers)
+    choices[1].subText = choices[1].subText .. " (" .. countdown .. ")"
+    return choices
+end
+
 function handleUrlEvent(scheme, host, params, fullURL)
     hs.printf("🔗 URL: %s", fullURL)
 
-    local browsers = {
-        { name = "Arc", appName = "Arc", bundleID = "company.thebrowser.Browser", args = {""} },
-        { name = "Google Chrome", appName = "Google Chrome", bundleID = "com.google.Chrome", args = {""} },
-        { name = "Google Chrome (Incognito)", appName = "Google Chrome", bundleID = "com.google.Chrome", args = {"--incognito"} },
-        { name = "Firefox", appName = "Firefox", bundleID = "org.mozilla.firefox", args = {""} },
-        { name = "Firefox (Private)", appName = "Firefox", bundleID = "org.mozilla.firefox", args = {"-private"} },
-        { name = "Safari", appName = "Safari", bundleID = "com.apple.Safari", args = {""} },
-        { name = "Copy to Clipboard", action = "clipboard", args = {""} },
-        -- Add more options here if needed
-    }
-
-    local function generateChoices(browsers)
-        local choices = {}
-        for _, browser in ipairs(browsers) do
-            local icon = browser.bundleID and hs.image.imageFromAppBundle(browser.bundleID) or nil
-            table.insert(choices, {
-                ["text"] = browser.name,
-                ["subText"] = "Open link in " .. browser.name,
-                ["image"] = icon,
-                ["bundleID"] = browser.bundleID,
-                ["action"] = browser.action,
-                ["args"] = browser.args,
-                ["appName"] = browser.appName,
-            })
+    for _, passthrough in pairs(passthroughs) do
+        if string.sub(fullURL, 1, string.len(passthrough.url)) == passthrough.url then
+            hs.printf("🚀 Launching %s", passthrough.appName)
+            hs.urlevent.openURLWithBundle(fullURL, passthrough.bundleID)
+            return
         end
-        return choices
     end
 
-
-    local function generateChoicesWithCountdown(countdown, browsers)
-        local choices = generateChoices(browsers)
-        choices[1].subText = choices[1].subText .. " (" .. countdown .. ")"
-        return choices
-    end
-
-    local countdown = 5
+    local countdown = contdownValue
     local countdownTimer
     local browserChooser
 
-local function handleBrowserSelection(choice)
-    if choice then
-        hs.printf("🚀 Launching %s", choice.text)
-        if choice.action == "clipboard" then
-            hs.pasteboard.setContents(fullURL)
-        else
-            if choice.args and choice.args[1] ~= "" then
-                local args = table.concat(choice.args, " ")
-                local cmd = "/usr/bin/open -a \"" .. choice.appName .. "\" --args " .. args .. " \"" .. fullURL .. "\""
-                hs.execute(cmd)
+    local function handleBrowserSelection(choice)
+        if choice then
+            hs.printf("🚀 Launching %s", choice.text)
+            if choice.action == "clipboard" then
+                hs.pasteboard.setContents(fullURL)
             else
-                hs.urlevent.openURLWithBundle(fullURL, choice.bundleID)
+                if choice.args and choice.args[1] ~= "" then
+                    local args = table.concat(choice.args, " ")
+                    local cmd = "/usr/bin/open -a \"" .. choice.appName .. "\" --args " .. args .. " \"" .. fullURL .. "\""
+                    hs.execute(cmd)
+                else
+                    hs.urlevent.openURLWithBundle(fullURL, choice.bundleID)
+                end
             end
+            countdownTimer:stop()
+            browserChooser:hide()
         end
-        countdownTimer:stop()
-        browserChooser:hide()
     end
-end
 
     browserChooser = hs.chooser.new(handleBrowserSelection)
     browserChooser:choices(generateChoices(browsers))
@@ -86,7 +100,10 @@ end
         end
         hs.chooser._defaultGlobalCallback(chooser, eventType)
     end
+
+    return browserChooser, countdownTimer
 end
+
 hs.urlevent.setDefaultHandler('http')
 hs.urlevent.setDefaultHandler('https')
 hs.urlevent.httpCallback = handleUrlEvent
