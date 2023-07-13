@@ -271,7 +271,7 @@ if showTooltips then
         local currentCorner = checkForHotCorner(point.x, point.y)
     
         -- If the mouse is in a corner, update the tooltip message and the last corner
-        if currentCorner and not isDesktop() then 
+        if currentCorner and not isDesktop() then
             lastCorner = currentCorner
             showMessage(lastCorner, hotCorners[lastCorner].message())
         -- If the mouse moved out from the last corner, hide the tooltip and clear the last corner
@@ -282,9 +282,7 @@ if showTooltips then
     
         -- If Shift key status changed while the mouse is in a corner, update the tooltip message
         if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
-            hs.timer.doAfter(0.01, function()
-                showMessage(lastCorner, hotCorners[lastCorner].message())
-            end)
+            showMessage(lastCorner, hotCorners[lastCorner].message())
         end
 
         local win = hs.window.focusedWindow()
