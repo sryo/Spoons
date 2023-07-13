@@ -25,7 +25,7 @@ local lastKilledApp = nil
 
 function showReopenDialog()
     if reopenAfterKill then
-        local message = "You just killed " .. lastKilledApp .. ". Would you like to reopen it?"
+        local message = "You just killed " .. lastKilledAppName .. ". Would you like to reopen it?"
         local script = [[
             tell application "System Events"
             activate
@@ -41,7 +41,7 @@ function showReopenDialog()
             print("exitCode: " .. exitCode .. " stdOut: " .. stdOut .. " stdErr: " .. stdErr)
 
             if exitCode == 0 and stdOut:find("Reopen") then
-                hs.application.launchOrFocus(lastKilledApp)
+                hs.application.launchOrFocusByBundleID(lastKilledApp)
             end
         end, { "-e", script })
 
@@ -67,15 +67,16 @@ local hotCorners = {
         action = function()
             local app = hs.application.frontmostApplication()
             if not app or isDesktop() then return "No action" end
-    
+
             local window = app:focusedWindow()
             local nextWindow = hs.window.orderedWindows()[2]
-    
+
             local executedActionMessage
             if hs.eventtap.checkKeyboardModifiers().shift then
                 app:kill9()
                 if nextWindow then nextWindow:focus() end
-                lastKilledApp = getAppName()
+                lastKilledAppName = getAppName()
+                lastKilledApp = app:bundleID()
                 showReopenDialog()
                 print(lastKilledApp)
             else
@@ -98,7 +99,7 @@ local hotCorners = {
                     executedActionMessage = "Closed " .. getWindowTitle()
                 end
             end
-    
+
             hs.timer.doAfter(.5, function()
                 local currentMousePosition = hs.mouse.getAbsolutePosition()
                 hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()
