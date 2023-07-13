@@ -6,6 +6,8 @@ local onlyFullscreen    = true  -- but only on fullscreen spaces
 local buffer            = 4     -- increase if you still manage to activate them
 local showTooltips      = true  -- set this to false to improve performance if necessary
 local tooltipMaxLength  = 50    -- maximum length for tooltip messages
+local reopenAfterKill   = true -- show an autoclosing modal to reopen the last killed app
+
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -17,6 +19,34 @@ local function getAppName(cornerAction)
     local app = hs.application.frontmostApplication()
     local appName = app and app:name() or "App"
     return appName, (cornerAction and cornerAction .. " " .. appName or "No action")
+end
+
+local lastKilledApp = nil
+
+function showReopenDialog()
+    if reopenAfterKill then
+        local message = "You just killed " .. lastKilledApp .. ". Would you like to reopen it?"
+        local script = [[
+            tell application "System Events"
+            activate
+            display dialog "]] .. message .. [[" buttons {"Ignore", "Reopen"} default button 2 giving up after 5
+            if result is not missing value and button returned of result is "Reopen" then
+            return "Reopen"
+            else
+            return "Ignore"
+            end if
+            end tell
+        ]]
+        local appleScriptTask = hs.task.new("/usr/bin/osascript", function(exitCode, stdOut, stdErr)
+            print("exitCode: " .. exitCode .. " stdOut: " .. stdOut .. " stdErr: " .. stdErr)
+
+            if exitCode == 0 and stdOut:find("Reopen") then
+                hs.application.launchOrFocus(lastKilledApp)
+            end
+        end, { "-e", script })
+
+        appleScriptTask:start()
+    end
 end
 
 local function isDesktop()
@@ -45,7 +75,9 @@ local hotCorners = {
             if hs.eventtap.checkKeyboardModifiers().shift then
                 app:kill9()
                 if nextWindow then nextWindow:focus() end
-                executedActionMessage = "Force Killed " .. getAppName()
+                lastKilledApp = getAppName()
+                showReopenDialog()
+                print(lastKilledApp)
             else
                 hs.eventtap.keyStroke({"cmd"}, "w")
                 hs.timer.usleep(100000)  -- Wait a little for the close action to complete
@@ -58,8 +90,10 @@ local hotCorners = {
                 end
                 if #visibleWindows == 0 or not window then
                     app:kill()
-                    if nextWindow then nextWindow:focus() end
-                    executedActionMessage = "Killed " .. getAppName()
+                    if nextWindow then 
+                        hs.timer.doAfter(0.5, function() nextWindow:focus() end)
+                    end
+                    executedActionMessage = "Quitted " .. getAppName()
                 else
                     executedActionMessage = "Closed " .. getWindowTitle()
                 end
@@ -75,10 +109,9 @@ local hotCorners = {
         message = function()
             local app = hs.application.frontmostApplication()
             if hs.eventtap.checkKeyboardModifiers().shift then
-                return "Force Kill " .. getAppName()
-                
-            elseif not app or not app:focusedWindow() then
                 return "Kill " .. getAppName()
+            elseif not app or not app:focusedWindow() then
+                return "Quit " .. getAppName()
             else
                 return "Close " .. getWindowTitle()
             end
