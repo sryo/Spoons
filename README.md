@@ -12,6 +12,9 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 # 🌐🔀 HyperlinkHijacker
 `HyperlinkHijacker.lua` - It's your link, and you decide where it goes. 
 
+# 🅰️⚡ ForceKeys
+`ForceKeys.lua` maps your keyboard onto the Magic Trackpad, making text input a touch away. It supports standard keys, special keys, and key combinations.
+
 # 🕳️🐁 EdgeHopper
 `EdgeHopper.lua` lets your mouse cursor leap from one edge of your screen to the other.
 
