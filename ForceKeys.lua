@@ -3,7 +3,9 @@
 
 local config = {
     tooltipDuration = 0,
-    forceThreshold = 300
+    forceThreshold = 300,
+    edgeOffset = 0.075,
+    showKeyPreview = true,
 }
 
 local layouts = {
@@ -11,8 +13,8 @@ local layouts = {
         {"cmd+a", "cmd+c", "cmd+x", "cmd+v", "cmd+f", "cmd+s", "cmd+r", "cmd+t", "cmd+z", "cmd+shift+z"},
         {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p"},
         {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
-        {"z", "x", "c", "v", "b", "n", "m", ",", ".", "rightshift"},
-        {"shift", "fn", "ctrl", "alt", "cmd", "space", "space", "space", "enter", "backspace"},
+        {"z", "x", "c", "v", "b", "n", "m", ",", ".", "backspace"},
+        {"shift", "fn", "ctrl", "alt", "cmd", "space", "space", "space", "enter", "shift"},
     }
 }
 
@@ -27,7 +29,6 @@ end
 
 local keySymbols = {
     shift = "⇧",
-    rightshift = "⇧",
     ctrl = "⌃",
     alt = "⌥",
     cmd = "⌘",
@@ -54,8 +55,14 @@ local function getGridCell(pos)
     local numColumns = #keys[1]
     local numRows = #keys
 
-    local x = math.min(math.floor(pos.x * numColumns) + 1, numColumns)
-    local y = math.min(math.floor((1 - pos.y) * numRows) + 1, numRows)
+    local adjustedX = (pos.x - config.edgeOffset) / (1 - 2 * config.edgeOffset)
+    local adjustedY = (pos.y - config.edgeOffset) / (1 - 2 * config.edgeOffset)
+
+    adjustedX = math.max(0, math.min(adjustedX, 1))
+    adjustedY = math.max(0, math.min(adjustedY, 1))
+
+    local x = math.min(math.floor(adjustedX * numColumns) + 1, numColumns)
+    local y = math.min(math.floor((1 - adjustedY) * numRows) + 1, numRows)
 
     return x, y
 end
@@ -123,7 +130,7 @@ tooltipAlert[2] = {
 local tooltipTimer = nil
 
 local function showTooltip(key, isTouching)
-    if not key or key == "" then
+    if not config.showKeyPreview or not key or key == "" then
         return
     end
 
