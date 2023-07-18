@@ -1,8 +1,27 @@
+-- ForceKeys: https://github.com/sryo/Spoons/blob/main/ForceKeys.lua
+-- This script maps your keyboard onto the Magic Trackpad, making text input a touch away.
+
+local config = {
+    tooltipDuration = 1,    -- in seconds
+    forceThreshold = 300    -- threshold for force tap
+}
+
 local keys = {
     {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p"},
     {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
     {"z", "x", "c", "v", "b", "n", "m", ",", ".", "shift"},
     {"shift", "fn", "ctrl", "alt", "cmd", "space", "space", "space", "enter", "backspace"},
+}
+
+local keySymbols = {
+    shift = "⇧",
+    ctrl = "⌃",
+    alt = "⌥",
+    cmd = "⌘",
+    space = "⎵",
+    enter = "↩",
+    backspace = "⌫",
+    fn = "fn"
 }
 
 local touches = {}
@@ -34,12 +53,9 @@ local function emitKey(x, y)
         else
             if lastModifier then
                 if lastModifier == "shift" and #key == 1 then
-                    -- capitalize the character if the last modifier was shift
                     key = key:upper()
                     lastModifier = nil
                 else
-                    -- if it's not shift or if the key is not a character (e.g., it's a special key),
-                    -- we'll pass the modifier and the key to keyStroke
                     hs.eventtap.keyStroke({lastModifier}, key)
                     lastModifier = nil
                     return
@@ -48,6 +64,43 @@ local function emitKey(x, y)
             hs.eventtap.keyStrokes(key)
         end
     end
+end
+
+local tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 0, h = 0}):show()
+tooltipAlert[1] = {
+    type = "rectangle",
+    action = "fill",
+    roundedRectRadii = { xRadius = 4, yRadius = 4 },
+    fillColor = { white = 0, alpha = 0.75 }
+}
+tooltipAlert[2] = {
+    type = "text",
+    text = "",
+    textColor = { white = 1, alpha = 1 },
+    textAlignment = "center"    -- Center align the text
+}
+
+local tooltipTimer = nil
+
+local function showTooltip(key)
+    if keySymbols[key] then
+        key = keySymbols[key]
+    end
+
+    local screenSize = hs.screen.mainScreen():frame()
+    tooltipAlert:frame({
+        x = (screenSize.w - 30) / 2,   -- center the tooltip horizontally
+        y = screenSize.h - 30,
+        w = 30,                        -- set width to a fixed value of 30
+        h = 30
+    })
+    tooltipAlert[2].text = key
+    tooltipAlert:show()
+
+    if tooltipTimer then
+        tooltipTimer:stop()
+    end
+    tooltipTimer = hs.timer.doAfter(config.tooltipDuration, function() tooltipAlert:hide() end)
 end
 
 eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
@@ -59,24 +112,20 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
             local id = touch.identity
 
             if touches[id] then
-                if touch.force >= 300 and not touches[id].emitted then
+                if touch.force >= config.forceThreshold and not touches[id].emitted then
                     emitKey(x, y)
                     touches[id].emitted = true
                 elseif touches[id].lastKey ~= keys[y][x] then
                     local key = keys[y] and keys[y][x] or nil
-                    hs.alert.show("Touched key: " .. (key or "nil"), 0.25)
-                    print("Touched key: " .. (key or "nil"))
+                    showTooltip(key)
                     touches[id].lastKey = keys[y][x]
                 end
             else
                 local key = keys[y] and keys[y][x] or nil
-                hs.alert.show("Touched key: " .. (key or "nil"), 0.25)
-                print("Touch began on key: " .. (key or "nil"))
+                showTooltip(key)
                 touches[id] = {emitted = false, lastKey = keys[y][x]}
             end
-
         elseif touch.phase == "ended" or touch.phase == "cancelled" then
-            -- deactivate any modifier keys if they're no longer being pressed
             local x, y = getGridCell(touch.normalizedPosition)
             local key = keys[y][x]
             if key == "ctrl" or key == "alt" or key == "shift" or key == "cmd" or key == "fn" then
@@ -89,7 +138,6 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
             touches[touch.identity] = nil
         end
     end
-
     return false
 end)
 
