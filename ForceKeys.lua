@@ -2,7 +2,7 @@
 -- This script maps your keyboard onto the Magic Trackpad, making text input a touch away.
 
 local config = {
-    tooltipDuration = 1,    -- in seconds
+    tooltipDuration = .5,    -- in seconds
     forceThreshold = 300    -- threshold for force tap
 }
 
@@ -28,10 +28,15 @@ local touches = {}
 local activeModifiers = {}
 
 local function getGridCell(pos)
-    local x = math.min(math.floor(pos.x * 10) + 1, 10)
-    local y = math.min(math.floor((1 - pos.y) * 4) + 1, 4)
+    local numColumns = #keys[1]
+    local numRows = #keys
+
+    local x = math.min(math.floor(pos.x * numColumns) + 1, numColumns)
+    local y = math.min(math.floor((1 - pos.y) * numRows) + 1, numRows)
+
     return x, y
 end
+
 
 local lastModifier = nil
 
@@ -77,21 +82,21 @@ tooltipAlert[2] = {
     type = "text",
     text = "",
     textColor = { white = 1, alpha = 1 },
-    textAlignment = "center"    -- Center align the text
+    textAlignment = "center"
 }
 
 local tooltipTimer = nil
 
-local function showTooltip(key)
+local function showTooltip(key, isTouching)
     if keySymbols[key] then
         key = keySymbols[key]
     end
 
     local screenSize = hs.screen.mainScreen():frame()
     tooltipAlert:frame({
-        x = (screenSize.w - 30) / 2,   -- center the tooltip horizontally
+        x = (screenSize.w - 30) / 2,
         y = screenSize.h - 30,
-        w = 30,                        -- set width to a fixed value of 30
+        w = 30,
         h = 30
     })
     tooltipAlert[2].text = key
@@ -100,8 +105,11 @@ local function showTooltip(key)
     if tooltipTimer then
         tooltipTimer:stop()
     end
-    tooltipTimer = hs.timer.doAfter(config.tooltipDuration, function() tooltipAlert:hide() end)
+    if not isTouching then
+        tooltipTimer = hs.timer.doAfter(config.tooltipDuration, function() tooltipAlert:hide() end)
+    end
 end
+
 
 eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
     local newTouches = e:getTouches()
@@ -117,12 +125,12 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
                     touches[id].emitted = true
                 elseif touches[id].lastKey ~= keys[y][x] then
                     local key = keys[y] and keys[y][x] or nil
-                    showTooltip(key)
+                    showTooltip(key, touch.touching)
                     touches[id].lastKey = keys[y][x]
                 end
             else
                 local key = keys[y] and keys[y][x] or nil
-                showTooltip(key)
+                showTooltip(key, touch.touching)
                 touches[id] = {emitted = false, lastKey = keys[y][x]}
             end
         elseif touch.phase == "ended" or touch.phase == "cancelled" then
@@ -135,6 +143,7 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
                     end
                 end
             end
+            showTooltip(key, false)
             touches[touch.identity] = nil
         end
     end
