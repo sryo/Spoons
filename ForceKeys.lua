@@ -2,22 +2,32 @@
 -- This script maps your keyboard onto the Magic Trackpad, making text input a touch away.
 
 local config = {
-    tooltipDuration = .5,   -- in seconds
-    forceThreshold = 300    -- threshold for force tap
+    tooltipDuration = 0,
+    forceThreshold = 300
 }
 
-local keys = {
-    {"cmd+a", "cmd+c", "cmd+x", "cmd+v", "cmd+f", "cmd+s", "cmd+r", "cmd+t", "cmd+z", "cmd+shift+z"},
-    -- {"!", "@", "#", "$", "%", "&", "/", "(", ")", "+"},
-    -- {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"},
-    {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p"},
-    {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
-    {"z", "x", "c", "v", "b", "n", "m", ",", ".", "shift"},
-    {"shift", "fn", "ctrl", "alt", "cmd", "space", "space", "space", "enter", "backspace"},
+local layouts = {
+    {
+        {"cmd+a", "cmd+c", "cmd+x", "cmd+v", "cmd+f", "cmd+s", "cmd+r", "cmd+t", "cmd+z", "cmd+shift+z"},
+        {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p"},
+        {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
+        {"z", "x", "c", "v", "b", "n", "m", ",", ".", "rightshift"},
+        {"shift", "fn", "ctrl", "alt", "cmd", "space", "space", "space", "enter", "backspace"},
+    }
 }
+
+local currentLayout = 1
+keys = layouts[currentLayout]
+
+local function switchLayout()
+    currentLayout = currentLayout % #layouts + 1
+    keys = layouts[currentLayout]
+    showTooltip("Layout " .. currentLayout, false)
+end
 
 local keySymbols = {
     shift = "⇧",
+    rightshift = "⇧",
     ctrl = "⌃",
     alt = "⌥",
     cmd = "⌘",
@@ -50,12 +60,11 @@ local function getGridCell(pos)
     return x, y
 end
 
-
 local lastModifier = nil
 
 local function emitKey(x, y)
     local key = keys[y][x]
-    if key then
+    if key and key ~= "" then
         print("Emitting key: " .. key)
         if key == "space" then
             hs.eventtap.keyStrokes(" ")
@@ -87,9 +96,15 @@ local function emitKey(x, y)
             end
             hs.eventtap.keyStrokes(key)
         end
+        --if key == "cmd" then
+        --    if activeModifiers["cmd"] then      -- if "cmd" is already an active modifier
+        --        switchLayout()                  -- switch layout when both "cmd" keys are pressed
+        --    else
+        --        activeModifiers["cmd"] = true   -- otherwise, add "cmd" to active modifiers
+        --    end
+        --end
     end
 end
-
 
 local tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 0, h = 0}):show()
 tooltipAlert[1] = {
@@ -108,6 +123,10 @@ tooltipAlert[2] = {
 local tooltipTimer = nil
 
 local function showTooltip(key, isTouching)
+    if not key or key == "" then
+        return
+    end
+
     if keySymbols[key] then
         key = keySymbols[key]
     end
@@ -129,7 +148,6 @@ local function showTooltip(key, isTouching)
         tooltipTimer = hs.timer.doAfter(config.tooltipDuration, function() tooltipAlert:hide() end)
     end
 end
-
 
 eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
     local newTouches = e:getTouches()
