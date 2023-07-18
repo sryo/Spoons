@@ -1,30 +1,16 @@
 These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
 
-# ⏱️↖️ TimeTrail
-`TimeTrail.lua` gives you a moving clock right next to your mouse, because who needs a stationary clock?
+⚡🅰️ `ForceKeys.lua` maps a keyboard onto the Magic Trackpad, making text input a touch away. It supports standard keys, special keys, and key combinations.
 
-# 🖥️🐙 FrameMaster
-`FrameMaster.lua` - Take control of your Mac's 'hot corners', menu bar, and dock, replacing both BarNone and FittsQuit. Master your screen frame and manage your workflow with minimal distractions.
+🖥️🐙 `FrameMaster.lua` - Take control of your Mac's 'hot corners', menu bar, and dock, replacing both BarNone and FittsQuit. Master your screen frame and manage your workflow with minimal distractions.
 
-# 🪄🌇 WindowScape
-`WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
+🌐🔀 `HyperlinkHijacker.lua` - It's your link, and you decide where it goes. 
 
-# 🌐🔀 HyperlinkHijacker
-`HyperlinkHijacker.lua` - It's your link, and you decide where it goes. 
+⏱️↖️ `TimeTrail.lua` gives you a moving clock right next to your mouse, because who needs a stationary clock?
 
-# 🅰️⚡ ForceKeys
-`ForceKeys.lua` maps your keyboard onto the Magic Trackpad, making text input a touch away. It supports standard keys, special keys, and key combinations.
+🪄🌇 `WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
 
-# 🕳️🐁 EdgeHopper
-`EdgeHopper.lua` lets your mouse cursor leap from one edge of your screen to the other.
-
-# 🙅‍♂️🍔 BarNone
-`BarNone.lua` keeps the menu bar and dock out of your way.
-
-# 🎛️🖱️ FittsQuit
-`FittsQuit.lua` utilizes your screen's corners as hot zones, implementing Fitts' Law to improve your accuracy. Close, maximize or minimize applications with a quick mouse swoop.
-
-## FAQ
+### FAQ
 
 **Q:** How do I use these scripts?
 
