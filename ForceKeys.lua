@@ -2,11 +2,14 @@
 -- This script maps your keyboard onto the Magic Trackpad, making text input a touch away.
 
 local config = {
-    tooltipDuration = .5,    -- in seconds
+    tooltipDuration = .5,   -- in seconds
     forceThreshold = 300    -- threshold for force tap
 }
 
 local keys = {
+    {"cmd+a", "cmd+c", "cmd+x", "cmd+v", "cmd+f", "cmd+s", "cmd+r", "cmd+t", "cmd+z", "cmd+shift+z"},
+    -- {"!", "@", "#", "$", "%", "&", "/", "(", ")", "+"},
+    -- {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"},
     {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p"},
     {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
     {"z", "x", "c", "v", "b", "n", "m", ",", ".", "shift"},
@@ -21,7 +24,17 @@ local keySymbols = {
     space = "⎵",
     enter = "↩",
     backspace = "⌫",
-    fn = "fn"
+    fn = "fn",
+    ["cmd+a"] = "🗹",
+    ["cmd+c"] = "📑",
+    ["cmd+x"] = "✂",
+    ["cmd+v"] = "📋",
+    ["cmd+f"] = "🔍",
+    ["cmd+s"] = "💾",
+    ["cmd+r"] = "🔄",
+    ["cmd+t"] = "🆕",
+    ["cmd+z"] = "⏪",
+    ["cmd+shift+z"] = "⏩"
 }
 
 local touches = {}
@@ -53,6 +66,12 @@ local function emitKey(x, y)
         elseif key == "backspace" then
             hs.eventtap.keyStroke({}, "delete")
             lastModifier = nil
+        elseif key:find("+") then
+            local keys = {}
+            for k in key:gmatch("%w+") do
+                table.insert(keys, k)
+            end
+            hs.eventtap.keyStroke(keys, keys[#keys], 0)
         elseif key == "ctrl" or key == "alt" or key == "shift" or key == "cmd" or key == "fn" then
             lastModifier = key
         else
@@ -70,6 +89,7 @@ local function emitKey(x, y)
         end
     end
 end
+
 
 local tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 0, h = 0}):show()
 tooltipAlert[1] = {
