@@ -57,7 +57,7 @@ local browsers = {
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
 
 #### How to Use
-Use the cmd + < hotkey to add/remove the application of the currently focused window to/from the whitelist.
+Use the `cmd + <` hotkey to add/remove the application of the currently focused window to/from the whitelist.
 After whitelisting an application, its windows will be automatically tiled by the script.
 
 ### FAQ
