@@ -50,6 +50,16 @@ local browsers = {
 ### ⏱️↖️ TimeTrail
 `TimeTrail.lua` gives you a moving clock right next to your mouse, because who needs a stationary clock?
 
+### 🪄🖱️ TrackpadWizard
+`TrackpadWizard.lua` lets you set up areas on your Magic Trackpad to perform specific actions.
+
+#### Features
+- Create customized trackpad zones for specific actions
+- Includes gesture crafting mode to help you create new zones
+
+#### How to Use
+- Use the <kbd>^</kbd>+<kbd>⇧</kbd>+<kbd>g</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
+
 ### 🪄🌇 WindowScape
 `WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
 
@@ -57,7 +67,7 @@ local browsers = {
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
 
 #### How to Use
-Use the `cmd + <` hotkey to add/remove the application of the currently focused window to/from the whitelist.
+Use the <kbd>⌘</kbd>+<kbd><</kbd> hotkey to add/remove the application of the currently focused window to/from the whitelist.
 After whitelisting an application, its windows will be automatically tiled by the script.
 
 ### FAQ
