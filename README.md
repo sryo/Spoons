@@ -9,7 +9,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Previews for keys and key combinations
 - Printable template
   
-#### How to Use:
+#### How to Use
 - Define your desired key layouts in the layouts variable.
 - Run the script, and your Magic Trackpad will now also function as a keyboard.
 
@@ -21,7 +21,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Keep the dock and menubar hidden.
 - Reopen last app: When an app is killed, a modal will be shown to allow you to easily reopen it.
 
-How to Use
+#### How to Use
 - Start the script and try moving your mouse to the corners of the screen to see the actions and tooltips.
 - Use the Shift key to change the action performed in a corner.
 
@@ -29,7 +29,7 @@ How to Use
 `HyperlinkHijacker.lua` - It's your link, and you decide where it goes. 
 
 #### How to Use
-- When you click a link, a chooser will pop up with your defined browsers/profiles. If no choice is made before the countdown ends, the first browser in the list will automatically open the link. To bypass the chooser and directly open the link in the first browser, press the Shift key while clicking the link.
+- When you click a link, a list will pop up with your defined browsers/profiles. If no choice is made before the countdown ends, the first browser in the list will automatically open the link. To bypass the chooser and directly open the link in the first browser, press the Shift key while clicking the link.
 - A handy feature is the ability to copy a link directly to your clipboard by choosing the "Copy to Clipboard" option in the chooser.
 - Passthroughs are rules that allow specific links to bypass the browser and open directly in their respective applications. You can define them in the passthroughs variable. For example:
 ```lua
