@@ -58,7 +58,7 @@ local browsers = {
 - Includes gesture crafting mode to help you create new zones
 
 #### How to Use
-- Use the <kbd>^</kbd>+<kbd>⇧</kbd>+<kbd>g</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
+- Use the <kbd>^ CTRL</kbd><kbd>⇧ SHIFT</kbd><kbd>G</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
 
 ### 🪄🌇 WindowScape
 `WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
@@ -67,7 +67,7 @@ local browsers = {
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
 
 #### How to Use
-Use the <kbd>⌘</kbd>+<kbd><</kbd> hotkey to add/remove the application of the currently focused window to/from the whitelist.
+Use the <kbd>⌘ CMD</kbd><kbd><</kbd> hotkey to add/remove the application of the currently focused window to/from the whitelist.
 After whitelisting an application, its windows will be automatically tiled by the script.
 
 ### FAQ
