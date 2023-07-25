@@ -79,6 +79,9 @@ end
 local function tileWindows()
   local orientation = getScreenOrientation()
   local visibleWindows = getVisibleWindows()
+  visibleWindows = hs.fnutils.filter(visibleWindows, function(win)
+    return not win:isFullScreen()
+  end)
   local collapsedWindows = getCollapsedWindows(visibleWindows)
   local nonCollapsedWindows = #visibleWindows - #collapsedWindows
 
@@ -148,15 +151,11 @@ window.filter.default:subscribe({
   window.filter.windowUnminimized,
   window.filter.windowMoved
 }, function(win)
-  if not win:isFullScreen() then
-    tileWindows()
-  end
+  tileWindows()
 end)
 
 window.filter.default:subscribe(window.filter.windowFocused, function(win)
-  if not win:isFullScreen() then
-    handleWindowFocused(win)
-  end
+  handleWindowFocused(win)
 end)
 
 tileWindows()
