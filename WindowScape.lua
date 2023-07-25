@@ -129,6 +129,15 @@ local function tileWindows()
   end
 end
 
+local function handleWindowFocused(win)
+  if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
+    local focusedApp = win:application()
+    focusedApp:activate(true)
+    tileWindows()
+  end
+  prevFocusedWindow = win
+end
+
 window.filter.default:subscribe({
   window.filter.windowCreated,
   window.filter.windowFocused,
@@ -139,8 +148,14 @@ window.filter.default:subscribe({
   window.filter.windowUnminimized,
   window.filter.windowMoved
 }, function(win)
-  if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
+  if not win:isFullScreen() then
     tileWindows()
+  end
+end)
+
+window.filter.default:subscribe(window.filter.windowFocused, function(win)
+  if not win:isFullScreen() then
+    handleWindowFocused(win)
   end
 end)
 
@@ -167,6 +182,7 @@ local function toggleFocusedWindowInWhitelist()
   tileWindows()
 end
 
+
 local function bindHotkeys()
   hs.hotkey.bind({"cmd"}, "<", function()
     toggleFocusedWindowInWhitelist()
@@ -174,4 +190,3 @@ local function bindHotkeys()
 end
 
 bindHotkeys()
-
