@@ -2,11 +2,11 @@
 -- This enables customizable trackpad gestures, allowing users to define zones on their trackpad that can trigger specific actions, and includes a gesture crafting mode for defining new zones.
 
 local config = {
-    forceThreshold         = 20,
+    forceThreshold         = 40,
     scrollUnit             = "pixel",
     scrollAmount           = {0, 3},
-    scrollRepetitionSpeed  = 0.001,
-    directionResetTimeout  = .5,
+    scrollRepetitionSpeed  = 0.002,
+    directionResetTimeout  = .35,
 }
 
 local activeTouches = {}
@@ -16,7 +16,59 @@ local gestureEnded = false
 local gestureCraft = false
 local craftTouchStart, craftTouchEnd = nil, nil
 
-local function keyRepeatAction(touchID, modifiers, key)
+local zones = {
+    {
+        friendlyName = "Scroll",
+        x = 0, y = 0, width = .75, height = 0.02,
+        actions = {
+            ["none"] = function(touchID, touch)
+                activeTouches[touchID] = hs.timer.doWhile(function() return activeTouches[touchID] ~= nil end, function() 
+                    local scrollAmount = {0, config.scrollAmount[2] * scrollDirection}
+                    hs.eventtap.event.newScrollEvent(scrollAmount, {}, config.scrollUnit):post()
+                end, config.scrollRepetitionSpeed)
+            end
+        }
+    },
+    {
+        friendlyName = "Undo/Redo",
+        x = 0.75, y = 0, width = 0.25, height = 0.02,
+        actions = {
+            ["none"] = function(touchID, touch)
+                keyRepeatAction(touchID, "z", {"cmd"})
+            end,
+            ["shift"] = function(touchID, touch)
+                keyRepeatAction(touchID, "z", {"cmd", "shift"})
+            end,
+        }
+    },
+    {
+        friendlyName = "Keyboard",
+        x = 0, y = 0.8, width = 1, height = 0.2,
+        actions = {
+            ["none"] = function(touchID, touch)
+                local x, y = getGridCell(touch.normalizedPosition, 11, 3)
+                emitKey(x, y, touchID)
+            end,
+            ["ended"] = function(touchID, touch)
+                activeTouches[touchID] = nil
+            end
+        }
+    },
+-- To add a new zone, define the friendlyName, x and y coordinates, width, and height, as well as the actions for the zone.
+-- The x and y coordinates, as well as width and height are normalized to (0 - 1), relative to the trackpad's surface. This means 1 corresponds to the full width/height of the trackpad.
+-- 'friendlyName' is a human-readable name for the zone that can be printed when the zone is touched for easier debugging.
+-- 'actions' is a table that maps the touch events to functions that are called when the zone is touched with that event. Current events are 'none' for a touch with no modifiers and 'ended' for when a touch ends.
+-- Each function in 'actions' receives the ID of the touch and the touch event itself as arguments.
+}
+
+local keyboard = {
+    {"escape", "q", "a", "z","w", "e", "r", "t", "y", "u", "i", "o", "p"},
+    {"", "a", "s", "d", "f", "g", "h", "j", "k", "l", "delete"},
+    {"", "", "z", "x", "c", "v", "b", "n", "m", "shift", "space", "enter"}
+    -- All rows must have the same number of columns
+}
+
+function keyRepeatAction(touchID, key, modifiers)
     activeTouches[touchID] = hs.timer.doWhile(
         function()
             return activeTouches[touchID] ~= nil
@@ -28,48 +80,24 @@ local function keyRepeatAction(touchID, modifiers, key)
     )
 end
 
-local zones = {
-    {
-        friendlyName = "Scroll",
-        x = 0, y = 0, width = 1, height = 0.02,
-        actions = {
-            ["none"] = function(touchID)
-                activeTouches[touchID] = hs.timer.doWhile(function() return activeTouches[touchID] ~= nil end, function() 
-                    local scrollAmount = {0, config.scrollAmount[2] * scrollDirection}
-                    hs.eventtap.event.newScrollEvent(scrollAmount, {}, config.scrollUnit):post() 
-                end, config.scrollRepetitionSpeed)
-            end
-        }
-    },
-    {
-        friendlyName = "Esc",
-        x = 0, y = 0.96, width = 0.04, height = 0.04,
-        actions = {
-            ["none"] = function(touchID)
-                keyRepeatAction(touchID, {}, "escape")
-            end
-        }
-    },
-    {
-        friendlyName = "Undo/Redo",
-        x = 0.96, y = 0.96, width = 0.04, height = 0.04,
-        actions = {
-            ["none"] = function(touchID)
-                keyRepeatAction(touchID, {"cmd"}, "z")
-            end,
-            ["shift"] = function(touchID)
-                keyRepeatAction(touchID, {"cmd", "shift"}, "z")
-            end,
-        }
-    },
--- To add a new zone, define the friendlyName, 
--- x and y coordinates, width and height, and the actions for the zone.
--- The x and y coordinates, as well as width and height are normalized 
--- (0 - 1) relative to the trackpad's surface.
--- 'friendlyName' is a name for the zone that will be printed when the zone is touched.
--- 'actions' is a table that maps modifier key states to functions that are 
--- called when the zone is touched with that modifier state.
-}
+function getGridCell(pos, numColumns, numRows)
+    local adjustedX = pos.x
+    local adjustedY = (pos.y - 0.8) / 0.2
+    local x = math.min(math.floor(adjustedX * numColumns) + 1, numColumns)
+    local y = numRows - math.min(math.floor(adjustedY * numRows) + 1, numRows) + 1
+    print(string.format("Normalized position: %.2f, %.2f Grid cell: %d, %d", adjustedX, adjustedY, x, y))  -- Debug print
+    return x, y
+end
+
+function emitKey(x, y, touchID)
+    if keyboard[y] and keyboard[y][x] and keyboard[y][x] ~= "" then
+        local key = keyboard[y][x]
+        print(string.format("Emitting key: %s (at cell %d, %d)", key, x, y))  -- Debug print
+        keyRepeatAction(touchID, key, {})
+    else
+        print(string.format("No key found at cell %d, %d", x, y))  -- Debug print
+    end
+end
 
 local zoneCounter = 0
 
@@ -152,7 +180,7 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
 
                     local action = activeZone.actions[modifierState]
                     if action and not activeTouches[touch.identity] then
-                        action(touch.identity)
+                        action(touch.identity, touch)
                     end
                     gestureEnded = false
                 end
