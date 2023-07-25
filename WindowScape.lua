@@ -1,54 +1,46 @@
 -- WindowScape: https://github.com/sryo/Spoons/blob/main/WindowScape.lua
 -- This script automatically tiles windows of whitelisted applications.
 
-local application = require("hs.application")
 local window = require("hs.window")
 local screen = require("hs.screen")
 local geometry = require("hs.geometry")
-local logger = hs.logger.new("windowTiler", "debug")
 
 local tileGap = 0
 local collapsedWindowHeight = 12
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
 local whitelistedApps = {}
+local whitelistFile = "whitelist.txt"
 
 local function saveWhitelistToFile()
-  local whitelistFile = io.open("whitelist.txt", "w")
-  for app, _ in pairs(whitelistedApps) do
-    whitelistFile:write(app .. "\n")
+  local file = io.open(whitelistFile, "w")
+  for app in pairs(whitelistedApps) do
+    file:write(app .. "\n")
   end
-  whitelistFile:close()
-  print("Whitelist saved to file")
+  file:close()
 end
 
 local function loadWhitelistFromFile()
-  local whitelistFile = io.open("whitelist.txt", "r")
-  if whitelistFile then
-    for line in whitelistFile:lines() do
-      whitelistedApps[line] = true
-    end
-    whitelistFile:close()
-  else
+  local file = io.open(whitelistFile, "r")
+  if not file then
     whitelistedApps["org.hammerspoon.Hammerspoon"] = true
     saveWhitelistToFile()
+    return
   end
+  for line in file:lines() do
+    whitelistedApps[line] = true
+  end
+  file:close()
 end
 
 loadWhitelistFromFile()
 
 local function isAppWhitelisted(app, win)
-  if app == nil then
-    return false
-  end
-
   local bundleID = app and app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
 
-  local shouldConsiderApp = win:isStandard() and ((whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist))
-
-  return shouldConsiderApp
+  return win:isStandard() and ((whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist))
 end
 
 local function getScreenOrientation()
@@ -137,29 +129,20 @@ local function tileWindows()
   end
 end
 
-local function handleWindowCreated(win)
+window.filter.default:subscribe({
+  window.filter.windowCreated,
+  window.filter.windowFocused,
+  window.filter.windowDestroyed,
+  window.filter.windowHidden,
+  window.filter.windowUnhidden,
+  window.filter.windowMinimized,
+  window.filter.windowUnminimized,
+  window.filter.windowMoved
+}, function(win)
   if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
     tileWindows()
   end
-end
-
-local function handleWindowFocused(win)
-  if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
-    local focusedApp = win:application()
-    focusedApp:activate(true)
-    tileWindows()
-  end
-  prevFocusedWindow = win
-end
-
-window.filter.default:subscribe(window.filter.windowCreated, handleWindowCreated)
-window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
-window.filter.default:subscribe(window.filter.windowDestroyed, tileWindows)
-window.filter.default:subscribe(window.filter.windowHidden, tileWindows)
-window.filter.default:subscribe(window.filter.windowUnhidden, tileWindows)
-window.filter.default:subscribe(window.filter.windowMinimized, tileWindows)
-window.filter.default:subscribe(window.filter.windowUnminimized, tileWindows)
-window.filter.default:subscribe(window.filter.windowMoved, tileWindows)
+end)
 
 tileWindows()
 
@@ -191,3 +174,4 @@ local function bindHotkeys()
 end
 
 bindHotkeys()
+
