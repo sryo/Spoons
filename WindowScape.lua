@@ -1,3 +1,4 @@
+-- WindowScape: https://github.com/sryo/Spoons/blob/main/WindowScape.lua
 -- This script automatically tiles windows of whitelisted applications.
 
 local application = require("hs.application")
@@ -10,7 +11,6 @@ local tileGap = 0
 local collapsedWindowHeight = 12
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
--- Initialize whitelistedApps as an empty table
 local whitelistedApps = {}
 
 local function saveWhitelistToFile()
@@ -29,11 +29,9 @@ local function loadWhitelistFromFile()
       whitelistedApps[line] = true
     end
     whitelistFile:close()
-    print("Whitelist loaded from file")
   else
     whitelistedApps["org.hammerspoon.Hammerspoon"] = true
     saveWhitelistToFile()
-    print("Whitelist file created with example")
   end
 end
 
@@ -41,23 +39,15 @@ loadWhitelistFromFile()
 
 local function isAppWhitelisted(app, win)
   if app == nil then
-    print("Application for the window is nil")
     return false
   end
 
   local bundleID = app and app:bundleID()
   local appName = app:name()
   local isInWhitelist = whitelistedApps[bundleID] or whitelistedApps[appName]
-  
+
   local shouldConsiderApp = win:isStandard() and ((whitelistMode and isInWhitelist) or (not whitelistMode and not isInWhitelist))
 
-  local emoji = shouldConsiderApp and "🫡" or "🫥"
-  print(string.format("%s Checking app: %s (%s), Considered: %s", emoji, appName, bundleID, tostring(shouldConsiderApp)))
-
-  if not shouldConsiderApp then
-    print("Application " .. appName .. " (" .. bundleID .. ") is not considered")
-  end
-  
   return shouldConsiderApp
 end
 
@@ -74,9 +64,8 @@ end
 
 local function getVisibleWindows()
   local visibleWindows = {}
-  local focusedWindow = window.focusedWindow()
   for _, win in ipairs(window.orderedWindows()) do
-    if win:isVisible() and isAppWhitelisted(win:application(), win) then
+    if win:isVisible() and not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
       table.insert(visibleWindows, win)
     end
   end
@@ -93,45 +82,6 @@ local function getCollapsedWindows(visibleWindows)
     end
   end
   return collapsedWindows
-end
-
-local function logWindowGeometryChange(win, actionEmoji)
-  if win and win:application() then
-    local frame = win:frame()
-    local windowTitle = win:title() or "No title"
-    logger.i(
-      string.format(
-        "%s %s %s (%d): x=%d, y=%d, w=%d, h=%d",
-        actionEmoji,
-        win:application():bundleID(),
-        windowTitle,
-        win:id(),
-        frame.x,
-        frame.y,
-        frame.w,
-        frame.h
-      )
-    )
-  end
-end
-
-local function printVisibleWindowsInfo()
-  local visibleWindows = getVisibleWindows()
-  logger.i("Visible windows:")
-  for _, win in ipairs(visibleWindows) do
-    local frame = win:frame()
-    logger.i(
-      string.format(
-        "🪟  %s (%d): x=%d, y=%d, w=%d, h=%d",
-        win:application():bundleID(),
-        win:id(),
-        frame.x,
-        frame.y,
-        frame.w,
-        frame.h
-      )
-    )
-  end
 end
 
 local function tileWindows()
@@ -151,8 +101,6 @@ local function tileWindows()
     tileWidth = mainScreenFrame.w
     tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows) * tileGap) / nonCollapsedWindows
   end
-
-  print("Orientation:", orientation, "Tile width:", tileWidth, "Tile height:", tileHeight)
 
   local nonCollapsedWinX, nonCollapsedWinY = mainScreenFrame.x, mainScreenFrame.y
   local collapsedWinX, collapsedWinY
@@ -185,31 +133,22 @@ local function tileWindows()
       end
     end
 
-    print("Setting frame for", win:application():bundleID(), win:id(), "to", newFrame)
     win:setFrame(newFrame)
-    logWindowGeometryChange(win, "📐")
   end
 end
 
 local function handleWindowCreated(win)
-  if isAppWhitelisted(win:application(), win) then
-    logWindowGeometryChange(win, "🆕")
+  if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
     tileWindows()
   end
 end
 
-local prevFocusedWindow = nil
-
 local function handleWindowFocused(win)
-  if prevFocusedWindow and prevFocusedWindow:isStandard() and isAppWhitelisted(prevFocusedWindow:application(), prevFocusedWindow) then
-    logWindowGeometryChange(prevFocusedWindow, "🙈")
-  end
-  if isAppWhitelisted(win:application(), win) then
-    logWindowGeometryChange(win, "👁️")
+  if not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
     local focusedApp = win:application()
     focusedApp:activate(true)
+    tileWindows()
   end
-  tileWindows()
   prevFocusedWindow = win
 end
 
@@ -222,31 +161,26 @@ window.filter.default:subscribe(window.filter.windowMinimized, tileWindows)
 window.filter.default:subscribe(window.filter.windowUnminimized, tileWindows)
 window.filter.default:subscribe(window.filter.windowMoved, tileWindows)
 
-printVisibleWindowsInfo()
 tileWindows()
 
 local function toggleFocusedWindowInWhitelist()
   local focusedWindow = window.focusedWindow()
+  if focusedWindow:isFullScreen() then
+    return
+  end
+
   local focusedApp = focusedWindow:application()
   local bundleID = focusedApp:bundleID()
   local appName = focusedApp:name()
-  
+
   if whitelistedApps[bundleID] or whitelistedApps[appName] then
     whitelistedApps[bundleID] = nil
     whitelistedApps[appName] = nil
-    print("Removed", appName, "from whitelist")
   else
     whitelistedApps[bundleID] = true
-    print("Added", appName, "to whitelist")
   end
 
   saveWhitelistToFile()
-  tileWindows()
-end
-
-local function toggleWhitelistMode()
-  whitelistMode = not whitelistMode
-  print("Toggled mode to", whitelistMode and "whitelist" or "blacklist")
   tileWindows()
 end
 
