@@ -1,18 +1,5 @@
 These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
 
-### ⚡🅰️ ForceKeys
-`Forcekeys.lua` maps a keyboard onto the Magic Trackpad, making text input a touch away.
-
-#### Features
-- Supports standard keys, special keys, and key combinations
-- Customizable key layouts
-- Previews for keys and key combinations
-- Printable template
-  
-#### How to Use
-- Define your desired key layouts in the layouts variable.
-- Run the script, and your Magic Trackpad will now also function as a keyboard.
-
 ### 🖥️🐙 FrameMaster
 `FrameMaster.lua` - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
 
@@ -54,11 +41,12 @@ local browsers = {
 `TrackpadWizard.lua` lets you set up areas on your Magic Trackpad to perform specific actions.
 
 #### Features
-- Create customized trackpad zones for specific actions
-- Includes gesture crafting mode to help you create new zones
+- Create customized trackpad zones for specific actions.
+- Includes gesture crafting mode to help you create new zones.
 
 #### How to Use
 - Use the <kbd>^ CTRL</kbd><kbd>⇧ SHIFT</kbd><kbd>G</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
+- Print the ForceKeys template to overlay on your Trackpad.
 
 ### 🪄🌇 WindowScape
 `WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
