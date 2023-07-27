@@ -2,7 +2,7 @@
 -- This enables customizable trackpad gestures, allowing users to define zones on their trackpad that can trigger specific actions, and includes a gesture crafting mode for defining new zones.
 
 local config = {
-    forceThreshold         = 40,
+    forceThreshold         = 60,
     scrollUnit             = "pixel",
     scrollAmount           = {0, 3},
     scrollRepetitionSpeed  = 0.002,
@@ -43,7 +43,7 @@ local zones = {
     },
     {
         friendlyName = "Keyboard",
-        x = 0, y = 0.8, width = 1, height = 0.2,
+        x = 0, y = 0.9, width = 1, height = 0.1,
         actions = {
             ["none"] = function(touchID, touch)
                 local x, y = getGridCell(touch.normalizedPosition, 11, 3)
@@ -62,27 +62,24 @@ local zones = {
 }
 
 local keyboard = {
-    {"escape", "q", "a", "z","w", "e", "r", "t", "y", "u", "i", "o", "p"},
-    {"", "a", "s", "d", "f", "g", "h", "j", "k", "l", "delete"},
-    {"", "", "z", "x", "c", "v", "b", "n", "m", "shift", "space", "enter"}
-    -- All rows must have the same number of columns
+    {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "escape"},
+    {"", "a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
+    {"", "", "z", "x", "c", "v", "b", "n", "m", "space", "space"}
 }
 
+local keystrokeSent = {}
+
 function keyRepeatAction(touchID, key, modifiers)
-    activeTouches[touchID] = hs.timer.doWhile(
-        function()
-            return activeTouches[touchID] ~= nil
-        end,
-        function()
-            hs.eventtap.keyStroke(modifiers, key)
-        end,
-        hs.eventtap.keyRepeatInterval()
-    )
+    if not keystrokeSent[touchID] then
+        activeTouches[touchID] = true
+        hs.eventtap.keyStroke(modifiers, key)
+        keystrokeSent[touchID] = true
+    end
 end
 
 function getGridCell(pos, numColumns, numRows)
     local adjustedX = pos.x
-    local adjustedY = (pos.y - 0.8) / 0.2
+    local adjustedY = (pos.y - 0.9) / 0.1
     local x = math.min(math.floor(adjustedX * numColumns) + 1, numColumns)
     local y = numRows - math.min(math.floor(adjustedY * numRows) + 1, numRows) + 1
     print(string.format("Normalized position: %.2f, %.2f Grid cell: %d, %d", adjustedX, adjustedY, x, y))  -- Debug print
@@ -210,8 +207,22 @@ end)
 
 eventtap:start()
 
+
 hs.window.filter.new():subscribe({ hs.window.filter.windowFocused }, function()
     resetScrollDirection()
 end)
 
-hs.hotkey.bind({"ctrl", "shift"}, "G", enterGestureCraft)
+local hammerspoonFilter = hs.window.filter.new(false):setAppFilter('Hammerspoon')
+
+local hotkey = hs.hotkey.new({"ctrl", "shift"}, "G", enterGestureCraft)
+
+local function enableHotkey()
+    hotkey:enable()
+end
+
+local function disableHotkey()
+    hotkey:disable()
+end
+
+hammerspoonFilter:subscribe(hs.window.filter.windowFocused, enableHotkey)
+hammerspoonFilter:subscribe(hs.window.filter.windowUnfocused, disableHotkey)
