@@ -7,6 +7,9 @@ local config = {
     scrollAmount           = {0, 3},
     scrollRepetitionSpeed  = 0.002,
     directionResetTimeout  = .35,
+    showKeyPreview         = true,
+    keyPreviewDuration     = 1,
+    debug                  = false
 }
 
 local activeTouches = {}
@@ -43,11 +46,11 @@ local zones = {
     },
     {
         friendlyName = "Keyboard",
-        x = 0, y = 0.9, width = 1, height = 0.1,
+        x = 0, y = 0.8, width = 1, height = 0.2,
         actions = {
             ["none"] = function(touchID, touch)
                 local x, y = getGridCell(touch.normalizedPosition, 11, 3)
-                emitKey(x, y, touchID)
+                emitKey(x, y, touchID, touch)
             end,
             ["ended"] = function(touchID, touch)
                 activeTouches[touchID] = nil
@@ -63,9 +66,102 @@ local zones = {
 
 local keyboard = {
     {"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "escape"},
-    {"", "a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ"},
-    {"", "", "z", "x", "c", "v", "b", "n", "m", "space", "space"}
+    {"a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ", "delete"},
+    {"z", "x", "c", "v", "b", "n", "m", ",", ".", "-", "space", "enterKey"}
 }
+
+local symbols = {
+    escape = "⎋",
+    delete = "⌫",
+    space = "⎵",
+    enterKey = "⏎"
+}
+
+function getNearbyKeys(x, y)
+    local nearbyKeys = {{"", "", ""}, {"", "", ""}, {"", "", ""}}
+    for j = math.max(1, y-1), math.min(#keyboard, y+1) do
+        for i = math.max(1, x-1), math.min(#keyboard[j], x+1) do
+            local key = keyboard[j][i]
+            nearbyKeys[j - y + 2][i - x + 2] = symbols[key] or key
+        end
+    end
+    return nearbyKeys
+end
+
+local function getKeyPreviewPosition()
+    local screenSize = hs.screen.mainScreen():frame()
+    return (screenSize.w - 30) / 2, screenSize.h - 100
+end
+
+local keyPreviewX, keyPreviewY = getKeyPreviewPosition()
+
+local keyPreview = hs.canvas.new({x = keyPreviewX, y = keyPreviewY, w = 100, h = 100})
+keyPreview[1] = {
+    type = "rectangle",
+    action = "fill",
+    roundedRectRadii = { xRadius = 4, yRadius = 4 },
+    fillColor = { white = 0, alpha = 0.75 }
+}
+
+local gridPadding = 10
+local cellWidth = (100 - 4 * gridPadding) / 3
+local cellHeight = cellWidth
+
+for i = 1, 9 do
+    local row = math.floor((i - 1) / 3)
+    local column = (i - 1) % 3
+    keyPreview[i + 1] = {
+        type = "text",
+        text = "",
+        textColor = { white = 1, alpha = 1 },
+        textAlignment = "center",
+        textSize = 16,
+        frame = {
+            x = column * (cellWidth + gridPadding) + gridPadding,
+            y = row * (cellHeight + gridPadding) + gridPadding,
+            w = cellWidth,
+            h = cellHeight
+        }
+    }
+end
+
+function showKeyPreview(key, nearbyKeys, isTouching)
+    if keyPreviewTimer then
+        keyPreviewTimer:stop()
+    end
+
+    keyPreviewTimer = hs.timer.doAfter(config.keyPreviewDuration, function()
+        keyPreview:hide()
+    end)
+
+    if key == "" or not isTouching then
+        keyPreview:hide()
+        return
+    end
+
+    if not config.showKeyPreview or not key or key == "" then
+        return
+    end
+
+    local positions = {
+        {1, 2, 3},
+        {4, 5, 6},
+        {7, 8, 9}
+    }
+
+    for i = 1, 3 do
+        for j = 1, #positions[i] do
+            keyPreview[positions[i][j] + 1].text = nearbyKeys[i][j] or ""
+            if i == 2 and j == 2 then
+                keyPreview[positions[i][j] + 1].textColor = { red = 1, green = 1, blue = 0, alpha = 1 }
+            else
+                keyPreview[positions[i][j] + 1].textColor = { white = 1, alpha = 1 }
+            end
+        end
+    end
+
+    keyPreview:show()
+end
 
 local keystrokeSent = {}
 
@@ -79,28 +175,39 @@ end
 
 function getGridCell(pos, numColumns, numRows)
     local adjustedX = pos.x
-    local adjustedY = (pos.y - 0.9) / 0.1
+    local adjustedY = (pos.y - 0.8) / 0.2
     local x = math.min(math.floor(adjustedX * numColumns) + 1, numColumns)
     local y = numRows - math.min(math.floor(adjustedY * numRows) + 1, numRows) + 1
-    print(string.format("Normalized position: %.2f, %.2f Grid cell: %d, %d", adjustedX, adjustedY, x, y))  -- Debug print
+    debugPrint(string.format("Normalized position: %.2f, %.2f Grid cell: %d, %d", adjustedX, adjustedY, x, y))
     return x, y
 end
 
-function emitKey(x, y, touchID)
+function emitKey(x, y, touchID, touch)
+    debugPrint("emitKey called with x: " .. tostring(x) .. ", y: " .. tostring(y))
+    local keyToPreview = nil
     if keyboard[y] and keyboard[y][x] and keyboard[y][x] ~= "" then
         local key = keyboard[y][x]
-        print(string.format("Emitting key: %s (at cell %d, %d)", key, x, y))  -- Debug print
-        keyRepeatAction(touchID, key, {})
+        debugPrint("Key at cell " .. tostring(x) .. ", " .. tostring(y) .. " is: " .. key)
+        if touch.force < config.forceThreshold then
+            debugPrint("Touch force is less than forceThreshold. Calling showKeyPreview...")
+            keyToPreview = key
+            local nearbyKeys = getNearbyKeys(x, y)
+            showKeyPreview(keyToPreview, nearbyKeys, touch.touching)
+        else
+            debugPrint("Touch force is equal or greater than forceThreshold. Sending key event...")
+            keyRepeatAction(touchID, key, {})
+        end
     else
-        print(string.format("No key found at cell %d, %d", x, y))  -- Debug print
+        debugPrint("No key found at cell " .. tostring(x) .. ", " .. tostring(y))
     end
 end
+
 
 local zoneCounter = 0
 
 local function enterGestureCraft()
     gestureCraft = true
-    print("Gesture Craft mode entered. Please make a diagonal gesture across your desired zone.")
+    debugPrint("Gesture Craft mode entered. Please make a diagonal gesture across your desired zone.")
     zoneCounter = zoneCounter + 1
 end
 
@@ -112,7 +219,7 @@ local function exitGestureCraft()
             width = math.abs(craftTouchEnd.x - craftTouchStart.x),
             height = math.abs(craftTouchEnd.y - craftTouchStart.y)
         }
-        print(string.format("New Zone coordinates: x = %.2f, y = %.2f, width = %.2f, height = %.2f", 
+        debugPrint(string.format("New Zone coordinates: x = %.2f, y = %.2f, width = %.2f, height = %.2f",
             zoneCoordinates.x, zoneCoordinates.y, zoneCoordinates.width, zoneCoordinates.height))
         local newZoneName = "Zone" .. zoneCounter
         table.insert(zones, {
@@ -123,14 +230,14 @@ local function exitGestureCraft()
             height = zoneCoordinates.height,
             actions = {
                 ["none"] = function(touchID)
-                    print(string.format("Touching %s with coordinates: x = %.2f, y = %.2f, width = %.2f, height = %.2f",
+                    debugPrint(string.format("Touching %s with coordinates: x = %.2f, y = %.2f, width = %.2f, height = %.2f",
                                         newZoneName, zoneCoordinates.x, zoneCoordinates.y, zoneCoordinates.width, zoneCoordinates.height))
                 end
             }
         })
         craftTouchStart, craftTouchEnd = nil, nil
     else
-        print("No valid diagonal gesture detected.")
+        debugPrint("No valid diagonal gesture detected.")
     end
     gestureCraft = false
 end
@@ -146,6 +253,7 @@ local function getActiveZone(pos)
             return zone
         end
     end
+    return nil
 end
 
 eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
@@ -161,7 +269,7 @@ eventtap = hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
                 exitGestureCraft()
             end
         else
-            if touch.normalizedPosition and touch.touching and touch.force >= config.forceThreshold then
+            if touch.normalizedPosition and touch.touching then
                 local activeZone = getActiveZone(touch.normalizedPosition)
                 if activeZone then
                     local modifiers = hs.eventtap.checkKeyboardModifiers()
@@ -207,7 +315,6 @@ end)
 
 eventtap:start()
 
-
 hs.window.filter.new():subscribe({ hs.window.filter.windowFocused }, function()
     resetScrollDirection()
 end)
@@ -226,3 +333,9 @@ end
 
 hammerspoonFilter:subscribe(hs.window.filter.windowFocused, enableHotkey)
 hammerspoonFilter:subscribe(hs.window.filter.windowUnfocused, disableHotkey)
+
+function debugPrint(message)
+    if config.debug then
+        print(message)
+    end
+end
