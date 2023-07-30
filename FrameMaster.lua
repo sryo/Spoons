@@ -1,3 +1,4 @@
+-- FrameMaster: https://github.com/sryo/Spoons/blob/main/FrameMaster.lua
 -- Take control of your Mac's 'hot corners', menu bar, and dock.
 
 local killMenu          = true  -- prevent the menu bar from appearing
@@ -6,8 +7,7 @@ local onlyFullscreen    = true  -- but only on fullscreen spaces
 local buffer            = 4     -- increase if you still manage to activate them
 local showTooltips      = true  -- set this to false to improve performance if necessary
 local tooltipMaxLength  = 50    -- maximum length for tooltip messages
-local reopenAfterKill   = true -- show an autoclosing modal to reopen the last killed app
-
+local reopenAfterKill   = true  -- show an autoclosing modal to reopen the last killed app
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -101,7 +101,7 @@ local hotCorners = {
             end
 
             hs.timer.doAfter(.5, function()
-                local currentMousePosition = hs.mouse.getAbsolutePosition()
+                local currentMousePosition = hs.mouse.absolutePosition()
                 hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()
             end)
 
@@ -278,12 +278,12 @@ function showMessage(corner, message)
 end
 
 function hideTooltip()
-    local fadeOutDuration = 0.25
-    local fadeOutStep = 0.0125
+    local fadeOutDuration = 0.125
+    local fadeOutStep = 0.025
     local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
     local currentAlpha = 1.0
     local function fade()
-        local point = hs.mouse.getAbsolutePosition()
+        local point = hs.mouse.absolutePosition()
         if lastCorner == checkForHotCorner(point.x, point.y) then
             -- cursor still in corner, return without fading tooltip.
             return
@@ -301,7 +301,7 @@ end
 
 if showTooltips then
     cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged}, function(event)
-        local point = hs.mouse.getAbsolutePosition()
+        local point = hs.mouse.absolutePosition()
         local currentCorner = checkForHotCorner(point.x, point.y)
     
         -- If the mouse is in a corner, update the tooltip message and the last corner
@@ -341,7 +341,7 @@ if showTooltips then
 end
 
 cornerClick = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
-    local point = hs.mouse.getAbsolutePosition()
+    local point = hs.mouse.absolutePosition()
     lastCorner = checkForHotCorner(point.x, point.y)
     if lastCorner and not isDesktop() then
         local message = truncateString(hotCorners[lastCorner].action())
