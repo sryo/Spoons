@@ -34,9 +34,6 @@ local browsers = {
 }
 ```
 
-### ⏱️↖️ TimeTrail
-`TimeTrail.lua` gives you a moving clock right next to your mouse, because who needs a stationary clock?
-
 ### 🪄🖱️ TrackpadWizard
 `TrackpadWizard.lua` lets you set up areas on your Magic Trackpad to perform specific actions.
 
