@@ -34,6 +34,13 @@ local browsers = {
 }
 ```
 
+### 🗂️🔍 MenuMaestro
+`MenuMaestro.lua` - Easily access menu items and shortcuts with a visually appealing interface.
+
+#### How to Use
+- Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items.
+- Select a menu item with your mouse or keyboard to execute it, or use the search functionality to quickly find what you need.
+
 ### 🪄🖱️ TrackpadWizard
 `TrackpadWizard.lua` lets you set up areas on your Magic Trackpad to perform specific actions.
 
