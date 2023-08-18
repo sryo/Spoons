@@ -1,3 +1,4 @@
+-- MenuMaestro: https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua
 -- Use MenuMaestro to easily browse and select menu items through a friendly interface.
 -- Inspired by MenuChooser by Jacob Williams (https://github.com/brokensandals/motley-hammerspoons)
 
@@ -40,12 +41,20 @@ end
 local function shortcutToImage(modifiers, shortcut)
     local text = shortcutToString(modifiers, shortcut or "")
     local textCanvas = canvas.new{ x = 0, y = 0, w = 32, h = 32 }
+
+    local textColor
+    if hs.host.interfaceStyle() == "Dark" then
+        textColor = { red = 1, green = 1, blue = 1, alpha = 0.8 }
+    else
+        textColor = { red = 0, blue = 0, green = 0, alpha = 0.8 }
+    end
+
     textCanvas[1] = {
         type = "text",
         text = text,
         frame = { x = "0%", y = "12%", h = "100%", w = "100%" },
         textAlignment = "right",
-        textColor = { red = 0, blue = 0, green = 0, alpha = 0.8 },
+        textColor = textColor,
         textSize = 10
     }
     local image = textCanvas:imageFromCanvas()
