@@ -6,20 +6,10 @@ local chooser = require("hs.chooser")
 local styledtext = require("hs.styledtext")
 local canvas = require("hs.canvas")
 
-local function getFontSize()
-    local screen = hs.screen.mainScreen()
-    local frame = screen:fullFrame()
-    local width = frame.w
-    local minFontSize = 13
-    local maxFontSize = 23
-    local minScreenWidth = 1080
-    local maxScreenWidth = 1920
+local sortAlphabetically = true  -- Set to false for hierarchical sorting.
+local maxRecentItems = 5         -- You can change this to store a different number of recent items
 
-    if width < minScreenWidth then return minFontSize end
-    if width > maxScreenWidth then return maxFontSize end
-
-    return minFontSize + (maxFontSize - minFontSize) * ((width - minScreenWidth) / (maxScreenWidth - minScreenWidth))
-end
+local recentItems = {}
 
 local function shortcutToString(modifiers, shortcut)
     local str = ""
@@ -87,7 +77,8 @@ local function collectMenuItems(menuPath, path, list, choices)
             local shortcut = item.AXMenuItemCmdChar or ""
             local shortcutImage = shortcutToImage(modifiers, shortcut or "")
             choices[#choices+1] = {
-                text = styledtext.new(title, { font = { size = getFontSize() } }),
+                text = styledtext.new(title),
+                plainText = title,
                 subText = currentMenuPath,
                 path = pathList,
                 image = shortcutImage
@@ -100,23 +91,60 @@ local function chooseMenuItem()
     local app = hs.application.frontmostApplication()
     local appName = app:name()
 
+    if not recentItems[appName] then
+        recentItems[appName] = {}
+    end
+
     app:getMenuItems(function(menu)
-        local choices = {}
-        collectMenuItems(nil, {}, menu, choices)
+        local regularChoices = {}
+        collectMenuItems(nil, {}, menu, regularChoices)
+
+        local recentPaths = {}
+        for _, recentItem in ipairs(recentItems[appName]) do
+            recentPaths[recentItem.plainText] = true
+        end
+
+        regularChoices = hs.fnutils.filter(regularChoices, function(choice)
+            return not recentPaths[choice.plainText]
+        end)
+
+        if sortAlphabetically then
+            table.sort(regularChoices, function(a, b) return a.plainText < b.plainText end)
+        end
+
+        local recentChoices = {}
+        for i, recentItem in ipairs(recentItems[appName]) do
+            local choice = {
+                text = styledtext.new("⭯ " .. recentItem.plainText),
+                plainText = "⭯ " .. recentItem.plainText,
+                subText = recentItem.subText,
+                path = recentItem.path,
+                image = recentItem.image
+            }
+            table.insert(recentChoices, choice)
+        end
+
+        local choices = recentChoices
+        for _, choice in ipairs(regularChoices) do
+            table.insert(choices, choice)
+        end
+
         local completionFn = function(result)
             if result then
+                table.insert(recentItems[appName], 1, result)
+                if #recentItems[appName] > maxRecentItems then
+                    table.remove(recentItems[appName])
+                end
                 app:selectMenuItem(result.path)
             end
         end
+
         local menuItemChooser = chooser.new(completionFn)
         menuItemChooser:choices(choices)
         menuItemChooser:searchSubText(true)
-
         menuItemChooser:placeholderText("Find a menu item in " .. appName .. "...")
-
         menuItemChooser:show()
     end)
 end
-
 
 hs.hotkey.bind({"ctrl", "alt"}, "space", chooseMenuItem)
