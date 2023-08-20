@@ -38,7 +38,7 @@ local browsers = {
 `MenuMaestro.lua` - Easily access menu items and shortcuts with a visually appealing interface.
 
 #### How to Use
-- Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items.
+- Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items. You can also open the menu chooser by using a 4-finger touch gesture on your trackpad. Just tap with four fingers on the trackpad to open the MenuMaestro interface.
 - Select a menu item with your mouse or keyboard to execute it, or use the search functionality to quickly find what you need.
 
 ### 🪄🖱️ TrackpadWizard
