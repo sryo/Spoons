@@ -153,13 +153,22 @@ end
 
 function touchToOpenMenuMaestro(event)
     local touches = event:getTouches()
-    if touches and #touches == 4 and not wasHandled and not isMenuMaestroOpen() then
-        wasHandled = true
-        openMenuMaestro()
-    elseif touches and #touches < 4 then
-        wasHandled = false
+    if touches and #touches == 5 and not wasOpened and not isMenuMaestroOpen() then
+        for _, touch in ipairs(touches) do
+            if touch.phase == "ended" then
+                wasOpened = true
+                openMenuMaestro()
+                return
+            end
+        end
+    elseif touches and #touches > 5 then
+        wasOpened = true
+        return true
+    elseif touches and #touches < 5 then
+        wasOpened = false
     end
 end
+
 
 gestureTap = hs.eventtap.new({ hs.eventtap.event.types.gesture }, touchToOpenMenuMaestro)
 gestureTap:start()
