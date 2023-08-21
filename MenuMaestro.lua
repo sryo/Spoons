@@ -6,9 +6,11 @@ local chooser = require("hs.chooser")
 local styledtext = require("hs.styledtext")
 local canvas = require("hs.canvas")
 
-local sortAlphabetically = true -- Set to false for hierarchical sorting.
-local maxRecentItems = 5        -- You can change this to store a different number of recent items
+local sortAlphabetically    = true  -- Set to false for hierarchical sorting.
+local maxRecentItems        = 5     -- Set to 0 to disable recently run items.
+local numberOfFingersToOpen = 5
 
+local menuMaestro
 local recentItems = {}
 
 local function shortcutToString(modifiers, shortcut)
@@ -119,7 +121,8 @@ function openMenuMaestro()
                 plainText = "⭯ " .. recentItem.plainText,
                 subText = recentItem.subText,
                 path = recentItem.path,
-                image = recentItem.image
+                image = recentItem.image,
+                recent = true
             }
             table.insert(recentChoices, choice)
         end
@@ -131,9 +134,20 @@ function openMenuMaestro()
 
         local completionFn = function(result)
             if result then
-                table.insert(recentItems[appName], 1, result)
-                if #recentItems[appName] > maxRecentItems then
-                    table.remove(recentItems[appName])
+                local index
+                for i, recentItem in ipairs(recentItems[appName]) do
+                    if result.plainText == "⭯ " .. recentItem.plainText then
+                        index = i
+                        break
+                    end
+                end
+                if index then
+                    table.insert(recentItems[appName], 1, table.remove(recentItems[appName], index))
+                else
+                    table.insert(recentItems[appName], 1, result)
+                    if #recentItems[appName] > maxRecentItems then
+                        table.remove(recentItems[appName])
+                    end
                 end
                 app:selectMenuItem(result.path)
             end
@@ -153,7 +167,7 @@ end
 
 function touchToOpenMenuMaestro(event)
     local touches = event:getTouches()
-    if touches and #touches == 5 and not wasOpened and not isMenuMaestroOpen() then
+    if touches and #touches == numberOfFingersToOpen and not wasOpened and not isMenuMaestroOpen() then
         for _, touch in ipairs(touches) do
             if touch.phase == "ended" then
                 wasOpened = true
@@ -161,10 +175,10 @@ function touchToOpenMenuMaestro(event)
                 return
             end
         end
-    elseif touches and #touches > 5 then
+    elseif touches and #touches > numberOfFingersToOpen then
         wasOpened = true
         return true
-    elseif touches and #touches < 5 then
+    elseif touches and #touches < numberOfFingersToOpen then
         wasOpened = false
     end
 end
