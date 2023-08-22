@@ -1,7 +1,7 @@
 These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
 
 ### 🖥️🐙 FrameMaster
-`FrameMaster.lua` - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
+[`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
 
 #### Features
 - Hot corners: Define custom actions for each corner of the screen. Actions are defined in the hotCorners table and can be updated as needed.
@@ -13,7 +13,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Use the Shift key to change the action performed in a corner.
 
 ### 🌐🔀 HyperlinkHijacker
-`HyperlinkHijacker.lua` - It's your link, and you decide where it goes. 
+[`HyperlinkHijacker.lua`](https://github.com/sryo/Spoons/blob/main/HyperlinkHijacker.lua) - It's your link, and you decide where it goes. 
 
 #### How to Use
 - When you click a link, a list will pop up with your defined browsers/profiles. If no choice is made before the countdown ends, the first browser in the list will automatically open the link. To bypass the chooser and directly open the link in the first browser, press the Shift key while clicking the link.
@@ -35,14 +35,14 @@ local browsers = {
 ```
 
 ### 🗂️🔍 MenuMaestro
-`MenuMaestro.lua` - Easily access menu items and shortcuts with a visually appealing interface.
+[`MenuMaestro.lua`](https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua) - Easily access menu items and shortcuts with a visually appealing interface.
 
 #### How to Use
 - Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items. You can also open the menu chooser by using a 5-finger touch gesture on your trackpad. Just tap with four fingers on the trackpad to open the MenuMaestro interface.
 - Select a menu item with your mouse or keyboard to execute it, or use the search functionality to quickly find what you need.
 
 ### 🪄🖱️ TrackpadWizard
-`TrackpadWizard.lua` lets you set up areas on your Magic Trackpad to perform specific actions.
+[`TrackpadWizard.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadWizard.lua) lets you set up areas on your Magic Trackpad to perform specific actions.
 
 #### Features
 - Create customized trackpad zones for specific actions.
@@ -50,10 +50,10 @@ local browsers = {
 
 #### How to Use
 - Use the <kbd>^ CTRL</kbd><kbd>⇧ SHIFT</kbd><kbd>G</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
-- Print the ForceKeys template to overlay on your Trackpad.
+- Print the [ForceKeys template](https://github.com/sryo/Spoons/blob/main/ForceKeys%20Template.pdf) to overlay on your Trackpad.
 
 ### 🪄🌇 WindowScape
-`WindowScape.lua` is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
+[`WindowScape.lua`](https://github.com/sryo/Spoons/blob/main/WindowScape.lua) is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
 
 #### Features
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
