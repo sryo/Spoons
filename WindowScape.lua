@@ -90,16 +90,20 @@ local function tileWindows()
   local collapsedWindows = getCollapsedWindows(visibleWindows)
   local nonCollapsedWindows = #visibleWindows - #collapsedWindows
 
+  if #visibleWindows == 0 then
+    return  -- No windows to tile
+  end
+
   local mainScreen = screen.mainScreen()
   local mainScreenFrame = mainScreen:frame()
   local tileWidth, tileHeight
 
   if orientation == "horizontal" then
-    tileWidth = (mainScreenFrame.w - (nonCollapsedWindows) * tileGap) / (nonCollapsedWindows)
+    tileWidth = (mainScreenFrame.w - (nonCollapsedWindows - 1) * tileGap) / nonCollapsedWindows
     tileHeight = mainScreenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
   else
     tileWidth = mainScreenFrame.w
-    tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows) * tileGap) / nonCollapsedWindows
+    tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows - 1) * tileGap) / nonCollapsedWindows
   end
 
   local nonCollapsedWinX, nonCollapsedWinY = mainScreenFrame.x, mainScreenFrame.y
@@ -112,59 +116,47 @@ local function tileWindows()
 
   local initialCollapsedWidth = collapsedWindows[1] and collapsedWindows[1]:frame().w or tileWidth
 
-  -- First pass: Resize all windows
   for _, win in ipairs(visibleWindows) do
-    local winHeight = win:size().h
-    local isCollapsed = winHeight <= collapsedWindowHeight
-    local newSize
+    local isCollapsed = win:size().h <= collapsedWindowHeight
+    local newFrame
 
     if isCollapsed then
       if orientation == "horizontal" then
-        newSize = geometry.size(initialCollapsedWidth, collapsedWindowHeight)
+        newFrame = {
+          x = collapsedWinX,
+          y = collapsedWinY,
+          w = initialCollapsedWidth,
+          h = collapsedWindowHeight
+        }
+        collapsedWinX = collapsedWinX + initialCollapsedWidth + tileGap
       else
-        newSize = geometry.size(tileWidth, collapsedWindowHeight)
+        newFrame = {
+          x = collapsedWinX,
+          y = collapsedWinY,
+          w = tileWidth,
+          h = collapsedWindowHeight
+        }
+        collapsedWinY = collapsedWinY - collapsedWindowHeight - tileGap
       end
     else
-      newSize = geometry.size(tileWidth, tileHeight)
-    end
-
-    win:setSize(newSize)
-  end
-
-  -- Second pass: Move windows to their final positions
-  for _, win in ipairs(visibleWindows) do
-    local winSize = win:size()
-    local isCollapsed = winSize.h <= collapsedWindowHeight
-    local newTopLeft
-
-    if isCollapsed then
+      newFrame = {
+        x = nonCollapsedWinX,
+        y = nonCollapsedWinY,
+        w = tileWidth,
+        h = tileHeight
+      }
       if orientation == "horizontal" then
-        newTopLeft = geometry.point(collapsedWinX, collapsedWinY)
-        collapsedWinX = collapsedWinX + winSize.w + tileGap
+        nonCollapsedWinX = nonCollapsedWinX + tileWidth + tileGap
       else
-        newTopLeft = geometry.point(collapsedWinX, collapsedWinY)
-        collapsedWinY = collapsedWinY - winSize.h - tileGap
-      end
-    else
-      newTopLeft = geometry.point(nonCollapsedWinX, nonCollapsedWinY)
-      if orientation == "horizontal" then
-        nonCollapsedWinX = nonCollapsedWinX + winSize.w + tileGap
-      else
-        nonCollapsedWinY = nonCollapsedWinY + winSize.h + tileGap
+        nonCollapsedWinY = nonCollapsedWinY + tileHeight + tileGap
       end
     end
-
-    win:setTopLeft(newTopLeft)
+    win:setFrame(geometry.rect(newFrame), 0)
   end
 end
 
 local function drawActiveWindowOutline(win)
-  if activeWindowOutline then
-    activeWindowOutline:delete()
-    activeWindowOutline = nil
-  end
-
-  if win and win:isVisible() and not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
+  if win and win:isVisible() and not win:isFullScreen() then
     local frame = win:frame()
     local adjustedFrame = {
       x = frame.x - outlineThickness / 4,
@@ -172,25 +164,37 @@ local function drawActiveWindowOutline(win)
       w = frame.w + outlineThickness / 2,
       h = frame.h + outlineThickness / 2
     }
-    activeWindowOutline = drawing.rectangle(geometry.rect(adjustedFrame))
-    activeWindowOutline:setStrokeColor(outlineColor)
-    activeWindowOutline:setFill(false)
-    activeWindowOutline:setStrokeWidth(outlineThickness)
-    activeWindowOutline:setRoundedRectRadii(12, 12)
-    activeWindowOutline:setLevel(drawing.windowLevels.popUpMenu)
+
+    if not activeWindowOutline then
+      activeWindowOutline = drawing.rectangle(geometry.rect(adjustedFrame))
+      activeWindowOutline:setStrokeColor(outlineColor)
+      activeWindowOutline:setFill(false)
+      activeWindowOutline:setStrokeWidth(outlineThickness)
+      activeWindowOutline:setRoundedRectRadii(12, 12)
+      activeWindowOutline:setLevel(drawing.windowLevels.popUpMenu)
+    else
+      activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
+    end
+
     activeWindowOutline:show()
+  else
+    -- If the window is not valid for outlining, hide the outline
+    if activeWindowOutline then
+      activeWindowOutline:hide()
+    end
   end
 end
 
 local function handleWindowFocused(win)
-  if win and win:isVisible() and not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
-    tileWindows()
+  if win and win:isVisible() and not win:isFullScreen() then
+    if isAppWhitelisted(win:application(), win) then
+      tileWindows()
+    end
     drawActiveWindowOutline(win)
   else
-    -- If the focused window is not valid for outlining, remove any existing outline
+    -- If the focused window is not valid for outlining, hide the outline
     if activeWindowOutline then
-      activeWindowOutline:delete()
-      activeWindowOutline = nil
+      activeWindowOutline:hide()
     end
   end
 end
@@ -202,10 +206,9 @@ local function handleWindowDestroyed(win)
   if newFocusedWindow then
     handleWindowFocused(newFocusedWindow)
   else
-    -- If no window is focused, remove any existing outline
+    -- If no window is focused, hide the outline
     if activeWindowOutline then
-      activeWindowOutline:delete()
-      activeWindowOutline = nil
+      activeWindowOutline:hide()
     end
   end
 end
