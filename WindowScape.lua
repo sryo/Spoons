@@ -7,7 +7,7 @@ local geometry = require("hs.geometry")
 local drawing = require("hs.drawing")
 
 local activeWindowOutline = nil
-local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.8}
+local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.9}
 local outlineThickness = 16
 
 local tileGap = 0
@@ -166,11 +166,18 @@ local function drawActiveWindowOutline(win)
 
   if win and win:isVisible() and not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
     local frame = win:frame()
-    activeWindowOutline = drawing.rectangle(frame)
+    local adjustedFrame = {
+      x = frame.x - outlineThickness / 4,
+      y = frame.y - outlineThickness / 4,
+      w = frame.w + outlineThickness / 2,
+      h = frame.h + outlineThickness / 2
+    }
+    activeWindowOutline = drawing.rectangle(geometry.rect(adjustedFrame))
     activeWindowOutline:setStrokeColor(outlineColor)
     activeWindowOutline:setFill(false)
     activeWindowOutline:setStrokeWidth(outlineThickness)
-    activeWindowOutline:setLevel(drawing.windowLevels.floating)
+    activeWindowOutline:setRoundedRectRadii(12, 12)
+    activeWindowOutline:setLevel(drawing.windowLevels.popUpMenu)
     activeWindowOutline:show()
   end
 end
