@@ -13,7 +13,7 @@ local numberOfFingersToOpen = 5
 local menuMaestro
 local recentItems = {}
 
-local function shortcutToString(modifiers, shortcut)
+function shortcutToString(modifiers, shortcut)
     local str = ""
     local keyMap = {
         cmd = "⌘", ctrl = "⌃", alt = "⌥", shift = "⇧", ["\xEF\x9C\x84"] = "F1", ["\xEF\x9C\x85"] = "F2", ["\xEF\x9C\x86"] = "F3", ["\xEF\x9C\x87"] = "F4", ["\xEF\x9C\x88"] = "F5", ["\xEF\x9C\x89"] = "F6", ["\xEF\x9C\x8A"] = "F7", ["\xEF\x9C\x8B"] = "F8", ["\xEF\x9C\x8C"] = "F9", ["\xEF\x9C\x8D"] = "F10", ["\xEF\x9C\x8E"] = "F11", ["\xEF\x9C\x8F"] = "F12", ["\xEF\x9C\x80"] = "▶", ["\xEF\x9C\x81"] = "◀", ["\xEF\x9C\x82"] = "▲", ["\xEF\x9C\x83"] = "▼", ["\x1B"] = "⎋", ["\x0D"] = "↩", ["\x08"] = "⌫", ["\x7F"] = "⌦", ["\x09"] = "⇥", ["\xE2\x84\xAA"] = "⇪", ["\xE2\x87\x9E"] = "⇞", ["\xE2\x87\x9F"] = "⇟", ["\xE2\x86\x96"] = "↖", ["\xE2\x86\x98"] = "↘"
@@ -30,7 +30,7 @@ local function shortcutToString(modifiers, shortcut)
     return str
 end
 
-local function shortcutToImage(modifiers, shortcut)
+function shortcutToImage(modifiers, shortcut)
     local text = shortcutToString(modifiers, shortcut or "")
     local textCanvas = canvas.new { x = 0, y = 0, w = 32, h = 32 }
 
@@ -53,7 +53,7 @@ local function shortcutToImage(modifiers, shortcut)
     return image
 end
 
-local function collectMenuItems(menuPath, path, list, choices)
+function collectMenuItems(menuPath, path, list, choices)
     for _, item in pairs(list) do
         local title = item.AXTitle or ''
         local currentMenuPath
@@ -100,6 +100,17 @@ function openMenuMaestro()
     app:getMenuItems(function(menu)
         local regularChoices = {}
         collectMenuItems(nil, {}, menu, regularChoices)
+
+        local updatedRecentItems = {}
+        for _, recentItem in ipairs(recentItems[appName]) do
+            for _, choice in ipairs(regularChoices) do
+                if table.concat(recentItem.path, " > ") == table.concat(choice.path, " > ") then
+                    table.insert(updatedRecentItems, choice)
+                    break
+                end
+            end
+        end
+        recentItems[appName] = updatedRecentItems
 
         local recentPaths = {}
         for _, recentItem in ipairs(recentItems[appName]) do
