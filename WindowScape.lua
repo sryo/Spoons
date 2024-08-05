@@ -112,28 +112,49 @@ local function tileWindows()
 
   local initialCollapsedWidth = collapsedWindows[1] and collapsedWindows[1]:frame().w or tileWidth
 
+  -- First pass: Resize all windows
   for _, win in ipairs(visibleWindows) do
     local winHeight = win:size().h
     local isCollapsed = winHeight <= collapsedWindowHeight
-    local newFrame = geometry.rect(nonCollapsedWinX, nonCollapsedWinY, tileWidth, tileHeight)
+    local newSize
 
     if isCollapsed then
       if orientation == "horizontal" then
-        newFrame = geometry.rect(collapsedWinX, collapsedWinY, initialCollapsedWidth, collapsedWindowHeight)
-        collapsedWinX = collapsedWinX + initialCollapsedWidth + tileGap
+        newSize = geometry.size(initialCollapsedWidth, collapsedWindowHeight)
       else
-        newFrame = geometry.rect(collapsedWinX, collapsedWinY, tileWidth, collapsedWindowHeight)
-        collapsedWinY = collapsedWinY - collapsedWindowHeight - tileGap
+        newSize = geometry.size(tileWidth, collapsedWindowHeight)
       end
     else
+      newSize = geometry.size(tileWidth, tileHeight)
+    end
+
+    win:setSize(newSize)
+  end
+
+  -- Second pass: Move windows to their final positions
+  for _, win in ipairs(visibleWindows) do
+    local winSize = win:size()
+    local isCollapsed = winSize.h <= collapsedWindowHeight
+    local newTopLeft
+
+    if isCollapsed then
       if orientation == "horizontal" then
-        nonCollapsedWinX = nonCollapsedWinX + tileWidth + tileGap
+        newTopLeft = geometry.point(collapsedWinX, collapsedWinY)
+        collapsedWinX = collapsedWinX + winSize.w + tileGap
       else
-        nonCollapsedWinY = nonCollapsedWinY + tileHeight + tileGap
+        newTopLeft = geometry.point(collapsedWinX, collapsedWinY)
+        collapsedWinY = collapsedWinY - winSize.h - tileGap
+      end
+    else
+      newTopLeft = geometry.point(nonCollapsedWinX, nonCollapsedWinY)
+      if orientation == "horizontal" then
+        nonCollapsedWinX = nonCollapsedWinX + winSize.w + tileGap
+      else
+        nonCollapsedWinY = nonCollapsedWinY + winSize.h + tileGap
       end
     end
 
-    win:setFrame(newFrame)
+    win:setTopLeft(newTopLeft)
   end
 end
 
@@ -188,7 +209,8 @@ window.filter.default:subscribe({
   window.filter.windowUnhidden,
   window.filter.windowMinimized,
   window.filter.windowUnminimized,
-  window.filter.windowMoved
+  window.filter.windowMoved,
+  window.filter.windowsChanged
 }, function(win)
   tileWindows()
   local focusedWindow = window.focusedWindow()
