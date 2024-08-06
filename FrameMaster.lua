@@ -3,7 +3,7 @@
 
 local killMenu          = true  -- prevent the menu bar from appearing
 local killDock          = true  -- prevent the dock from appearing
-local onlyFullscreen    = true  -- but only on fullscreen spaces
+local onlyFullscreen    = false  -- but only on fullscreen spaces
 local buffer            = 4     -- increase if you still manage to activate them
 local showTooltips      = true  -- set this to false to improve performance if necessary
 local tooltipMaxLength  = 50    -- maximum length for tooltip messages
@@ -62,7 +62,7 @@ local function getDockPosition()
 end
 local dockPos = getDockPosition()
 
-local hotCorners = {
+hotCorners = {
     topLeft = {
         action = function()
             local app = hs.application.frontmostApplication()
@@ -190,22 +190,26 @@ local hotCorners = {
 local lastCorner = nil
 local lastTooltipTime = 0
 local lastTooltipCorner = nil
-local screenSize = hs.screen.mainScreen():currentMode()
 
-function updateScreenSize()
-    screenSize = hs.screen.mainScreen():currentMode()
+local function getCurrentScreenSize()
+    local currentScreen = hs.mouse.getCurrentScreen()
+    return currentScreen and currentScreen:currentMode() or nil
 end
 
-updateScreenSize()
+local screenSize = getCurrentScreenSize()
 
-local screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
+function updateScreenSize()
+    screenSize = getCurrentScreenSize()
+end
+
+screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
 screenWatcher:start()
 
 function checkForHotCorner(x, y)
     updateScreenSize()
     return ((x <= 1 and y <= buffer) and "topLeft") or 
-           ((x >= screenSize.w - 1 and y <= buffer) and "topRight") or 
-           ((x >= screenSize.w - 1 and y >= screenSize.h - buffer) and "bottomRight") or 
+           ((x >= screenSize.w - 1 and y <= buffer) and "topRight") or
+           ((x >= screenSize.w - 1 and y >= screenSize.h - buffer) and "bottomRight") or
            ((x <= 1 and y >= screenSize.h - buffer) and "bottomLeft")
 end
 
@@ -230,6 +234,8 @@ function truncateString(input, maxLength)
 end
 
 tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 1, h = 1})
+tooltipAlert:level(hs.canvas.windowLevels._MaximumWindowLevelKey)
+
 tooltipAlert[1] = {
     type = "rectangle",
     action = "fill",
@@ -269,6 +275,9 @@ function showMessage(corner, message)
     tooltipAlert[2].text = styledMessage
     tooltipAlert[2].textColor.alpha = 1
     tooltipAlert:alpha(1)
+    tooltipAlert:behavior("canJoinAllSpaces")
+    -- Note: for this to show up above full screen windows we need to hide the hammerspoon dock icon in hammerspoon preferences.
+
     tooltipAlert:show()
 
     if hideTooltipTimer then
@@ -303,7 +312,7 @@ if showTooltips then
     cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged}, function(event)
         local point = hs.mouse.absolutePosition()
         local currentCorner = checkForHotCorner(point.x, point.y)
-    
+
         -- If the mouse is in a corner, update the tooltip message and the last corner
         if currentCorner and not isDesktop() then
             lastCorner = currentCorner
@@ -313,7 +322,7 @@ if showTooltips then
             hideTooltip()
             lastCorner = nil
         end
-    
+
         -- If Shift key status changed while the mouse is in a corner, update the tooltip message
         if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
             showMessage(lastCorner, hotCorners[lastCorner].message())
@@ -322,7 +331,7 @@ if showTooltips then
         local win = hs.window.focusedWindow()
         local screenFrame = win and win:screen():fullFrame()
     
-        if onlyFullscreen and win and win:isFullScreen() then
+        if (not onlyFullscreen) or (onlyFullscreen and win and win:isFullScreen()) then
             if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                 return true
             elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
@@ -335,7 +344,7 @@ if showTooltips then
                 end
             end
         end
-
+    
         return false
     end):start()
 end
