@@ -155,8 +155,12 @@ local function tileWindows()
   end
 end
 
+local function isDesktop(win)
+  return win:application():name() == "Finder" and win:title() == "Desktop"
+end
+
 local function drawActiveWindowOutline(win)
-  if win and win:isVisible() and not win:isFullScreen() then
+  if win and win:isVisible() and not win:isFullScreen() and not isDesktop(win) then
     local frame = win:frame()
     local adjustedFrame = {
       x = frame.x - outlineThickness / 4,
@@ -186,7 +190,7 @@ local function drawActiveWindowOutline(win)
 end
 
 local function handleWindowFocused(win)
-  if win and win:isVisible() and not win:isFullScreen() then
+  if win and win:isVisible() and not win:isFullScreen() and not isDesktop(win) then
     if isAppWhitelisted(win:application(), win) then
       tileWindows()
     end
