@@ -41,16 +41,12 @@ local browsers = {
 - Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items. You can also open the menu chooser by using a 5-finger touch gesture on your trackpad. Just tap with four fingers on the trackpad to open the MenuMaestro interface.
 - Select a menu item with your mouse or keyboard to execute it, or use the search functionality to quickly find what you need.
 
-### 🪄🖱️ TrackpadWizard
-[`TrackpadWizard.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadWizard.lua) lets you set up areas on your Magic Trackpad to perform specific actions.
-
-#### Features
-- Create customized trackpad zones for specific actions.
-- Includes gesture crafting mode to help you create new zones.
+### 🪄🖱️ TrackpadKeys
+[`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad
 
 #### How to Use
-- Use the <kbd>^ CTRL</kbd><kbd>⇧ SHIFT</kbd><kbd>G</kbd> hotkey to enter Gesture Craft mode and create new gesture zones. In this mode, make a diagonal gesture across your desired zone, and the zone coordinates will be printed for you to use.
-- Print the [ForceKeys template](https://github.com/sryo/Spoons/blob/main/ForceKeys%20Template.pdf) to overlay on your Trackpad.
+- When you touch the top edge of your trackpad, a virtual keyboard row becomes active.
+- Touch the bottom corner while swiping for uppercase letters.
 
 ### 🪄🌇 WindowScape
 [`WindowScape.lua`](https://github.com/sryo/Spoons/blob/main/WindowScape.lua) is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
