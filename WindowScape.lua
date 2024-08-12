@@ -5,17 +5,21 @@ local window = require("hs.window")
 local screen = require("hs.screen")
 local geometry = require("hs.geometry")
 local drawing = require("hs.drawing")
+local spaces = require("hs.spaces")
 
 local activeWindowOutline = nil
-local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.9}
+local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.8}
 local outlineThickness = 16
-
 local tileGap = 0
 local collapsedWindowHeight = 12
+local mods = { "ctrl", "cmd" }
+
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
 local whitelistedApps = {}
 local whitelistFile = "whitelist.txt"
+
+local windowOrderBySpace = {}
 
 local function saveWhitelistToFile()
   local file = io.open(whitelistFile, "w")
@@ -59,16 +63,44 @@ local function getScreenOrientation()
   end
 end
 
+local function getCurrentSpace()
+  return spaces.focusedSpace()
+end
+
 local function getVisibleWindows()
   local visibleWindows = {}
-  for _, win in ipairs(window.orderedWindows()) do
-    if win:isVisible() and not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
+  local currentSpace = getCurrentSpace()
+  for _, win in ipairs(window.visibleWindows()) do
+    if spaces.windowSpaces(win) and hs.fnutils.contains(spaces.windowSpaces(win), currentSpace) and
+       not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
       table.insert(visibleWindows, win)
     end
   end
-  -- Sort visible windows based on their window ID
-  table.sort(visibleWindows, function(a, b) return a:id() < b:id() end)
   return visibleWindows
+end
+
+local function updateWindowOrder()
+  local currentSpace = getCurrentSpace()
+  local currentWindows = getVisibleWindows()
+  local newOrder = {}
+  
+  -- If we have an existing order for this space, use it as a base
+  if windowOrderBySpace[currentSpace] then
+    for _, win in ipairs(windowOrderBySpace[currentSpace]) do
+      if hs.fnutils.contains(currentWindows, win) then
+        table.insert(newOrder, win)
+      end
+    end
+  end
+  
+  -- Add any new windows to the end
+  for _, win in ipairs(currentWindows) do
+    if not hs.fnutils.contains(newOrder, win) then
+      table.insert(newOrder, win)
+    end
+  end
+  
+  windowOrderBySpace[currentSpace] = newOrder
 end
 
 local function getCollapsedWindows(visibleWindows)
@@ -82,8 +114,10 @@ local function getCollapsedWindows(visibleWindows)
 end
 
 local function tileWindows()
+  updateWindowOrder()
+  local currentSpace = getCurrentSpace()
+  local visibleWindows = windowOrderBySpace[currentSpace] or {}
   local orientation = getScreenOrientation()
-  local visibleWindows = getVisibleWindows()
   visibleWindows = hs.fnutils.filter(visibleWindows, function(win)
     return not win:isFullScreen()
   end)
@@ -163,10 +197,10 @@ local function drawActiveWindowOutline(win)
   if win and win:isVisible() and not win:isFullScreen() and not isSystem(win) then
     local frame = win:frame()
     local adjustedFrame = {
-      x = frame.x - outlineThickness / 4,
-      y = frame.y - outlineThickness / 4,
-      w = frame.w + outlineThickness / 2,
-      h = frame.h + outlineThickness / 2
+      x = frame.x,
+      y = frame.y,
+      w = frame.w,
+      h = frame.h
     }
 
     if not activeWindowOutline then
@@ -174,7 +208,7 @@ local function drawActiveWindowOutline(win)
       activeWindowOutline:setStrokeColor(outlineColor)
       activeWindowOutline:setFill(false)
       activeWindowOutline:setStrokeWidth(outlineThickness)
-      activeWindowOutline:setRoundedRectRadii(12, 12)
+      activeWindowOutline:setRoundedRectRadii(outlineThickness/2, outlineThickness/2)
       activeWindowOutline:setLevel(drawing.windowLevels.popUpMenu)
     else
       activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
@@ -204,6 +238,7 @@ local function handleWindowFocused(win)
 end
 
 local function handleWindowDestroyed(win)
+  updateWindowOrder()
   tileWindows()
   -- After a window is destroyed, get the new focused window and update the outline
   local newFocusedWindow = window.focusedWindow()
@@ -217,6 +252,15 @@ local function handleWindowDestroyed(win)
   end
 end
 
+local function handleWindowEvent()
+  updateWindowOrder()
+  tileWindows()
+  local focusedWindow = window.focusedWindow()
+  if focusedWindow then
+    drawActiveWindowOutline(focusedWindow)
+  end
+end
+
 window.filter.default:subscribe({
   window.filter.windowCreated,
   window.filter.windowHidden,
@@ -225,22 +269,14 @@ window.filter.default:subscribe({
   window.filter.windowUnminimized,
   window.filter.windowMoved,
   window.filter.windowsChanged
-}, function(win)
-  tileWindows()
-  local focusedWindow = window.focusedWindow()
-  if focusedWindow then
-    drawActiveWindowOutline(focusedWindow)
-  end
-end)
+}, handleWindowEvent)
 
 window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
 window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
 
-tileWindows()
-local initialFocusedWindow = window.focusedWindow()
-if initialFocusedWindow then
-  drawActiveWindowOutline(initialFocusedWindow)
-end
+spaces.watcher.new(function(space)
+  handleWindowEvent()
+end):start()
 
 local function toggleFocusedWindowInWhitelist()
   local focusedWindow = window.focusedWindow()
@@ -260,14 +296,60 @@ local function toggleFocusedWindowInWhitelist()
   end
 
   saveWhitelistToFile()
+  updateWindowOrder()
   tileWindows()
 end
 
+local function moveWindowInOrder(direction)
+  local currentSpace = getCurrentSpace()
+  local focusedWindow = window.focusedWindow()
+  local currentOrder = windowOrderBySpace[currentSpace] or {}
+  local focusedIndex
+
+  for i, win in ipairs(currentOrder) do
+    if win:id() == focusedWindow:id() then
+      focusedIndex = i
+      break
+    end
+  end
+
+  if not focusedIndex then
+    updateWindowOrder()
+    return
+  end
+
+  local newIndex
+  if direction == "forward" then
+    newIndex = focusedIndex < #currentOrder and focusedIndex + 1 or 1
+  else -- backward
+    newIndex = focusedIndex > 1 and focusedIndex - 1 or #currentOrder
+  end
+
+  table.remove(currentOrder, focusedIndex)
+  table.insert(currentOrder, newIndex, focusedWindow)
+
+  windowOrderBySpace[currentSpace] = currentOrder
+  tileWindows()
+  focusedWindow:focus()
+end
 
 local function bindHotkeys()
-  hs.hotkey.bind({"cmd"}, "<", function()
+  hs.hotkey.bind(mods, "<", function()
     toggleFocusedWindowInWhitelist()
   end)
+  hs.hotkey.bind(mods, "Left", function()
+    moveWindowInOrder("backward")
+  end)
+  hs.hotkey.bind(mods, "Right", function()
+    moveWindowInOrder("forward")
+  end)
+end
+
+updateWindowOrder()
+tileWindows()
+local initialFocusedWindow = window.focusedWindow()
+if initialFocusedWindow then
+  drawActiveWindowOutline(initialFocusedWindow)
 end
 
 bindHotkeys()
