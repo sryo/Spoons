@@ -1,17 +1,71 @@
 -- MenuMaestro: https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua
--- Use MenuMaestro to easily browse and select menu items through a friendly interface.
+-- Use MenuMaestro to effortlessly browse and select menu items through an adaptive, intent-aware interface.
+-- It learns your patterns, prioritizes your frequent actions, and evolves with your workflow.
 -- Inspired by MenuChooser by Jacob Williams (https://github.com/brokensandals/motley-hammerspoons)
+-- Enhanced with machine learning concepts to create a truly responsive "intenterface" experience.
 
 local chooser = require("hs.chooser")
 local styledtext = require("hs.styledtext")
 local canvas = require("hs.canvas")
+local settings = require("hs.settings")
 
-local sortAlphabetically    = true  -- Set to false for hierarchical sorting.
-local maxRecentItems        = 5     -- Set to 0 to disable recently run items.
+local sortAlphabetically    = true -- Set to true to sort items alphabetically
+local maxRecentItems        = 9     -- Set to 0 to disable recently run items
 local numberOfFingersToOpen = 5
+local daysToRemember        = 30
 
 local menuMaestro
 local recentItems = {}
+local usageData = {}
+local settingsKey = "menuMaestroUsageData"
+gestureTap = nil
+
+local function loadUsageData()
+    usageData = settings.get(settingsKey) or {}
+end
+
+local function saveUsageData()
+    settings.set(settingsKey, usageData)
+end
+
+local function updateUsageData(appName, menuPath)
+    local currentTime = os.time()
+    if not usageData[appName] then
+        usageData[appName] = {}
+    end
+    if not usageData[appName][menuPath] then
+        usageData[appName][menuPath] = {count = 0, lastUsed = 0}
+    end
+    usageData[appName][menuPath].count = usageData[appName][menuPath].count + 1
+    usageData[appName][menuPath].lastUsed = currentTime
+    saveUsageData()
+end
+
+local function cleanUpUsageData()
+    local currentTime = os.time()
+    local cutoffTime = currentTime - (daysToRemember * 24 * 60 * 60)
+    for appName, appData in pairs(usageData) do
+        for menuPath, itemData in pairs(appData) do
+            if itemData.lastUsed < cutoffTime then
+                appData[menuPath] = nil
+            end
+        end
+        if next(appData) == nil then
+            usageData[appName] = nil
+        end
+    end
+    saveUsageData()
+end
+
+local function calculatePriorityScore(appName, menuPath)
+    if not usageData[appName] or not usageData[appName][menuPath] then
+        return 0
+    end
+    local itemData = usageData[appName][menuPath]
+    local recency = os.time() - itemData.lastUsed
+    local frequency = itemData.count
+    return frequency * 1000000 / (recency + 1)
+end
 
 function shortcutToString(modifiers, shortcut)
     local str = ""
@@ -98,74 +152,108 @@ function openMenuMaestro()
     end
 
     app:getMenuItems(function(menu)
-        local regularChoices = {}
-        collectMenuItems(nil, {}, menu, regularChoices)
+        local choices = {}
+        collectMenuItems(nil, {}, menu, choices)
 
-        local updatedRecentItems = {}
+        local choiceLookup = {}
+        for _, choice in ipairs(choices) do
+            local menuPath = table.concat(choice.path, " > ")
+            choiceLookup[menuPath] = choice
+        end
+
+        local priorityChoices = {}
+        local seenPaths = {}
+
         for _, recentItem in ipairs(recentItems[appName]) do
-            for _, choice in ipairs(regularChoices) do
-                if table.concat(recentItem.path, " > ") == table.concat(choice.path, " > ") then
-                    table.insert(updatedRecentItems, choice)
-                    break
+            local menuPath = table.concat(recentItem.path, " > ")
+            if choiceLookup[menuPath] and not seenPaths[menuPath] then
+                local mergedChoice = hs.fnutils.copy(choiceLookup[menuPath])
+                mergedChoice.text = styledtext.new("⭯ " .. mergedChoice.plainText)
+                mergedChoice.plainText = "⭯ " .. mergedChoice.plainText
+                table.insert(priorityChoices, mergedChoice)
+                seenPaths[menuPath] = true
+            end
+        end
+
+        if usageData[appName] then
+            for menuPath, itemData in pairs(usageData[appName]) do
+                if choiceLookup[menuPath] and not seenPaths[menuPath] then
+                    local mergedChoice = hs.fnutils.copy(choiceLookup[menuPath])
+                    local score = calculatePriorityScore(appName, menuPath)
+                    mergedChoice.score = score
+                    table.insert(priorityChoices, mergedChoice)
+                    seenPaths[menuPath] = true
                 end
             end
         end
-        recentItems[appName] = updatedRecentItems
 
-        local recentPaths = {}
-        for _, recentItem in ipairs(recentItems[appName]) do
-            recentPaths[recentItem.plainText] = true
-        end
-
-        regularChoices = hs.fnutils.filter(regularChoices, function(choice)
-            return not recentPaths[choice.plainText]
+        table.sort(priorityChoices, function(a, b)
+            return (a.score or math.huge) > (b.score or math.huge)
         end)
 
+        if #priorityChoices > maxRecentItems then
+            for i = maxRecentItems + 1, #priorityChoices do
+                priorityChoices[i] = nil
+            end
+        end
+
+        local remainingChoices = {}
+        for _, choice in ipairs(choices) do
+            local menuPath = table.concat(choice.path, " > ")
+            if not seenPaths[menuPath] then
+                table.insert(remainingChoices, choice)
+            end
+        end
+
         if sortAlphabetically then
-            table.sort(regularChoices, function(a, b) return a.plainText < b.plainText end)
+            table.sort(remainingChoices, function(a, b)
+                return a.plainText < b.plainText
+            end)
         end
 
-        local recentChoices = {}
-        for i, recentItem in ipairs(recentItems[appName]) do
-            local choice = {
-                text = styledtext.new("⭯ " .. recentItem.plainText),
-                plainText = "⭯ " .. recentItem.plainText,
-                subText = recentItem.subText,
-                path = recentItem.path,
-                image = recentItem.image,
-                recent = true
-            }
-            table.insert(recentChoices, choice)
+        local finalChoices = {}
+        for _, choice in ipairs(priorityChoices) do
+            table.insert(finalChoices, choice)
         end
-
-        local choices = recentChoices
-        for _, choice in ipairs(regularChoices) do
-            table.insert(choices, choice)
+        for _, choice in ipairs(remainingChoices) do
+            table.insert(finalChoices, choice)
         end
 
         local completionFn = function(result)
             if result then
-                local index
-                for i, recentItem in ipairs(recentItems[appName]) do
-                    if result.plainText == "⭯ " .. recentItem.plainText then
-                        index = i
-                        break
+                local menuPath = table.concat(result.path, " > ")
+                local success = app:selectMenuItem(result.path)
+                if success then
+                    updateUsageData(appName, menuPath)
+                    -- Update recent items
+                    for i, item in ipairs(recentItems[appName]) do
+                        if table.concat(item.path, " > ") == menuPath then
+                            table.remove(recentItems[appName], i)
+                            break
+                        end
                     end
-                end
-                if index then
-                    table.insert(recentItems[appName], 1, table.remove(recentItems[appName], index))
-                else
                     table.insert(recentItems[appName], 1, result)
                     if #recentItems[appName] > maxRecentItems then
                         table.remove(recentItems[appName])
                     end
+                else
+                    if usageData[appName] then
+                        usageData[appName][menuPath] = nil
+                    end
+                    for i, item in ipairs(recentItems[appName]) do
+                        if table.concat(item.path, " > ") == menuPath then
+                            table.remove(recentItems[appName], i)
+                            break
+                        end
+                    end
+                    saveUsageData()
+                    hs.alert.show("Menu item not found: " .. menuPath)
                 end
-                app:selectMenuItem(result.path)
             end
         end
 
         menuMaestro = chooser.new(completionFn)
-        menuMaestro:choices(choices)
+        menuMaestro:choices(finalChoices)
         menuMaestro:searchSubText(true)
         menuMaestro:placeholderText("Find a menu item in " .. appName .. "...")
         menuMaestro:show()
@@ -194,7 +282,13 @@ function touchToOpenMenuMaestro(event)
     end
 end
 
+loadUsageData()
 
+hs.timer.doEvery(24 * 60 * 60, cleanUpUsageData)
+
+if gestureTap then
+    gestureTap:stop()
+end
 gestureTap = hs.eventtap.new({ hs.eventtap.event.types.gesture }, touchToOpenMenuMaestro)
 gestureTap:start()
 
