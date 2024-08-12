@@ -9,7 +9,7 @@ local styledtext = require("hs.styledtext")
 local canvas = require("hs.canvas")
 local settings = require("hs.settings")
 
-local sortAlphabetically    = true -- Set to true to sort items alphabetically
+local sortAlphabetically    = true  -- Set to false for hierarchical sorting
 local maxRecentItems        = 9     -- Set to 0 to disable recently run items
 local numberOfFingersToOpen = 5
 local daysToRemember        = 30
