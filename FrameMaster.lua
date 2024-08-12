@@ -329,22 +329,22 @@ if showTooltips then
         end
 
         local win = hs.window.focusedWindow()
-        local screenFrame = win and win:screen():fullFrame()
-    
-        if (not onlyFullscreen) or (onlyFullscreen and win and win:isFullScreen()) then
-            if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
-                return true
-            elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
-                if dockPos == "bottom" and (screenFrame.h - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
+        local screenFrame = win and win:screen() and win:screen():fullFrame()
+        if screenFrame then
+            if (not onlyFullscreen) or (onlyFullscreen and win and win:isFullScreen()) then
+                if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
                     return true
-                elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
-                    return true
-                elseif dockPos == "right" and (screenFrame.w - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
-                    return true
+                elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
+                    if dockPos == "bottom" and (screenFrame.h - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
+                        return true
+                    elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
+                        return true
+                    elseif dockPos == "right" and (screenFrame.w - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
+                        return true
+                    end
                 end
             end
         end
-    
         return false
     end):start()
 end
