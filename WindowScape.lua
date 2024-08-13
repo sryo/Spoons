@@ -13,6 +13,7 @@ local outlineThickness = 16
 local tileGap = 0
 local collapsedWindowHeight = 12
 local mods = { "ctrl", "cmd" }
+local spaceMods = { "ctrl", "cmd", "option" }
 
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
@@ -84,7 +85,6 @@ local function updateWindowOrder()
   local currentWindows = getVisibleWindows()
   local newOrder = {}
   
-  -- If we have an existing order for this space, use it as a base
   if windowOrderBySpace[currentSpace] then
     for _, win in ipairs(windowOrderBySpace[currentSpace]) do
       if hs.fnutils.contains(currentWindows, win) then
@@ -93,7 +93,6 @@ local function updateWindowOrder()
     end
   end
   
-  -- Add any new windows to the end
   for _, win in ipairs(currentWindows) do
     if not hs.fnutils.contains(newOrder, win) then
       table.insert(newOrder, win)
@@ -216,7 +215,6 @@ local function drawActiveWindowOutline(win)
 
     activeWindowOutline:show()
   else
-    -- If the window is not valid for outlining, hide the outline
     if activeWindowOutline then
       activeWindowOutline:hide()
     end
@@ -230,7 +228,6 @@ local function handleWindowFocused(win)
     end
     drawActiveWindowOutline(win)
   else
-    -- If the focused window is not valid for outlining, hide the outline
     if activeWindowOutline then
       activeWindowOutline:hide()
     end
@@ -240,12 +237,10 @@ end
 local function handleWindowDestroyed(win)
   updateWindowOrder()
   tileWindows()
-  -- After a window is destroyed, get the new focused window and update the outline
   local newFocusedWindow = window.focusedWindow()
   if newFocusedWindow then
     handleWindowFocused(newFocusedWindow)
   else
-    -- If no window is focused, hide the outline
     if activeWindowOutline then
       activeWindowOutline:hide()
     end
@@ -254,11 +249,13 @@ end
 
 local function handleWindowEvent()
   updateWindowOrder()
-  tileWindows()
-  local focusedWindow = window.focusedWindow()
-  if focusedWindow then
-    drawActiveWindowOutline(focusedWindow)
-  end
+  hs.timer.doAfter(0.1, function()
+    tileWindows()
+    local focusedWindow = window.focusedWindow()
+    if focusedWindow then
+      drawActiveWindowOutline(focusedWindow)
+    end
+  end)
 end
 
 window.filter.default:subscribe({
@@ -333,6 +330,50 @@ local function moveWindowInOrder(direction)
   focusedWindow:focus()
 end
 
+local function moveWindowToAdjacentSpace(direction)
+  local focusedWindow = window.focusedWindow()
+  if not focusedWindow then return end
+
+  local currentSpace = getCurrentSpace()
+  local currentScreen = focusedWindow:screen()
+  local allSpaces = spaces.allSpaces()[currentScreen:getUUID()]
+  local currentSpaceIndex = hs.fnutils.indexOf(allSpaces, currentSpace)
+
+  if not currentSpaceIndex then return end
+
+  local targetSpaceIndex
+  if direction == "next" then
+    targetSpaceIndex = currentSpaceIndex % #allSpaces + 1
+  else -- "previous"
+    targetSpaceIndex = (currentSpaceIndex - 2 + #allSpaces) % #allSpaces + 1
+  end
+
+  local targetSpace = allSpaces[targetSpaceIndex]
+
+  local currentIndex = hs.fnutils.indexOf(windowOrderBySpace[currentSpace], focusedWindow)
+
+  if currentIndex then
+    table.remove(windowOrderBySpace[currentSpace], currentIndex)
+  end
+
+  if not windowOrderBySpace[targetSpace] then
+    windowOrderBySpace[targetSpace] = {}
+  end
+
+  spaces.moveWindowToSpace(focusedWindow, targetSpace)
+
+  local targetIndex = math.min(currentIndex or (#windowOrderBySpace[targetSpace] + 1), #windowOrderBySpace[targetSpace] + 1)
+  table.insert(windowOrderBySpace[targetSpace], targetIndex, focusedWindow)
+
+  hs.timer.doAfter(0.1, function()
+    focusedWindow:focus()
+  end)
+
+  hs.timer.doAfter(0.3, function()
+    tileWindows()
+  end)
+end
+
 local function bindHotkeys()
   hs.hotkey.bind(mods, "<", function()
     toggleFocusedWindowInWhitelist()
@@ -342,6 +383,12 @@ local function bindHotkeys()
   end)
   hs.hotkey.bind(mods, "Right", function()
     moveWindowInOrder("forward")
+  end)
+  hs.hotkey.bind(spaceMods, "Left", function()
+    moveWindowToAdjacentSpace("previous")
+  end)
+  hs.hotkey.bind(spaceMods, "Right", function()
+    moveWindowToAdjacentSpace("next")
   end)
 end
 
