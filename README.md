@@ -10,7 +10,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 #### How to Use
 - Start the script and try moving your mouse to the corners of the screen to see the actions and tooltips.
-- Use the Shift key to change the action performed in a corner.
+- Use the <kbd>⇧ SHIFT</kbd> key to change the action performed in a corner.
 
 ### 🌐🔀 HyperlinkHijacker
 [`HyperlinkHijacker.lua`](https://github.com/sryo/Spoons/blob/main/HyperlinkHijacker.lua) - It's your link, and you decide where it goes. 
@@ -55,8 +55,10 @@ local browsers = {
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
 
 #### How to Use
-Use the <kbd>⌘ CMD</kbd><kbd><</kbd> hotkey to add/remove the application of the currently focused window to/from the whitelist.
+- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> to add/remove the application of the currently focused window to/from the whitelist.
 After whitelisting an application, its windows will be automatically tiled by the script.
+- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window backward or forward in the tiling order.
+- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window to the previous or next space.
 
 ### FAQ
 
