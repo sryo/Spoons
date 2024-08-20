@@ -28,15 +28,16 @@ local config = {
 
 local STOP, GO = true, false
 local DOWN, UP = true, false
-
 local modifierDown = false
 local normalKey = ""
 local produceModifier = true
-
 local keyBar
 
 local function setupKeyBar()
     local screenFrame = hs.screen.primaryScreen():frame()
+    if keyBar then
+        keyBar:delete()
+    end
     keyBar = hs.canvas.new({x = screenFrame.x, y = screenFrame.h - config.barHeight, w = screenFrame.w, h = config.barHeight})
 
     keyBar:appendElements({
@@ -95,6 +96,14 @@ end
 
 local function handleKeyDown(event)
     local currKey = hs.keycodes.map[event:getKeyCode()]
+    local flags = event:getFlags()
+
+    -- Check if any modifier keys (except fn) are pressed
+    local otherModifiersPressed = flags.cmd or flags.alt or flags.shift or flags.ctrl
+
+    if otherModifiersPressed then
+        return GO
+    end
 
     if currKey == normalKey then
         hs.eventtap.event.newKeyEvent({}, currKey, UP):post()
@@ -163,6 +172,11 @@ function module.start()
         { hs.eventtap.event.types.keyUp },
         handleKeyUp
     ):start()
+
+    -- Add screen watcher to update bar on resolution changes
+    module._screenWatcher = hs.screen.watcher.new(function()
+        setupKeyBar()
+    end):start()
 end
 
 function module.stop()
@@ -173,6 +187,10 @@ function module.stop()
     if module._upWatcher then
         module._upWatcher:stop()
         module._upWatcher = nil
+    end
+    if module._screenWatcher then
+        module._screenWatcher:stop()
+        module._screenWatcher = nil
     end
     if keyBar then
         keyBar:delete()
