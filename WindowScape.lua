@@ -6,6 +6,7 @@ local screen = require("hs.screen")
 local geometry = require("hs.geometry")
 local drawing = require("hs.drawing")
 local spaces = require("hs.spaces")
+local mouse = require("hs.mouse")
 
 local activeWindowOutline = nil
 local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.8}
@@ -297,6 +298,21 @@ local function toggleFocusedWindowInWhitelist()
   tileWindows()
 end
 
+local function moveMouseWithWindow(oldFrame, newFrame)
+  local mousePos = mouse.getAbsolutePosition()
+  -- Check if the mouse was inside the old window frame
+  if geometry.isPointInRect(mousePos, oldFrame) then
+    -- Calculate relative position of mouse within the old frame
+    local relX = (mousePos.x - oldFrame.x) / oldFrame.w
+    local relY = (mousePos.y - oldFrame.y) / oldFrame.h
+    -- Calculate new absolute position based on the new frame
+    local newX = newFrame.x + (relX * newFrame.w)
+    local newY = newFrame.y + (relY * newFrame.h)
+    -- Move the mouse to the new position
+    mouse.setAbsolutePosition({x = newX, y = newY})
+  end
+end
+
 local function moveWindowInOrder(direction)
   local currentSpace = getCurrentSpace()
   local focusedWindow = window.focusedWindow()
@@ -325,15 +341,19 @@ local function moveWindowInOrder(direction)
   table.remove(currentOrder, focusedIndex)
   table.insert(currentOrder, newIndex, focusedWindow)
 
+  local oldFrame = focusedWindow:frame()
   windowOrderBySpace[currentSpace] = currentOrder
   tileWindows()
   focusedWindow:focus()
+  local newFrame = focusedWindow:frame()
+  moveMouseWithWindow(oldFrame, newFrame)
 end
 
 local function moveWindowToAdjacentSpace(direction)
   local focusedWindow = window.focusedWindow()
   if not focusedWindow then return end
 
+  local oldFrame = focusedWindow:frame()
   local currentSpace = getCurrentSpace()
   local currentScreen = focusedWindow:screen()
   local allSpaces = spaces.allSpaces()[currentScreen:getUUID()]
@@ -367,6 +387,8 @@ local function moveWindowToAdjacentSpace(direction)
 
   hs.timer.doAfter(0.1, function()
     focusedWindow:focus()
+    local newFrame = focusedWindow:frame()
+    moveMouseWithWindow(oldFrame, newFrame)
   end)
 
   hs.timer.doAfter(0.3, function()
