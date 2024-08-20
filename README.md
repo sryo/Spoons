@@ -1,6 +1,7 @@
 These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
 
-### 🖥️🐙 FrameMaster
+![framemaster](https://github.com/user-attachments/assets/155fd5d5-3bb4-4ad3-9056-ef8c22bf7514)
+### FrameMaster
 [`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
 
 #### Features
@@ -12,7 +13,8 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Start the script and try moving your mouse to the corners of the screen to see the actions and tooltips.
 - Use the <kbd>⇧ SHIFT</kbd> key to change the action performed in a corner.
 
-### 🌐🔀 HyperlinkHijacker
+![hyperlinkhijacker](https://github.com/user-attachments/assets/330318f0-2bfd-4502-bc80-5d1ab06adabe)
+### HyperlinkHijacker
 [`HyperlinkHijacker.lua`](https://github.com/sryo/Spoons/blob/main/HyperlinkHijacker.lua) - It's your link, and you decide where it goes. 
 
 #### How to Use
