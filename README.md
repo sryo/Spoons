@@ -62,6 +62,25 @@ After whitelisting an application, its windows will be automatically tiled by th
 - Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window backward or forward in the tiling order.
 - Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window to the previous or next space.
 
+### ➡️⌨️ ZXNav
+[`ZXNav.lua`](https://github.com/sryo/Spoons/blob/main/ZXNav.lua) - Moves text navigation and editing actions closer to the spacebar for easier reach.
+
+#### How to Use
+
+Moving Around:
+
+- <kbd>SPACE</kbd><kbd>Z</kbd>: Jump to the start of the line (Home)
+- <kbd>SPACE</kbd><kbd>X</kbd>: Jump to the end of the line (End)
+- <kbd>SPACE</kbd><kbd>C</kbd>: Move left
+- <kbd>SPACE</kbd><kbd>V</kbd>: Move right
+- <kbd>SPACE</kbd><kbd>B</kbd>: Move up a line
+- <kbd>SPACE</kbd><kbd>N</kbd>: Move down a line
+
+Text Manipulation:
+
+- <kbd>SPACE</kbd><kbd>M</kbd>: Munch characters (Delete)
+- <kbd>SPACE</kbd><kbd>,</kbd>: Insert a new line (Return)
+
 ### FAQ
 
 **Q:** How do I use these scripts?
