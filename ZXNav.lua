@@ -9,21 +9,22 @@ local config = {
     keyMappings = {
         {"Z", "Home"},
         {"X", "End"},
-        {"C", "Left"},
-        {"V", "Right"},
-        {"B", "Up"},
-        {"N", "Down"},
+        {"C", "Up"},
+        {"V", "Down"},
+        {"B", "Left"},
+        {"N", "Right"},
         {"M", "Delete"},
         {",", "Return"}
     },
 
     modifierKey = "space",
-    barBackgroundColor = {alpha = 0.7, white = 0.1},
+    barBackgroundColor = {alpha = 0.8, white = 0.1},
     textColor = {white = 1},
     highlightColor = {red = 1, green = 1, blue = 0},
-    barHeight = 30,
+    barHeight = 40,
     cornerRadius = 0,
-    fontSize = 20
+    fontSize = 20,
+    showDelay = 0.2
 }
 
 local STOP, GO = true, false
@@ -32,6 +33,7 @@ local modifierDown = false
 local normalKey = ""
 local produceModifier = true
 local keyBar
+local showBarTimer
 
 local function setupKeyBar()
     local screenFrame = hs.screen.primaryScreen():frame()
@@ -71,7 +73,6 @@ local function highlightKey(key)
                 or config.textColor
         end
     end
-    keyBar:show()
 end
 
 local function resetKeyHighlights()
@@ -85,6 +86,9 @@ end
 local function hideKeyBar()
     resetKeyHighlights()
     keyBar:hide()
+    if showBarTimer then
+        showBarTimer:stop()
+    end
 end
 
 local function cancelTouchCursor()
@@ -99,7 +103,6 @@ local function handleKeyDown(event)
     local flags = event:getFlags()
     modifiersDown = flags
 
-    -- Check if any modifier keys (except fn) are pressed
     local otherModifiersPressed = flags.cmd or flags.alt or flags.shift or flags.ctrl
 
     if currKey == config.modifierKey and otherModifiersPressed then
@@ -114,7 +117,12 @@ local function handleKeyDown(event)
     if currKey == config.modifierKey and not otherModifiersPressed then
         modifierDown = true
         produceModifier = true
-        keyBar:show()
+        if showBarTimer then
+            showBarTimer:stop()
+        end
+        showBarTimer = hs.timer.doAfter(config.showDelay, function()
+            keyBar:show()
+        end)
         return STOP
     end
 
@@ -176,7 +184,6 @@ function module.start()
         handleKeyUp
     ):start()
 
-    -- Add screen watcher to update bar on resolution changes
     module._screenWatcher = hs.screen.watcher.new(function()
         setupKeyBar()
     end):start()
@@ -198,6 +205,10 @@ function module.stop()
     if keyBar then
         keyBar:delete()
         keyBar = nil
+    end
+    if showBarTimer then
+        showBarTimer:stop()
+        showBarTimer = nil
     end
 end
 
