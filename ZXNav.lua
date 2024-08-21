@@ -97,11 +97,12 @@ end
 local function handleKeyDown(event)
     local currKey = hs.keycodes.map[event:getKeyCode()]
     local flags = event:getFlags()
+    modifiersDown = flags
 
     -- Check if any modifier keys (except fn) are pressed
     local otherModifiersPressed = flags.cmd or flags.alt or flags.shift or flags.ctrl
 
-    if otherModifiersPressed then
+    if currKey == config.modifierKey and otherModifiersPressed then
         return GO
     end
 
@@ -110,7 +111,7 @@ local function handleKeyDown(event)
         return GO
     end
 
-    if currKey == config.modifierKey then
+    if currKey == config.modifierKey and not otherModifiersPressed then
         modifierDown = true
         produceModifier = true
         keyBar:show()
@@ -129,7 +130,7 @@ local function handleKeyDown(event)
                 produceModifier = false
                 normalKey = newKey
                 highlightKey(mapping[1])
-                hs.eventtap.event.newKeyEvent({}, newKey:lower(), DOWN):post()
+                hs.eventtap.event.newKeyEvent(modifiersDown, newKey:lower(), DOWN):post()
                 return STOP
             end
         end
@@ -140,6 +141,8 @@ end
 
 local function handleKeyUp(event)
     local currKey = hs.keycodes.map[event:getKeyCode()]
+    local flags = event:getFlags()
+    modifiersDown = flags
 
     if currKey == normalKey:lower() then
         normalKey = ""
@@ -150,9 +153,9 @@ local function handleKeyUp(event)
         modifierDown = false
         normalKey = ""
         hideKeyBar()
-        if produceModifier then
+        if produceModifier and not (flags.cmd or flags.alt or flags.shift or flags.ctrl) then
             normalKey = config.modifierKey
-            hs.eventtap.event.newKeyEvent({}, config.modifierKey, DOWN):post()
+            hs.eventtap.event.newKeyEvent(modifiersDown, config.modifierKey, DOWN):post()
             return STOP
         end
     end
