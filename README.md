@@ -10,45 +10,52 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Reopen last app: When an app is killed, a modal will be shown to allow you to easily reopen it.
 
 #### How to Use
-- Start the script and try moving your mouse to the corners of the screen to see the actions and tooltips.
-- Use the <kbd>⇧ SHIFT</kbd> key to change the action performed in a corner.
+
+| Action                        | Shortcut                                              |
+|-------------------------------|-------------------------------------------------------|
+| **Close or Quit App**          | Move mouse to the top-left corner                     |
+| **Kill Frontmost App**         | <kbd>⇧ SHIFT</kbd> + move mouse to the top-left corner |
+| **Reopen Last App Modal**      | Automatically shown when an app is killed             |
+| **Toggle Fullscreen**          | Move mouse to the top-right corner                    |
+| **Zoom Window**                | <kbd>⇧ SHIFT</kbd> + move mouse to the top-right corner |
+| **Minimize Window**            | Move mouse to the bottom-right corner                 |
+| **Hide App**                   | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-right corner |
+| **Open Finder**                | Move mouse to the bottom-left corner                  |
+| **Open System Preferences**    | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-left corner |
+
 
 ![hyperlinkhijacker](https://github.com/user-attachments/assets/330318f0-2bfd-4502-bc80-5d1ab06adabe)
 ### HyperlinkHijacker
 [`HyperlinkHijacker.lua`](https://github.com/sryo/Spoons/blob/main/HyperlinkHijacker.lua) - It's your link, and you decide where it goes. 
 
 #### How to Use
-- When you click a link, a list will pop up with your defined browsers/profiles. If no choice is made before the countdown ends, the first browser in the list will automatically open the link. To bypass the chooser and directly open the link in the first browser, press the Shift key while clicking the link.
-- A handy feature is the ability to copy a link directly to your clipboard by choosing the "Copy to Clipboard" option in the chooser.
-- Passthroughs are rules that allow specific links to bypass the browser and open directly in their respective applications. You can define them in the passthroughs variable. For example:
-```lua
-local passthroughs = {
-    spotify = { url = "https://open.spotify.com/", appName = "Spotify", bundleID = "com.spotify.client" },
-    -- Add more passthroughs here if needed
-}
-```
-- Setting up Browsers: Specify your preferred browsers in the browsers variable along with any necessary arguments. For example:
-```lua
-local browsers = {
-    { name = "Arc", appName = "Arc", bundleID = "company.thebrowser.Browser", args = {""} },
-    { name = "Google Chrome", appName = "Google Chrome", bundleID = "com.google.Chrome", args = {""} },
-    -- Add more options here if needed
-}
-```
+
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| **Open link in the first browser** | Click the link and wait  |
+| **Choose browser to open link**    | Click link and select from the list |
+| **Bypass chooser and open directly** | <kbd>⇧ SHIFT</kbd> + Click the link |
+| **Copy link to clipboard**         | Select "Copy to Clipboard" from the list |
 
 ### 🗂️🔍 MenuMaestro
 [`MenuMaestro.lua`](https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua) - Easily access menu items and shortcuts with a visually appealing interface.
 
 #### How to Use
-- Hit <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> to activate the menu chooser and browse through the items. You can also open the menu chooser by using a 5-finger touch gesture on your trackpad. Just tap with your fingers on the trackpad to open the MenuMaestro interface.
-- Select a menu item with your mouse or keyboard to execute it, or use the search functionality to quickly find what you need.
+
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| **Activate menu chooser** | <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
+| **Search and select menu item**    | Type and choose with keyboard/mouse |
 
 ### 🪄🖱️ TrackpadKeys
-[`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad
+[`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad.
 
 #### How to Use
-- When you touch the top edge of your trackpad, a virtual keyboard row becomes active.
-- Touch the bottom corner while swiping for uppercase letters.
+
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| **Activate virtual keyboard row** | Swipe top edge of trackpad  |
+| **Input uppercase letters**       | Touch bottom corner while swiping the top |
 
 ### 🪄🌇 WindowScape
 [`WindowScape.lua`](https://github.com/sryo/Spoons/blob/main/WindowScape.lua) is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
@@ -57,29 +64,32 @@ local browsers = {
 - Automatically tiles windows of whitelisted applications (or set it to avoid tiling the apps listed there).
 
 #### How to Use
-- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> to add/remove the application of the currently focused window to/from the whitelist.
-After whitelisting an application, its windows will be automatically tiled by the script.
-- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window backward or forward in the tiling order.
-- Use <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or <kbd>→</kbd> to move the focused window to the previous or next space.
+
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| **Add/Remove app to/from whitelist** | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> |
+| **Move window backward in tiling order** | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> |
+| **Move window forward in tiling order**  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> |
+| **Move window to previous space**       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> |
+| **Move window to next space**           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> |
 
 ### ➡️⌨️ ZXNav
 [`ZXNav.lua`](https://github.com/sryo/Spoons/blob/main/ZXNav.lua) - Moves text navigation and editing actions closer to the spacebar for easier reach.
 
 #### How to Use
 
-Moving Around:
-
-- <kbd>SPACE</kbd><kbd>Z</kbd>: Jump to the start of the line (Home)
-- <kbd>SPACE</kbd><kbd>X</kbd>: Jump to the end of the line (End)
-- <kbd>SPACE</kbd><kbd>C</kbd>: Move left
-- <kbd>SPACE</kbd><kbd>V</kbd>: Move right
-- <kbd>SPACE</kbd><kbd>B</kbd>: Move up a line
-- <kbd>SPACE</kbd><kbd>N</kbd>: Move down a line
-
-Text Manipulation:
-
-- <kbd>SPACE</kbd><kbd>M</kbd>: Munch characters (Delete)
-- <kbd>SPACE</kbd><kbd>,</kbd>: Insert a new line (Return)
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| **Moving Around**                    |                              |
+| Jump to the start of the line (Home) | <kbd>SPACE</kbd><kbd>Z</kbd> |
+| Jump to the end of the line (End)    | <kbd>SPACE</kbd><kbd>X</kbd> |
+| Move up a line                       | <kbd>SPACE</kbd><kbd>C</kbd> |
+| Move down a line                     | <kbd>SPACE</kbd><kbd>V</kbd> |
+| Move left                            | <kbd>SPACE</kbd><kbd>B</kbd> |
+| Move right                           | <kbd>SPACE</kbd><kbd>N</kbd> |
+| **Text Manipulation**                |                              |
+| Munch characters (Delete)            | <kbd>SPACE</kbd><kbd>M</kbd> |
+| Insert a new line (Return)           | <kbd>SPACE</kbd><kbd>,</kbd> |
 
 ### FAQ
 
