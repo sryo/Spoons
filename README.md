@@ -13,15 +13,15 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 | Action                        | Shortcut                                              |
 |-------------------------------|-------------------------------------------------------|
-| **Close or Quit App**          | Move mouse to the top-left corner                     |
-| **Kill Frontmost App**         | <kbd>⇧ SHIFT</kbd> + move mouse to the top-left corner |
-| **Reopen Last App Modal**      | Automatically shown when an app is killed             |
-| **Toggle Fullscreen**          | Move mouse to the top-right corner                    |
-| **Zoom Window**                | <kbd>⇧ SHIFT</kbd> + move mouse to the top-right corner |
-| **Minimize Window**            | Move mouse to the bottom-right corner                 |
-| **Hide App**                   | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-right corner |
-| **Open Finder**                | Move mouse to the bottom-left corner                  |
-| **Open System Preferences**    | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-left corner |
+| Close or Quit App          | Move mouse to the top-left corner                     |
+| Kill Frontmost App         | <kbd>⇧ SHIFT</kbd> + move mouse to the top-left corner |
+| Reopen Last App Modal      | Automatically shown when an app is killed             |
+| Toggle Fullscreen          | Move mouse to the top-right corner                    |
+| Zoom Window                | <kbd>⇧ SHIFT</kbd> + move mouse to the top-right corner |
+| Minimize Window            | Move mouse to the bottom-right corner                 |
+| Hide App                   | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-right corner |
+| Open Finder                | Move mouse to the bottom-left corner                  |
+| Open System Preferences    | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-left corner |
 
 
 ![hyperlinkhijacker](https://github.com/user-attachments/assets/330318f0-2bfd-4502-bc80-5d1ab06adabe)
@@ -32,10 +32,10 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| **Open link in the first browser** | Click the link and wait  |
-| **Choose browser to open link**    | Click link and select from the list |
-| **Bypass chooser and open directly** | <kbd>⇧ SHIFT</kbd> + Click the link |
-| **Copy link to clipboard**         | Select "Copy to Clipboard" from the list |
+| Open link in the first browser | Click the link and wait  |
+| Choose browser to open link    | Click link and select from the list |
+| Bypass chooser and open directly | <kbd>⇧ SHIFT</kbd> + Click the link |
+| Copy link to clipboard         | Select "Copy to Clipboard" from the list |
 
 ### 🗂️🔍 MenuMaestro
 [`MenuMaestro.lua`](https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua) - Easily access menu items and shortcuts with a visually appealing interface.
@@ -44,8 +44,8 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| **Activate menu chooser** | <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
-| **Search and select menu item**    | Type and choose with keyboard/mouse |
+| Activate menu chooser | <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
+| Search and select menu item    | Type and choose with keyboard/mouse |
 
 ### 🪄🖱️ TrackpadKeys
 [`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad.
@@ -54,8 +54,8 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| **Activate virtual keyboard row** | Swipe top edge of trackpad  |
-| **Input uppercase letters**       | Touch bottom corner while swiping the top |
+| Activate virtual keyboard row | Swipe top edge of trackpad  |
+| Input uppercase letters       | Touch bottom corner while swiping the top |
 
 ### 🪄🌇 WindowScape
 [`WindowScape.lua`](https://github.com/sryo/Spoons/blob/main/WindowScape.lua) is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
@@ -67,13 +67,14 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| **Add/Remove app to/from whitelist** | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> |
-| **Move window backward in tiling order** | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> |
-| **Move window forward in tiling order**  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> |
-| **Move window to previous space**       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> |
-| **Move window to next space**           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> |
+| Add/Remove app to/from whitelist | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> |
+| Move window backward in tiling order | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> |
+| Move window forward in tiling order  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> |
+| Move window to previous space       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> |
+| Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> |
 
-### ➡️⌨️ ZXNav
+![zxnav](https://github.com/user-attachments/assets/aa33821c-baea-4c8f-8fe8-629f8e54bd5e)
+### ZXNav
 [`ZXNav.lua`](https://github.com/sryo/Spoons/blob/main/ZXNav.lua) - Moves text navigation and editing actions closer to the spacebar for easier reach.
 
 #### How to Use
