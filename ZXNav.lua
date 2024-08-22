@@ -18,14 +18,20 @@ local config = {
     },
 
     modifierKey = "space",
-    barBackgroundColor = {alpha = 0.8, white = 0.1},
-    textColor = {white = 1},
-    highlightColor = {red = 1, green = 1, blue = 0},
     barHeight = 40,
-    cornerRadius = 0,
+    cornerRadius = 10,
     fontSize = 20,
-    showDelay = 0.2
+    showDelay = 0.16
 }
+
+local function getSystemColors()
+    local isDark = hs.host.interfaceStyle() == "Dark"
+    return {
+        barBackgroundColor = isDark and hs.drawing.color.asRGB({alpha=0.8, hex="#1E1E1E"}) or hs.drawing.color.asRGB({alpha=0.8, hex="#F0F0F0"}),
+        textColor = isDark and hs.drawing.color.asRGB({hex="#FFFFFF"}) or hs.drawing.color.asRGB({hex="#000000"}),
+        highlightColor = hs.drawing.color.asRGB({hex="#007AFF"})
+    }
+end
 
 local STOP, GO = true, false
 local DOWN, UP = true, false
@@ -42,10 +48,12 @@ local function setupKeyBar()
     end
     keyBar = hs.canvas.new({x = screenFrame.x, y = screenFrame.h - config.barHeight, w = screenFrame.w, h = config.barHeight})
 
+    local colors = getSystemColors()
+
     keyBar:appendElements({
         type = "rectangle",
         action = "fill",
-        fillColor = config.barBackgroundColor,
+        fillColor = colors.barBackgroundColor,
         roundedRectRadii = {xRadius = config.cornerRadius, yRadius = config.cornerRadius},
     })
 
@@ -57,7 +65,7 @@ local function setupKeyBar()
         keyBar:appendElements({
             type = "text",
             text = key .. " " .. action,
-            textColor = config.textColor,
+            textColor = colors.textColor,
             textSize = config.fontSize,
             frame = {x = (i-1) * keyWidth, y = 5, w = keyWidth, h = config.barHeight - 10},
             textAlignment = "center"
@@ -66,19 +74,21 @@ local function setupKeyBar()
 end
 
 local function highlightKey(key)
+    local colors = getSystemColors()
     for i, element in ipairs(keyBar) do
         if element.type == "text" then
             element.textColor = (element.text:sub(1,1) == key)
-                and config.highlightColor
-                or config.textColor
+                and colors.highlightColor
+                or colors.textColor
         end
     end
 end
 
 local function resetKeyHighlights()
+    local colors = getSystemColors()
     for i, element in ipairs(keyBar) do
         if element.type == "text" then
-            element.textColor = config.textColor
+            element.textColor = colors.textColor
         end
     end
 end
@@ -187,29 +197,13 @@ function module.start()
     module._screenWatcher = hs.screen.watcher.new(function()
         setupKeyBar()
     end):start()
-end
 
-function module.stop()
-    if module._downWatcher then
-        module._downWatcher:stop()
-        module._downWatcher = nil
-    end
-    if module._upWatcher then
-        module._upWatcher:stop()
-        module._upWatcher = nil
-    end
-    if module._screenWatcher then
-        module._screenWatcher:stop()
-        module._screenWatcher = nil
-    end
-    if keyBar then
-        keyBar:delete()
-        keyBar = nil
-    end
-    if showBarTimer then
-        showBarTimer:stop()
-        showBarTimer = nil
-    end
+    -- Watcher for appearance changes
+    module._appearanceWatcher = hs.distributednotifications.new(function(name, object, userInfo)
+        if name == "AppleInterfaceThemeChangedNotification" then
+            setupKeyBar()
+        end
+    end):start()
 end
 
 return module
