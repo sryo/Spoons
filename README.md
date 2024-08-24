@@ -1,5 +1,6 @@
 These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
 
+
 ![framemaster](https://github.com/user-attachments/assets/155fd5d5-3bb4-4ad3-9056-ef8c22bf7514)
 ### FrameMaster
 [`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
@@ -37,6 +38,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | Bypass chooser and open directly | <kbd>⇧ SHIFT</kbd> + Click the link |
 | Copy link to clipboard         | Select "Copy to Clipboard" from the list |
 
+
 ### 🗂️🔍 MenuMaestro
 [`MenuMaestro.lua`](https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua) - Easily access menu items and shortcuts with a visually appealing interface.
 
@@ -47,6 +49,21 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | Activate menu chooser | <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
 | Search and select menu item    | Type and choose with keyboard/mouse |
 
+
+![sssssssscroll](https://github.com/user-attachments/assets/fa3450ea-c3ef-4f77-bf99-958cfb570fc9)
+### Sssssssscroll
+[`Sssssssscroll.lua`](https://github.com/sryo/Spoons/blob/main/Sssssssscroll.lua) - Use mouth noises to scroll.
+
+#### How to Use
+| Action               | Sound/Shortcut                            |
+|----------------------|---------------------------------------------|
+| Toggle listener on/off | <kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>^ CTRL</kbd><kbd>S</kbd> |
+| Continuous scroll    | Make a continuous "Ssssssss" sound        |
+| Single action        | Make a single water drop sound (lip pop)  |
+| Double action        | Make two quick water drop sounds (lip pops) |
+
+Note: Actions may vary depending on the active application. Default actions include scrolling down, scrolling up, and pressing Shift+Space.
+
 ### 🪄🖱️ TrackpadKeys
 [`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad.
 
@@ -56,6 +73,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 |----------------------|---------------------------------------------|
 | Activate virtual keyboard row | Swipe top edge of trackpad  |
 | Input uppercase letters       | Touch bottom corner while swiping the top |
+
 
 ### 🪄🌇 WindowScape
 [`WindowScape.lua`](https://github.com/sryo/Spoons/blob/main/WindowScape.lua) is the ultimate tool in window organization, transforming chaos into a neat urban landscape.
@@ -72,6 +90,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | Move window forward in tiling order  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> or 3 fingers touch + a tap to the right |
 | Move window to previous space       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or 4 fingers touch + a tap to the left |
 | Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> or 4 fingers touch + a tap to the right |
+
 
 ![zxnav](https://github.com/user-attachments/assets/aa33821c-baea-4c8f-8fe8-629f8e54bd5e)
 ### ZXNav
@@ -91,6 +110,7 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | **Text Manipulation**                |                              |
 | Munch characters (Delete)            | <kbd>SPACE</kbd><kbd>M</kbd> |
 | Insert a new line (Return)           | <kbd>SPACE</kbd><kbd>,</kbd> |
+
 
 ### FAQ
 
