@@ -16,7 +16,7 @@ local tileGap = 0
 local collapsedWindowHeight = 12
 local mods = { "ctrl", "cmd" }
 local spaceMods = { "ctrl", "cmd", "option" }
-local enableTTTaps = false
+local enableTTTaps = true
 
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
@@ -30,8 +30,6 @@ local function log(message)
 end
 
 local ttTaps
-local initialFingerCount = 0
-local lastTouchCount = 0
 
 local function saveWhitelistToFile()
   local file = io.open(whitelistFile, "w")
@@ -403,20 +401,13 @@ end
 local initialFingerCount = 0
 local gestureStartTime = 0
 local lastActionTime = 0
-local GESTURE_START_THRESHOLD = 0.005
+local gestureStartThreshold = 0.005
 local lastTouchCount = 0
 local initialTouchPositions = {}
 
 local function handleTTTaps(event)
   local eventType = event:getType(true)
 
-  -- Ignore magnify and rotate gestures
-  if eventType == hs.eventtap.event.types.magnify or
-      eventType == hs.eventtap.event.types.rotate then
-    return false
-  end
-
-  -- We only want to handle gesture events
   if eventType ~= hs.eventtap.event.types.gesture then
     return false
   end
@@ -426,7 +417,6 @@ local function handleTTTaps(event)
     return false
   end
 
-  -- Ignore pressure-based gestures (like Force Touch)
   if touchDetails.pressure then
     return false
   end
@@ -448,7 +438,7 @@ local function handleTTTaps(event)
   end
 
   if initialFingerCount == 0 then
-    if touchCount == 2 or touchCount == 3 then
+    if touchCount == 3 or touchCount == 4 then
       initialFingerCount = touchCount
       gestureStartTime = currentTime
       -- Store initial touch positions
@@ -458,7 +448,7 @@ local function handleTTTaps(event)
       log("Gesture started with " .. initialFingerCount .. " fingers")
     end
   elseif touchCount >= initialFingerCount and gestureStartTime then
-    if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > GESTURE_START_THRESHOLD then
+    if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > gestureStartThreshold then
       -- Determine which finger is the additional one
       local additionalFingerPosition
       for i = 1, touchCount do
@@ -481,7 +471,7 @@ local function handleTTTaps(event)
         if currentTime - lastActionTime > 0.5 then
           log(initialFingerCount .. "-finger gesture detected, additional finger on the " .. side)
 
-          if initialFingerCount == 2 then
+          if initialFingerCount == 3 then
             if side == "left" then
               log("Executing: Move window to previous position in order")
               moveWindowInOrder("backward")
@@ -489,7 +479,7 @@ local function handleTTTaps(event)
               log("Executing: Move window to next position in order")
               moveWindowInOrder("forward")
             end
-          elseif initialFingerCount == 3 then
+          elseif initialFingerCount == 4 then
             if side == "left" then
               log("Executing: Move window to adjacent space on the left")
               moveWindowToAdjacentSpace("previous")
