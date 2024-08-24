@@ -7,14 +7,16 @@ local geometry = require("hs.geometry")
 local drawing = require("hs.drawing")
 local spaces = require("hs.spaces")
 local mouse = require("hs.mouse")
+local eventtap = require("hs.eventtap")
 
 local activeWindowOutline = nil
-local outlineColor = {red = .1, green = .3, blue = .9, alpha = 0.8}
+local outlineColor = { red = .1, green = .3, blue = .9, alpha = 0.8 }
 local outlineThickness = 16
 local tileGap = 0
 local collapsedWindowHeight = 12
 local mods = { "ctrl", "cmd" }
 local spaceMods = { "ctrl", "cmd", "option" }
+local enableTTTaps = false
 
 local whitelistMode = false -- Set to true to tile only the windows in the whitelist
 
@@ -22,6 +24,14 @@ local whitelistedApps = {}
 local whitelistFile = "whitelist.txt"
 
 local windowOrderBySpace = {}
+
+local function log(message)
+  print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
+end
+
+local ttTaps
+local initialFingerCount = 0
+local lastTouchCount = 0
 
 local function saveWhitelistToFile()
   local file = io.open(whitelistFile, "w")
@@ -74,7 +84,7 @@ local function getVisibleWindows()
   local currentSpace = getCurrentSpace()
   for _, win in ipairs(window.visibleWindows()) do
     if spaces.windowSpaces(win) and hs.fnutils.contains(spaces.windowSpaces(win), currentSpace) and
-       not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
+        not win:isFullScreen() and isAppWhitelisted(win:application(), win) then
       table.insert(visibleWindows, win)
     end
   end
@@ -85,7 +95,7 @@ local function updateWindowOrder()
   local currentSpace = getCurrentSpace()
   local currentWindows = getVisibleWindows()
   local newOrder = {}
-  
+
   if windowOrderBySpace[currentSpace] then
     for _, win in ipairs(windowOrderBySpace[currentSpace]) do
       if hs.fnutils.contains(currentWindows, win) then
@@ -93,13 +103,13 @@ local function updateWindowOrder()
       end
     end
   end
-  
+
   for _, win in ipairs(currentWindows) do
     if not hs.fnutils.contains(newOrder, win) then
       table.insert(newOrder, win)
     end
   end
-  
+
   windowOrderBySpace[currentSpace] = newOrder
 end
 
@@ -125,7 +135,7 @@ local function tileWindows()
   local nonCollapsedWindows = #visibleWindows - #collapsedWindows
 
   if #visibleWindows == 0 then
-    return  -- No windows to tile
+    return     -- No windows to tile
   end
 
   local mainScreen = screen.mainScreen()
@@ -137,7 +147,8 @@ local function tileWindows()
     tileHeight = mainScreenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
   else
     tileWidth = mainScreenFrame.w
-    tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows - 1) * tileGap) / nonCollapsedWindows
+    tileHeight = (mainScreenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows - 1) * tileGap) /
+        nonCollapsedWindows
   end
 
   local nonCollapsedWinX, nonCollapsedWinY = mainScreenFrame.x, mainScreenFrame.y
@@ -145,7 +156,8 @@ local function tileWindows()
   if orientation == "horizontal" then
     collapsedWinX, collapsedWinY = mainScreenFrame.x, mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight
   else
-    collapsedWinX, collapsedWinY = mainScreenFrame.x, mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight - tileGap
+    collapsedWinX, collapsedWinY = mainScreenFrame.x,
+        mainScreenFrame.y + mainScreenFrame.h - collapsedWindowHeight - tileGap
   end
 
   local initialCollapsedWidth = collapsedWindows[1] and collapsedWindows[1]:frame().w or tileWidth
@@ -208,7 +220,7 @@ local function drawActiveWindowOutline(win)
       activeWindowOutline:setStrokeColor(outlineColor)
       activeWindowOutline:setFill(false)
       activeWindowOutline:setStrokeWidth(outlineThickness)
-      activeWindowOutline:setRoundedRectRadii(outlineThickness/2, outlineThickness/2)
+      activeWindowOutline:setRoundedRectRadii(outlineThickness / 2, outlineThickness / 2)
       activeWindowOutline:setLevel(drawing.windowLevels.popUpMenu)
     else
       activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
@@ -235,19 +247,6 @@ local function handleWindowFocused(win)
   end
 end
 
-local function handleWindowDestroyed(win)
-  updateWindowOrder()
-  tileWindows()
-  local newFocusedWindow = window.focusedWindow()
-  if newFocusedWindow then
-    handleWindowFocused(newFocusedWindow)
-  else
-    if activeWindowOutline then
-      activeWindowOutline:hide()
-    end
-  end
-end
-
 local function handleWindowEvent()
   updateWindowOrder()
   hs.timer.doAfter(0.1, function()
@@ -258,23 +257,6 @@ local function handleWindowEvent()
     end
   end)
 end
-
-window.filter.default:subscribe({
-  window.filter.windowCreated,
-  window.filter.windowHidden,
-  window.filter.windowUnhidden,
-  window.filter.windowMinimized,
-  window.filter.windowUnminimized,
-  window.filter.windowMoved,
-  window.filter.windowsChanged
-}, handleWindowEvent)
-
-window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
-window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
-
-spaces.watcher.new(function(space)
-  handleWindowEvent()
-end):start()
 
 local function toggleFocusedWindowInWhitelist()
   local focusedWindow = window.focusedWindow()
@@ -309,7 +291,7 @@ local function moveMouseWithWindow(oldFrame, newFrame)
     local newX = newFrame.x + (relX * newFrame.w)
     local newY = newFrame.y + (relY * newFrame.h)
     -- Move the mouse to the new position
-    mouse.setAbsolutePosition({x = newX, y = newY})
+    mouse.setAbsolutePosition({ x = newX, y = newY })
   end
 end
 
@@ -318,11 +300,15 @@ local function moveWindowInOrder(direction)
   local focusedWindow = window.focusedWindow()
   local currentOrder = windowOrderBySpace[currentSpace] or {}
   local focusedIndex
+  local nonCollapsedWindows = {}
 
+  -- Filter out collapsed windows and find the focused window index
   for i, win in ipairs(currentOrder) do
-    if win:id() == focusedWindow:id() then
-      focusedIndex = i
-      break
+    if win:size().h > collapsedWindowHeight then
+      table.insert(nonCollapsedWindows, win)
+      if win:id() == focusedWindow:id() then
+        focusedIndex = #nonCollapsedWindows
+      end
     end
   end
 
@@ -333,16 +319,30 @@ local function moveWindowInOrder(direction)
 
   local newIndex
   if direction == "forward" then
-    newIndex = focusedIndex < #currentOrder and focusedIndex + 1 or 1
-  else -- backward
-    newIndex = focusedIndex > 1 and focusedIndex - 1 or #currentOrder
+    newIndex = focusedIndex < #nonCollapsedWindows and focusedIndex + 1 or 1
+  else   -- backward
+    newIndex = focusedIndex > 1 and focusedIndex - 1 or #nonCollapsedWindows
   end
 
-  table.remove(currentOrder, focusedIndex)
-  table.insert(currentOrder, newIndex, focusedWindow)
+  -- Remove the focused window from its current position
+  table.remove(nonCollapsedWindows, focusedIndex)
+  -- Insert the focused window at its new position
+  table.insert(nonCollapsedWindows, newIndex, focusedWindow)
+
+  -- Rebuild the full window order, preserving collapsed windows
+  local newOrder = {}
+  local nonCollapsedIndex = 1
+  for _, win in ipairs(currentOrder) do
+    if win:size().h <= collapsedWindowHeight then
+      table.insert(newOrder, win)
+    else
+      table.insert(newOrder, nonCollapsedWindows[nonCollapsedIndex])
+      nonCollapsedIndex = nonCollapsedIndex + 1
+    end
+  end
 
   local oldFrame = focusedWindow:frame()
-  windowOrderBySpace[currentSpace] = currentOrder
+  windowOrderBySpace[currentSpace] = newOrder
   tileWindows()
   focusedWindow:focus()
   local newFrame = focusedWindow:frame()
@@ -364,7 +364,7 @@ local function moveWindowToAdjacentSpace(direction)
   local targetSpaceIndex
   if direction == "next" then
     targetSpaceIndex = currentSpaceIndex % #allSpaces + 1
-  else -- "previous"
+  else   -- "previous"
     targetSpaceIndex = (currentSpaceIndex - 2 + #allSpaces) % #allSpaces + 1
   end
 
@@ -382,18 +382,174 @@ local function moveWindowToAdjacentSpace(direction)
 
   spaces.moveWindowToSpace(focusedWindow, targetSpace)
 
-  local targetIndex = math.min(currentIndex or (#windowOrderBySpace[targetSpace] + 1), #windowOrderBySpace[targetSpace] + 1)
+  local targetIndex = math.min(currentIndex or (#windowOrderBySpace[targetSpace] + 1),
+    #windowOrderBySpace[targetSpace] + 1)
   table.insert(windowOrderBySpace[targetSpace], targetIndex, focusedWindow)
 
-  hs.timer.doAfter(0.1, function()
-    focusedWindow:focus()
-    local newFrame = focusedWindow:frame()
-    moveMouseWithWindow(oldFrame, newFrame)
+  -- Increase the delay slightly to ensure the space switch has time to complete
+  hs.timer.doAfter(0.2, function()
+    if focusedWindow:isVisible() then
+      focusedWindow:focus()
+      local newFrame = focusedWindow:frame()
+      moveMouseWithWindow(oldFrame, newFrame)
+    end
   end)
 
-  hs.timer.doAfter(0.3, function()
+  hs.timer.doAfter(0.4, function()
     tileWindows()
   end)
+end
+
+local initialFingerCount = 0
+local gestureStartTime = 0
+local lastActionTime = 0
+local GESTURE_START_THRESHOLD = 0.005
+local lastTouchCount = 0
+local initialTouchPositions = {}
+
+local function handleTTTaps(event)
+  local eventType = event:getType(true)
+
+  -- Ignore magnify and rotate gestures
+  if eventType == hs.eventtap.event.types.magnify or
+      eventType == hs.eventtap.event.types.rotate then
+    return false
+  end
+
+  -- We only want to handle gesture events
+  if eventType ~= hs.eventtap.event.types.gesture then
+    return false
+  end
+
+  local touchDetails = event:getTouchDetails()
+  if not touchDetails then
+    return false
+  end
+
+  -- Ignore pressure-based gestures (like Force Touch)
+  if touchDetails.pressure then
+    return false
+  end
+
+  local touches = event:getTouches()
+  local touchCount = touches and #touches or 0
+  local currentTime = hs.timer.secondsSinceEpoch()
+
+  -- Check if the gesture has truly ended (all fingers lifted)
+  if touchCount == 0 and lastTouchCount <= initialFingerCount then
+    if initialFingerCount > 0 then
+      log("Gesture ended")
+      initialFingerCount = 0
+      gestureStartTime = 0
+      initialTouchPositions = {}
+    end
+    lastTouchCount = 0
+    return false
+  end
+
+  if initialFingerCount == 0 then
+    if touchCount == 2 or touchCount == 3 then
+      initialFingerCount = touchCount
+      gestureStartTime = currentTime
+      -- Store initial touch positions
+      for i = 1, touchCount do
+        initialTouchPositions[i] = touches[i].normalizedPosition.x
+      end
+      log("Gesture started with " .. initialFingerCount .. " fingers")
+    end
+  elseif touchCount >= initialFingerCount and gestureStartTime then
+    if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > GESTURE_START_THRESHOLD then
+      -- Determine which finger is the additional one
+      local additionalFingerPosition
+      for i = 1, touchCount do
+        local found = false
+        for j = 1, initialFingerCount do
+          if initialTouchPositions[j] and math.abs(touches[i].normalizedPosition.x - initialTouchPositions[j]) < 0.1 then
+            found = true
+            break
+          end
+        end
+        if not found then
+          additionalFingerPosition = touches[i].normalizedPosition.x
+          break
+        end
+      end
+
+      if additionalFingerPosition then
+        local side = additionalFingerPosition <= 0.5 and "left" or "right"
+
+        if currentTime - lastActionTime > 0.5 then
+          log(initialFingerCount .. "-finger gesture detected, additional finger on the " .. side)
+
+          if initialFingerCount == 2 then
+            if side == "left" then
+              log("Executing: Move window to previous position in order")
+              moveWindowInOrder("backward")
+            else
+              log("Executing: Move window to next position in order")
+              moveWindowInOrder("forward")
+            end
+          elseif initialFingerCount == 3 then
+            if side == "left" then
+              log("Executing: Move window to adjacent space on the left")
+              moveWindowToAdjacentSpace("previous")
+            else
+              log("Executing: Move window to adjacent space on the right")
+              moveWindowToAdjacentSpace("next")
+            end
+          end
+
+          lastActionTime = currentTime
+        end
+      end
+    end
+  elseif touchCount < initialFingerCount then
+    -- The number of fingers has dropped below the initial count, but not to zero
+    -- We don't end the gesture here, just update lastTouchCount
+    log("Finger(s) lifted, but gesture continues")
+  end
+
+  lastTouchCount = touchCount
+  return true
+end
+
+local function startTTTapsRecognition()
+  if not enableTTTaps then
+    log("TTTaps recognition is disabled")
+    return
+  end
+
+  if ttTaps then
+    ttTaps:stop()
+  end
+
+  ttTaps = eventtap.new({ eventtap.event.types.gesture }, handleTTTaps)
+  ttTaps:start()
+  log("TTTaps recognition started")
+end
+
+local function stopTTTapsRecognition()
+  if ttTaps then
+    ttTaps:stop()
+    ttTaps = nil
+    log("TTTaps recognition stopped")
+  end
+end
+
+local function checkTTTapsRecognition()
+  if not enableTTTaps then
+    return
+  end
+
+  if not ttTaps or not ttTaps:isEnabled() then
+    log("TTTaps recognition was stopped, restarting...")
+    startTTTapsRecognition()
+  end
+end
+
+local initialFocusedWindow = window.focusedWindow()
+if initialFocusedWindow then
+  drawActiveWindowOutline(initialFocusedWindow)
 end
 
 local function bindHotkeys()
@@ -412,13 +568,70 @@ local function bindHotkeys()
   hs.hotkey.bind(spaceMods, "Right", function()
     moveWindowToAdjacentSpace("next")
   end)
+
+  if enableTTTaps then
+    startTTTapsRecognition()
+    hs.timer.doEvery(300, checkTTTapsRecognition)     -- Check every 5 minutes
+  end
 end
 
+local function handleWindowDestroyed(win)
+  updateWindowOrder()
+  tileWindows()
+  local newFocusedWindow = window.focusedWindow()
+  if newFocusedWindow then
+    handleWindowFocused(newFocusedWindow)
+  else
+    if activeWindowOutline then
+      activeWindowOutline:hide()
+    end
+  end
+end
+
+window.filter.default:subscribe({
+  window.filter.windowCreated,
+  window.filter.windowHidden,
+  window.filter.windowUnhidden,
+  window.filter.windowMinimized,
+  window.filter.windowUnminimized,
+  window.filter.windowMoved,
+  window.filter.windowsChanged
+}, handleWindowEvent)
+
+window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
+window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
+
+spaces.watcher.new(function(space)
+  handleWindowEvent()
+end):start()
+
+local function preventGC()
+  if enableTTTaps then
+    if ttTaps then
+      log("TTTaps recognition is active")
+    else
+      log("TTTaps recognition is not active")
+    end
+  else
+    log("TTTaps recognition is disabled")
+  end
+end
+
+hs.timer.doEvery(3600, preventGC) -- Run every hour to keep the script alive and log status
+
+-- Initialize
 updateWindowOrder()
 tileWindows()
-local initialFocusedWindow = window.focusedWindow()
-if initialFocusedWindow then
-  drawActiveWindowOutline(initialFocusedWindow)
-end
-
 bindHotkeys()
+
+log("WindowScape initialized" .. (enableTTTaps and " with TTTaps recognition" or " without TTTaps recognition"))
+
+function restartWindowScapeTTTaps()
+  if enableTTTaps then
+    stopTTTapsRecognition()
+    startTTTapsRecognition()
+    log("WindowScape TTTaps recognition manually restarted")
+  else
+    log("TTTaps recognition is disabled, cannot restart")
+  end
+end
