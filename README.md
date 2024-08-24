@@ -68,10 +68,10 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
 | Add/Remove app to/from whitelist | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> |
-| Move window backward in tiling order | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> |
-| Move window forward in tiling order  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> |
-| Move window to previous space       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> |
-| Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> |
+| Move window backward in tiling order | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> or 3 fingers touch + a tap to the left |
+| Move window forward in tiling order  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> or 3 fingers touch + a tap to the right |
+| Move window to previous space       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or 4 fingers touch + a tap to the left |
+| Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> or 4 fingers touch + a tap to the right |
 
 ![zxnav](https://github.com/user-attachments/assets/aa33821c-baea-4c8f-8fe8-629f8e54bd5e)
 ### ZXNav
