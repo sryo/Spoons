@@ -26,14 +26,35 @@ local function isPointInFrame(point, frame)
         and point.y >= frame.y and point.y <= (frame.y + frame.h)
 end
 
+local function isModal(win)
+    if not win then return false end
+    local role = win:role()
+    local subrole = win:subrole()
+
+    -- Common roles/subroles for modals
+    local modalRoles = {
+        AXSystemDialog = true,
+        AXDialog = true,
+        AXSheet = true,
+        AXPopover = true
+    }
+
+    return modalRoles[role] or modalRoles[subrole]
+end
+
 local function focusWindowUnderCursor()
     if ignoreConditions.cmdPressed or ignoreConditions.dragging or ignoreConditions.missionControlActive then
         return -- Abort if any ignore condition is met
     end
 
+    -- Check if current focused window is a modal
+    local currentFocus = hs.window.focusedWindow()
+    if isModal(currentFocus) then
+        return -- Don't change focus
+    end
+
     local mousePoint = hs.mouse.absolutePosition()
     local windows = getVisibleWindows()
-
     for _, win in ipairs(windows) do
         local adjustedFrame = getAdjustedFrame(win)
         if isPointInFrame(mousePoint, adjustedFrame) then
