@@ -60,44 +60,61 @@ function installPKG(pkgPath)
 end
 
 function installApplicationToApps(diskLocation, originalDMG)
-    local appFinder = hs.task.new("/usr/bin/find", function(exitCode, stdOut, stdErr)
-        if exitCode == 0 and stdOut then
-            local appLocation = stdOut:match("([^\n]+%.app)")
-            if appLocation then
-                hs.console.printStyledtext("Located application: " .. appLocation)
-                local appName = appLocation:match("([^/]+)%.app$")
-                local existingAppPath = "/Applications/" .. appName .. ".app"
+    hs.console.printStyledtext("Searching for apps in: " .. diskLocation)
 
-                local removeOldVersion = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
-                    local copyNewVersion = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
-                        if copyExitCode == 0 then
-                            hs.console.printStyledtext("Successfully installed app to Applications: " .. appName)
-                            ejectDMG(diskLocation, originalDMG)
-                            hs.alert(appName .. " has been installed successfully.")
-                        else
-                            hs.console.printStyledtext("Application installation failed: " .. (copyStdErr or "unknown error"))
-                            showInstallationError("Failed to install application")
-                        end
-                    end, {"-Rf", appLocation, "/Applications/"})
-                    copyNewVersion:start()
-                end, {"-rf", existingAppPath})
-                removeOldVersion:start()
-            else
-                -- Check for PKG if no app found
-                local pkgPath = findPKGFile(diskLocation)
-                if pkgPath then
-                    installPKG(pkgPath)
-                    ejectDMG(diskLocation, originalDMG)
-                else
-                    hs.console.printStyledtext("No installable app or PKG found in " .. diskLocation)
-                    showInstallationError("No installable app or PKG found")
+    local appFinder = hs.task.new("/usr/bin/find", function(exitCode, stdOut, stdErr)
+        hs.console.printStyledtext("Find command exit code: " .. exitCode)
+        hs.console.printStyledtext("Find command output: " .. (stdOut or "no output"))
+        if stdErr then
+            hs.console.printStyledtext("Find command error: " .. stdErr)
+        end
+
+        if exitCode == 0 then
+            stdOut = (stdOut or ""):gsub("^%s*(.-)%s*$", "%1")
+
+            if stdOut ~= "" then
+                for appLocation in stdOut:gmatch("[^\n]+") do
+                    if appLocation:match("%.app$") then
+                        hs.console.printStyledtext("Located application: " .. appLocation)
+                        local appName = appLocation:match("([^/]+)%.app$")
+                        local existingAppPath = "/Applications/" .. appName .. ".app"
+
+                        local removeOldVersion = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
+                            local copyNewVersion = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
+                                if copyExitCode == 0 then
+                                    hs.console.printStyledtext("Successfully installed app to Applications: " .. appName)
+                                    ejectDMG(diskLocation, originalDMG)
+                                    hs.alert(appName .. " has been installed successfully.")
+                                else
+                                    hs.console.printStyledtext("Application installation failed: " .. (copyStdErr or "unknown error"))
+                                    showInstallationError("Failed to install application")
+                                end
+                            end, {"-Rf", appLocation, "/Applications/"})
+                            copyNewVersion:start()
+                        end, {"-rf", existingAppPath})
+                        removeOldVersion:start()
+                        return -- Exit after handling the first app
+                    end
                 end
+            end
+
+            -- Only check for PKG if no app was found and handled
+            local pkgPath = findPKGFile(diskLocation)
+            if pkgPath then
+                installPKG(pkgPath)
+                ejectDMG(diskLocation, originalDMG)
+            else
+                hs.console.printStyledtext("No installable app or PKG found in " .. diskLocation)
+                showInstallationError("No installable app or PKG found")
             end
         else
             hs.console.printStyledtext("Error locating application: " .. (stdErr or "unknown error"))
             showInstallationError("Could not locate application")
         end
     end, {diskLocation, "-name", "*.app", "-maxdepth", "1"})
+
+    -- Add debug logging before starting the find task
+    hs.console.printStyledtext("Starting find command: find " .. diskLocation .. " -name *.app -maxdepth 1")
     appFinder:start()
 end
 
