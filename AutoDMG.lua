@@ -93,11 +93,11 @@ end
 local downloadPath = os.getenv("HOME") .. "/Downloads"
 local processedDMGs = {}
 
-local function isDMGFile(filePath)
+function isDMGFile(filePath)
     return string.match(string.lower(filePath), "%.dmg$") ~= nil
 end
 
-local function getDMGFiles(dirPath)
+function getDMGFiles(dirPath)
     local dmgFiles = {}
     local iter, dir_obj = hs.fs.dir(dirPath)
 
@@ -116,7 +116,7 @@ local function getDMGFiles(dirPath)
     return dmgFiles
 end
 
-local function processNewDMGs(newDMGs)
+function processNewDMGs(newDMGs)
     for dmgPath, modTime in pairs(newDMGs) do
         if not processedDMGs[dmgPath] then
             hs.console.printStyledtext("New DMG found: " .. dmgPath)
@@ -126,12 +126,14 @@ local function processNewDMGs(newDMGs)
     end
 end
 
-local function checkDownloadsFolder()
+function checkDownloadsFolder()
     local currentDMGs = getDMGFiles(downloadPath)
     processNewDMGs(currentDMGs)
 end
 
 checkDownloadsFolder()
-hs.timer.doEvery(5, checkDownloadsFolder)
+checkDownloadsFolderTimer = hs.timer.doEvery(5, function()
+    checkDownloadsFolder()
+end)
 
 hs.console.printStyledtext("AutoDMG initialized: watching Downloads folder and ready for manual operations")
