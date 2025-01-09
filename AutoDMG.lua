@@ -1,113 +1,162 @@
 -- AutoDMG: A zero-click DMG installer for Hammerspoon.
 
-function parseOutputForMountPath(output)
-    local mountPoint = output:match("/Volumes/[^%s\"<]+")
-    if mountPoint then
-        hs.console.printStyledtext("Found mount point: " .. mountPoint)
-        return mountPoint
+function findVolumeMountLocation(commandOutput)
+    local mountLocation = commandOutput:match("/Volumes/[^%s\"<]+")
+    if mountLocation then
+        hs.console.printStyledtext("Successfully mounted DMG at: " .. mountLocation)
+        return mountLocation
     end
     return nil
 end
 
-function copyAppToApplications(mountPoint, originalDMGPath)
-    local findTask = hs.task.new("/usr/bin/find", function(exitCode, stdOut, stdErr)
+function sendFileToTrash(fileLocation)
+    local appleScript = string.format([[
+        tell application "Finder"
+            move POSIX file "%s" to trash
+        end tell
+    ]], fileLocation)
+
+    local trashFile = hs.task.new("/usr/bin/osascript", function(exitCode, stdOut, stdErr)
+        if exitCode == 0 then
+            hs.console.printStyledtext("Cleaned up file by moving to trash: " .. fileLocation)
+        else
+            hs.console.printStyledtext("Cleanup failed when moving to trash: " .. (stdErr or "unknown error"))
+        end
+    end, {"-e", appleScript})
+    trashFile:start()
+end
+
+function findPKGFile(diskLocation)
+    local pkgFinder = hs.task.new("/usr/bin/find", nil, {diskLocation, "-name", "*.pkg", "-maxdepth", "1"})
+    local commandOutput = ""
+    pkgFinder:setCallback(function(exitCode, stdOut, stdErr)
+        commandOutput = stdOut
+    end)
+    pkgFinder:start()
+    pkgFinder:waitUntilExit()
+
+    if commandOutput then
+        local pkgPath = commandOutput:match("([^\n]+%.pkg)")
+        if pkgPath then
+            hs.console.printStyledtext("Found PKG file: " .. pkgPath)
+            return pkgPath
+        end
+    end
+    return nil
+end
+
+function installPKG(pkgPath)
+    hs.console.printStyledtext("Starting PKG installation: " .. pkgPath)
+    local installer = hs.task.new("/usr/sbin/installer", function(exitCode, stdOut, stdErr)
+        if exitCode == 0 then
+            hs.console.printStyledtext("PKG installed successfully")
+            hs.alert("PKG installation completed successfully")
+        else
+            hs.console.printStyledtext("PKG installation failed: " .. (stdErr or "unknown error"))
+            showInstallationError("PKG installation failed")
+        end
+    end, {"-pkg", pkgPath, "-target", "/"})
+    installer:start()
+end
+
+function installApplicationToApps(diskLocation, originalDMG)
+    local appFinder = hs.task.new("/usr/bin/find", function(exitCode, stdOut, stdErr)
         if exitCode == 0 and stdOut then
-            local appPath = stdOut:match("([^\n]+%.app)")
-            if appPath then
-                hs.console.printStyledtext("Found app: " .. appPath)
-                local appName = appPath:match("([^/]+)%.app$")
-                local existingApp = "/Applications/" .. appName .. ".app"
+            local appLocation = stdOut:match("([^\n]+%.app)")
+            if appLocation then
+                hs.console.printStyledtext("Located application: " .. appLocation)
+                local appName = appLocation:match("([^/]+)%.app$")
+                local existingAppPath = "/Applications/" .. appName .. ".app"
 
-                local removeExisting = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
-                    local copyTask = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
+                local removeOldVersion = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
+                    local copyNewVersion = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
                         if copyExitCode == 0 then
-                            hs.console.printStyledtext("App copied successfully to /Applications: " .. appName)
-                            unmountDiskImage(mountPoint, originalDMGPath)
-                            hs.alert(appName .. " installed successfully.")
+                            hs.console.printStyledtext("Successfully installed app to Applications: " .. appName)
+                            ejectDMG(diskLocation, originalDMG)
+                            hs.alert(appName .. " has been installed successfully.")
                         else
-                            hs.console.printStyledtext("Failed to copy app: " .. (copyStdErr or "unknown error"))
-                            handleFailure("Failed to copy app")
+                            hs.console.printStyledtext("Application installation failed: " .. (copyStdErr or "unknown error"))
+                            showInstallationError("Failed to install application")
                         end
-                    end, {"-Rf", appPath, "/Applications/"})
-                    copyTask:start()
-                end, {"-rf", existingApp})
-                removeExisting:start()
+                    end, {"-Rf", appLocation, "/Applications/"})
+                    copyNewVersion:start()
+                end, {"-rf", existingAppPath})
+                removeOldVersion:start()
             else
-                hs.console.printStyledtext("No .app file found in " .. mountPoint)
-                handleFailure("No .app file found")
-            end
-        else
-            hs.console.printStyledtext("Error finding app: " .. (stdErr or "unknown error"))
-            handleFailure("Error finding app")
-        end
-    end, {mountPoint, "-name", "*.app", "-maxdepth", "1"})
-    findTask:start()
-end
-
-function unmountDiskImage(mountPoint, originalDMGPath)
-    local task = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
-        if exitCode == 0 then
-            hs.console.printStyledtext("Disk image unmounted successfully")
-            local removeTask = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
-                if rmExitCode == 0 then
-                    hs.console.printStyledtext("DMG file deleted successfully: " .. originalDMGPath)
+                -- Check for PKG if no app found
+                local pkgPath = findPKGFile(diskLocation)
+                if pkgPath then
+                    installPKG(pkgPath)
+                    ejectDMG(diskLocation, originalDMG)
                 else
-                    hs.console.printStyledtext("Failed to delete DMG file: " .. (rmStdErr or "unknown error"))
-                    hs.alert("Installation completed but couldn't delete DMG.")
+                    hs.console.printStyledtext("No installable app or PKG found in " .. diskLocation)
+                    showInstallationError("No installable app or PKG found")
                 end
-            end, {originalDMGPath})
-            removeTask:start()
-        else
-            hs.console.printStyledtext("Failed to unmount disk image: " .. (stdErr or "unknown error"))
-        end
-    end, {"detach", mountPoint})
-    task:start()
-end
-
-function mountDiskImage(diskImagePath)
-    hs.console.printStyledtext("Attempting to mount disk image: " .. diskImagePath)
-
-    local task = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
-        if exitCode == 0 then
-            hs.console.printStyledtext("Disk image mounted successfully")
-            local mountPoint = parseOutputForMountPath(stdOut)
-            if mountPoint then
-                copyAppToApplications(mountPoint, diskImagePath)
-            else
-                handleFailure("Could not find mount point")
             end
         else
-            local diskImageName = diskImagePath:match("([^/]+)$")  -- Extracts the name of the disk image
-            hs.console.printStyledtext("Failed to mount disk image: " .. diskImageName)
-            handleFailure(diskImagePath)
+            hs.console.printStyledtext("Error locating application: " .. (stdErr or "unknown error"))
+            showInstallationError("Could not locate application")
         end
-    end, {"attach", diskImagePath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme"})
-    task:start()
+    end, {diskLocation, "-name", "*.app", "-maxdepth", "1"})
+    appFinder:start()
 end
 
-function handleFailure(errorMsg)
-    hs.alert("Installation failed: " .. errorMsg)
-    hs.console.printStyledtext("Installation failed: " .. errorMsg)
+function ejectDMG(diskLocation, originalDMG)
+    local ejectDisk = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
+        if exitCode == 0 then
+            hs.console.printStyledtext("Successfully ejected DMG")
+            sendFileToTrash(originalDMG)
+        else
+            hs.console.printStyledtext("Failed to eject DMG: " .. (stdErr or "unknown error"))
+        end
+    end, {"detach", diskLocation})
+    ejectDisk:start()
 end
 
-local downloadPath = os.getenv("HOME") .. "/Downloads"
-local processedDMGs = {}
+function openDMG(dmgPath)
+    hs.console.printStyledtext("Opening DMG: " .. dmgPath)
+
+    local mountDisk = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
+        if exitCode == 0 then
+            hs.console.printStyledtext("Successfully opened DMG")
+            local mountLocation = findVolumeMountLocation(stdOut)
+            if mountLocation then
+                installApplicationToApps(mountLocation, dmgPath)
+            else
+                showInstallationError("Could not access DMG contents")
+            end
+        else
+            local dmgName = dmgPath:match("([^/]+)$")
+            hs.console.printStyledtext("Could not open DMG: " .. dmgName)
+            showInstallationError(dmgPath)
+        end
+    end, {"attach", dmgPath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme"})
+    mountDisk:start()
+end
+
+function showInstallationError(errorMessage)
+    hs.alert("Installation failed: " .. errorMessage)
+    hs.console.printStyledtext("Installation failed: " .. errorMessage)
+end
+
+local downloadsFolder = os.getenv("HOME") .. "/Downloads"
+local handledDMGs = {}
 
 function isDMGFile(filePath)
     return string.match(string.lower(filePath), "%.dmg$") ~= nil
 end
 
-function getDMGFiles(dirPath)
+function findDMGs(folderPath)
     local dmgFiles = {}
-    local iter, dir_obj = hs.fs.dir(dirPath)
+    local iterator, directoryObj = hs.fs.dir(folderPath)
 
-    if iter then
-        for file in iter, dir_obj do
+    if iterator then
+        for file in iterator, directoryObj do
             if isDMGFile(file) then
-                local fullPath = dirPath .. "/" .. file
-                local attrs = hs.fs.attributes(fullPath)
-                if attrs and attrs.mode == "file" then
-                    dmgFiles[fullPath] = attrs.modification
+                local fullPath = folderPath .. "/" .. file
+                local fileInfo = hs.fs.attributes(fullPath)
+                if fileInfo and fileInfo.mode == "file" then
+                    dmgFiles[fullPath] = fileInfo.modification
                 end
             end
         end
@@ -116,24 +165,24 @@ function getDMGFiles(dirPath)
     return dmgFiles
 end
 
-function processNewDMGs(newDMGs)
-    for dmgPath, modTime in pairs(newDMGs) do
-        if not processedDMGs[dmgPath] then
-            hs.console.printStyledtext("New DMG found: " .. dmgPath)
-            mountDiskImage(dmgPath)
-            processedDMGs[dmgPath] = modTime
+function handleNewDMGs(newDMGs)
+    for dmgPath, modificationTime in pairs(newDMGs) do
+        if not handledDMGs[dmgPath] then
+            hs.console.printStyledtext("Found new DMG: " .. dmgPath)
+            openDMG(dmgPath)
+            handledDMGs[dmgPath] = modificationTime
         end
     end
 end
 
-function checkDownloadsFolder()
-    local currentDMGs = getDMGFiles(downloadPath)
-    processNewDMGs(currentDMGs)
+function scanDownloadsFolder()
+    local currentDMGs = findDMGs(downloadsFolder)
+    handleNewDMGs(currentDMGs)
 end
 
-checkDownloadsFolder()
-checkDownloadsFolderTimer = hs.timer.doEvery(5, function()
-    checkDownloadsFolder()
+scanDownloadsFolder()
+downloadsFolderWatcher = hs.timer.doEvery(5, function()
+    scanDownloadsFolder()
 end)
 
-hs.console.printStyledtext("AutoDMG initialized: watching Downloads folder and ready for manual operations")
+hs.console.printStyledtext("AutoDMG is ready: watching Downloads folder for new DMGs")
