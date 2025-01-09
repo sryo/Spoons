@@ -9,21 +9,15 @@ function findVolumeMountLocation(commandOutput)
     return nil
 end
 
-function sendFileToTrash(fileLocation)
-    local appleScript = string.format([[
-        tell application "Finder"
-            move POSIX file "%s" to trash
-        end tell
-    ]], fileLocation)
-
-    local trashFile = hs.task.new("/usr/bin/osascript", function(exitCode, stdOut, stdErr)
+function deleteFile(fileLocation)
+    local deleteTask = hs.task.new("/bin/rm", function(exitCode, stdOut, stdErr)
         if exitCode == 0 then
-            hs.console.printStyledtext("Cleaned up file by moving to trash: " .. fileLocation)
+            hs.console.printStyledtext("Cleaned up file by deleting: " .. fileLocation)
         else
-            hs.console.printStyledtext("Cleanup failed when moving to trash: " .. (stdErr or "unknown error"))
+            hs.console.printStyledtext("Cleanup failed when deleting: " .. (stdErr or "unknown error"))
         end
-    end, {"-e", appleScript})
-    trashFile:start()
+    end, {fileLocation})
+    deleteTask:start()
 end
 
 function findPKGFile(diskLocation)
@@ -122,7 +116,7 @@ function ejectDMG(diskLocation, originalDMG)
     local ejectDisk = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
         if exitCode == 0 then
             hs.console.printStyledtext("Successfully ejected DMG")
-            sendFileToTrash(originalDMG)
+            deleteFile(originalDMG)
         else
             hs.console.printStyledtext("Failed to eject DMG: " .. (stdErr or "unknown error"))
         end
@@ -133,6 +127,7 @@ end
 function openDMG(dmgPath)
     hs.console.printStyledtext("Opening DMG: " .. dmgPath)
 
+    -- Create a task with input stream enabled for EULA acceptance
     local mountDisk = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
         if exitCode == 0 then
             hs.console.printStyledtext("Successfully opened DMG")
@@ -148,6 +143,9 @@ function openDMG(dmgPath)
             showInstallationError(dmgPath)
         end
     end, {"attach", dmgPath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme"})
+
+    -- Enable standard input for the task
+    mountDisk:setInput("Y\n")
     mountDisk:start()
 end
 
