@@ -3,11 +3,7 @@
 local wanderTimer = nil
 local wanderDelay = 0.2
 local buffer = 16
-local ignoreConditions = { cmdPressed = false, dragging = false, missionControlActive = false }
-
-local function isMissionControlActive()
-    return hs.spaces.missionControlSpace() ~= nil
-end
+local ignoreConditions = { cmdPressed = false, dragging = false }
 
 local function getVisibleWindows()
     return hs.window.orderedWindows()
@@ -50,7 +46,7 @@ local function isModal(win)
 end
 
 local function focusWindowUnderCursor()
-    if ignoreConditions.cmdPressed or ignoreConditions.dragging or ignoreConditions.missionControlActive then
+    if ignoreConditions.cmdPressed or ignoreConditions.dragging then
         return -- Abort if any ignore condition is met
     end
 
@@ -96,10 +92,6 @@ local cmdWatcher = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, fun
     return false
 end):start()
 
-local missionControlWatcher = hs.spaces.watcher.new(function()
-    ignoreConditions.missionControlActive = isMissionControlActive()
-end):start()
-
 local draggingWatcher = hs.eventtap.new({ hs.eventtap.event.types.leftMouseDragged }, function()
     ignoreConditions.dragging = true
     hs.timer.doAfter(0.5, function()
@@ -115,6 +107,5 @@ hs.shutdownCallback = function()
     end
     if mouseWatcher then mouseWatcher:stop() end
     if cmdWatcher then cmdWatcher:stop() end
-    if missionControlWatcher then missionControlWatcher:stop() end
     if draggingWatcher then draggingWatcher:stop() end
 end
