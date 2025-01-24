@@ -13,7 +13,7 @@ local function checkApps()
             name ~= "Transmission" and
             name ~= "Calendar" and
             name ~= "Stickies" and
-            name ~= "WhatsApp" and
+            name ~= "‎WhatsApp" and
             name ~= "Activity Monitor" and
             name ~= "Hammerspoon" then
             if #app:allWindows() == 0 then
