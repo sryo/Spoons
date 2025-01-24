@@ -16,12 +16,12 @@ function deleteFile(fileLocation)
         else
             hs.console.printStyledtext("Cleanup failed when deleting: " .. (stdErr or "unknown error"))
         end
-    end, {fileLocation})
+    end, { fileLocation })
     deleteTask:start()
 end
 
 function findPKGFile(diskLocation)
-    local pkgFinder = hs.task.new("/usr/bin/find", nil, {diskLocation, "-name", "*.pkg", "-maxdepth", "1"})
+    local pkgFinder = hs.task.new("/usr/bin/find", nil, { diskLocation, "-name", "*.pkg", "-maxdepth", "1" })
     local commandOutput = ""
     pkgFinder:setCallback(function(exitCode, stdOut, stdErr)
         commandOutput = stdOut
@@ -49,7 +49,7 @@ function installPKG(pkgPath)
             hs.console.printStyledtext("PKG installation failed: " .. (stdErr or "unknown error"))
             showInstallationError("PKG installation failed")
         end
-    end, {"-pkg", pkgPath, "-target", "/"})
+    end, { "-pkg", pkgPath, "-target", "/" })
     installer:start()
 end
 
@@ -80,12 +80,13 @@ function installApplicationToApps(diskLocation, originalDMG)
                                     ejectDMG(diskLocation, originalDMG)
                                     hs.alert(appName .. " has been installed successfully.")
                                 else
-                                    hs.console.printStyledtext("Application installation failed: " .. (copyStdErr or "unknown error"))
+                                    hs.console.printStyledtext("Application installation failed: " ..
+                                    (copyStdErr or "unknown error"))
                                     showInstallationError("Failed to install application")
                                 end
-                            end, {"-Rf", appLocation, "/Applications/"})
+                            end, { "-Rf", appLocation, "/Applications/" })
                             copyNewVersion:start()
-                        end, {"-rf", existingAppPath})
+                        end, { "-rf", existingAppPath })
                         removeOldVersion:start()
                         return -- Exit after handling the first app
                     end
@@ -105,7 +106,7 @@ function installApplicationToApps(diskLocation, originalDMG)
             hs.console.printStyledtext("Error locating application: " .. (stdErr or "unknown error"))
             showInstallationError("Could not locate application")
         end
-    end, {diskLocation, "-name", "*.app", "-maxdepth", "1"})
+    end, { diskLocation, "-name", "*.app", "-maxdepth", "1" })
 
     -- Add debug logging before starting the find task
     hs.console.printStyledtext("Starting find command: find " .. diskLocation .. " -name *.app -maxdepth 1")
@@ -120,7 +121,7 @@ function ejectDMG(diskLocation, originalDMG)
         else
             hs.console.printStyledtext("Failed to eject DMG: " .. (stdErr or "unknown error"))
         end
-    end, {"detach", diskLocation})
+    end, { "detach", diskLocation })
     ejectDisk:start()
 end
 
@@ -142,7 +143,7 @@ function openDMG(dmgPath)
             hs.console.printStyledtext("Could not open DMG: " .. dmgName)
             showInstallationError(dmgPath)
         end
-    end, {"attach", dmgPath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme"})
+    end, { "attach", dmgPath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme" })
 
     -- Enable standard input for the task
     mountDisk:setInput("Y\n")
@@ -156,6 +157,7 @@ end
 
 local downloadsFolder = os.getenv("HOME") .. "/Downloads"
 local handledDMGs = {}
+local lastModifiedTime = nil
 
 function isDMGFile(filePath)
     return string.match(string.lower(filePath), "%.dmg$") ~= nil
@@ -191,8 +193,18 @@ function handleNewDMGs(newDMGs)
 end
 
 function scanDownloadsFolder()
-    local currentDMGs = findDMGs(downloadsFolder)
-    handleNewDMGs(currentDMGs)
+    local folderInfo = hs.fs.attributes(downloadsFolder)
+    if folderInfo and folderInfo.modification ~= lastModifiedTime then
+        lastModifiedTime = folderInfo.modification
+        local currentDMGs = findDMGs(downloadsFolder)
+        handleNewDMGs(currentDMGs)
+    end
+end
+
+-- Initialize lastModifiedTime with the current modification time of the Downloads folder
+local folderInfo = hs.fs.attributes(downloadsFolder)
+if folderInfo then
+    lastModifiedTime = folderInfo.modification
 end
 
 scanDownloadsFolder()
