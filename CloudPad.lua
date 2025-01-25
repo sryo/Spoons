@@ -129,6 +129,10 @@ local css = [[
     touch-action: manipulation;
 }
 
+html {
+    overscroll-behavior: none;
+}
+
 body {
     background: #333;
     height: 100vh;
