@@ -1,4 +1,5 @@
 -- CloudPad: Web keyboard for Hammerspoon
+
 local http = require("hs.httpserver")
 local eventtap = require("hs.eventtap")
 local keycodes = require("hs.keycodes")
@@ -157,8 +158,9 @@ body {
 
 .keyboard {
     width: 100%;
-    max-width: 800px;
-    padding: 10px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     transition: opacity 0.2s;
 }
 
@@ -169,24 +171,23 @@ body {
 .row {
     display: flex;
     justify-content: center;
-    margin: 4px 0;
+    flex-grow: 1;
 }
 
 .key {
-    background: #666;
+    background: #000;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 10px;
     margin: 2px;
     padding: 12px;
-    min-width: 40px;
     font-size: 16px;
     cursor: pointer;
     flex: 1;
 }
 
 .key:active {
-    background: #999;
+    background: #666;
 }
 
 .key.active {
