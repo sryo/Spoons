@@ -7,6 +7,14 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Automatic installation: Monitors the Downloads folder for new DMGs and performs installation automatically.
 - Automatic cleanup: After installation, the script unmounts the DMG and deletes the original file to keep the Downloads folder organized.
 
+![cloudpad](https://github.com/user-attachments/assets/47fd58d2-fcf9-4c11-9dd3-7e74d4abc9bc)
+### CloudPad
+[`CloudPad.lua`](https://github.com/sryo/Spoons/blob/main/CloudPad.lua) - Use your phone as a keyboard/trackpad for your Mac via a local web server.
+
+#### How to Use
+- Press ⌘⌃C to copy the server URL.
+- Open the URL on your phone's browser.
+
 ![framemaster](https://github.com/user-attachments/assets/155fd5d5-3bb4-4ad3-9056-ef8c22bf7514)
 ### FrameMaster
 [`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
