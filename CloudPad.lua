@@ -16,23 +16,23 @@ local PORT = 1984
 
 local function accelerationCurve(velocity)
     if velocity < 1 then
-        return velocity * 0.5 -- Precise movement
+        return velocity * 0.1 -- Precise
     elseif velocity < 5 then
         return velocity * 1.2 -- Moderate
     else
-        return velocity ^ 1.5 -- Fast
+        return velocity ^ 2   -- Fast
     end
 end
 
 local function moveMouseRelative(dx, dy)
-    local current = mouse.getAbsolutePosition()
+    local current = mouse.absolutePosition()
     local velocity = math.sqrt(dx ^ 2 + dy ^ 2)
     local scaledVelocity = accelerationCurve(velocity)
     local factor = scaledVelocity / (velocity + 0.01) -- Avoid divide by zero
     dx = dx * factor
     dy = dy * factor
 
-    mouse.setAbsolutePosition({
+    mouse.absolutePosition({
         x = current.x + (dx * MOUSE_SENSITIVITY),
         y = current.y + (dy * MOUSE_SENSITIVITY)
     })
@@ -66,16 +66,19 @@ local html = [[
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, viewport-fit=cover, initial-scale=1.0">
     <title>CloudPad</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="/app.css">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        }
+    </script>
 </head>
 <body>
     <div class="keyboard">
-        <!-- Keyboard layout remains unchanged from previous version -->
         <div class="row">
-            <button data-key="`" class="key">`</button>
             <button data-key="1" class="key">1</button>
             <button data-key="2" class="key">2</button>
             <button data-key="3" class="key">3</button>
@@ -86,11 +89,9 @@ local html = [[
             <button data-key="8" class="key">8</button>
             <button data-key="9" class="key">9</button>
             <button data-key="0" class="key">0</button>
-            <button data-key="delete" class="key">⌫</button>
         </div>
 
         <div class="row">
-            <button data-key="tab" class="key">Tab</button>
             <button data-key="q" class="key">q</button>
             <button data-key="w" class="key">w</button>
             <button data-key="e" class="key">e</button>
@@ -101,12 +102,9 @@ local html = [[
             <button data-key="i" class="key">i</button>
             <button data-key="o" class="key">o</button>
             <button data-key="p" class="key">p</button>
-            <button data-key="[" class="key">[</button>
-            <button data-key="]" class="key">]</button>
         </div>
 
         <div class="row">
-            <button data-key="capslock" class="key">Caps</button>
             <button data-key="a" class="key">a</button>
             <button data-key="s" class="key">s</button>
             <button data-key="d" class="key">d</button>
@@ -116,9 +114,7 @@ local html = [[
             <button data-key="j" class="key">j</button>
             <button data-key="k" class="key">k</button>
             <button data-key="l" class="key">l</button>
-            <button data-key=";" class="key">;</button>
-            <button data-key="'" class="key">'</button>
-            <button data-key="return" class="key">⏎</button>
+            <button data-key="ñ" class="key">ñ</button>
         </div>
 
         <div class="row">
@@ -130,20 +126,19 @@ local html = [[
             <button data-key="b" class="key">b</button>
             <button data-key="n" class="key">n</button>
             <button data-key="m" class="key">m</button>
-            <button data-key="," class="key">,</button>
             <button data-key="." class="key">.</button>
-            <button data-key="/" class="key">/</button>
-            <button data-modifier="shift" class="key mod">⇧</button>
+            <button data-key="backspace" class="key">⌫</button>
         </div>
 
         <div class="row">
-            <button data-modifier="ctrl" class="key mod">ctrl</button>
-            <button data-modifier="cmd" class="key mod">⌘</button>
+            <button data-key="escape" class="key">⎋</button>
+            <button data-modifier="ctrl" class="key mod">⌃</button>
+            <button data-modifier="symbols" class="key mod">#</button>
             <button data-modifier="alt" class="key mod">⌥</button>
-            <button data-key="space" class="key space">␣</button>
-            <button data-modifier="alt" class="key mod">⌥</button>
             <button data-modifier="cmd" class="key mod">⌘</button>
-            <button data-modifier="ctrl" class="key mod">ctrl</button>
+            <button data-key="space" class="key space"></button>
+            <button data-mouse="rightclick" class="key">☰</button>
+            <button data-key="return" class="key">⏎</button>
         </div>
     </div>
     <script src="/app.js"></script>
@@ -156,20 +151,22 @@ local css = [[
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    touch-action: manipulation;
+    touch-action: none;
 }
 
 html {
-    overscroll-behavior: none;
     user-select: none;
 }
 
 body {
-    background: #333;
+    background: #111;
     height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
+    margin: 4px;
+    overscroll-behavior: none;
+    overflow: hidden;
 }
 
 .keyboard {
@@ -178,10 +175,11 @@ body {
     display: flex;
     flex-direction: column;
     transition: opacity 0.2s;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .mouse-mode .keyboard {
-    opacity: 0.7;
+    opacity: 0.1;
 }
 
 .row {
@@ -196,14 +194,19 @@ body {
     border: none;
     border-radius: 10px;
     margin: 2px;
-    padding: 12px;
-    font-size: 16px;
+    padding: 0px;
+    font-size: clamp(12px, 6vw, 48px);
+    text-box-trim: trim-both;
     cursor: pointer;
     flex: 1;
+    transition: all 0.1s;
 }
 
-.key:active {
+body:not(.mouse-mode) .key:active {
     background: #666;
+    scale: 2;
+    translate: 0 -20vh;
+    transition: all 0s;
 }
 
 .key.active {
@@ -211,18 +214,18 @@ body {
 }
 
 .space {
-    flex: 8;
+    flex: 3;
 }
 
 .mod {
-    flex: 2;
-    background: #444;
+    flex: 1;
+    background: #222;
 }
 
 #cursor {
     position: fixed;
-    width: 10px;
-    height: 10px;
+    width: 42px;
+    height: 42px;
     background: rgba(255,255,255,0.7);
     border-radius: 50%;
     pointer-events: none;
@@ -310,6 +313,8 @@ document.querySelectorAll('.key').forEach(btn => {
     btn.addEventListener('touchstart', e => {
         e.preventDefault();
         const modifier = btn.dataset.modifier;
+        const mouseAction = btn.dataset.mouse;
+        if (mouseAction) return sendMouseEvent(mouseAction);
 
         Array.from(e.touches).forEach(touch => {
             state.activeTouches.set(touch.identifier, {
@@ -317,7 +322,7 @@ document.querySelectorAll('.key').forEach(btn => {
                 y: touch.clientY,
                 startTime: Date.now(),
                 longPressTimer: modifier ? null : setTimeout(() => {
-                    if (e.touches.length === 2) sendMouseEvent('rightclick');
+                    if (e.touches.length === 3) sendMouseEvent('rightclick');
                 }, LONG_PRESS_DURATION)
             });
         });
@@ -350,6 +355,7 @@ document.querySelectorAll('.key').forEach(btn => {
     btn.addEventListener('touchend', e => {
         e.preventDefault();
         const key = btn.dataset.key;
+        const mouseAction = btn.dataset.mouse; // Add this line to handle mouse actions
         const modifier = btn.dataset.modifier;
 
         Array.from(e.changedTouches).forEach(touch => {
@@ -470,6 +476,9 @@ server:setCallback(function(method, path, headers, body)
         local ok, data = pcall(json.decode, body)
         if ok then
             if data.type == 'key' then
+                if not data.key then
+                    return "Bad Request: Missing key", 400
+                end
                 local modifiers = {}
                 for _, mod in ipairs(data.modifiers or {}) do
                     local normalized = mod:lower()
@@ -524,7 +533,6 @@ server:setCallback(function(method, path, headers, body)
 end)
 
 server:start()
-print("CloudPad server running at http://localhost:" .. PORT)
 
 local ipAddress = getLocalIP()
 if ipAddress then
@@ -533,7 +541,7 @@ if ipAddress then
         pasteboard.setContents(url)
         alert.show("URL copied to clipboard!\n" .. url, 2)
     end)
-    print("Use ⌘⌃C to copy server URL: " .. url)
+    print("CloudPad running at: " .. url .. ". Hit ⌘⌃C and paste it on your device.")
 else
     print("Could not determine IP address - URL copying disabled")
 end
