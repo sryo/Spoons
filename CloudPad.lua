@@ -10,12 +10,28 @@ local hotkey = require("hs.hotkey")
 local alert = require("hs.alert")
 local mouse = require("hs.mouse")
 
-local MOUSE_SENSITIVITY = 2.5
+local MOUSE_SENSITIVITY = 1.5
 local SCROLL_AMOUNT = 15
-local PORT = 8080
+local PORT = 1984
+
+local function accelerationCurve(velocity)
+    if velocity < 1 then
+        return velocity * 0.5 -- Precise movement
+    elseif velocity < 5 then
+        return velocity * 1.2 -- Moderate
+    else
+        return velocity ^ 1.5 -- Fast
+    end
+end
 
 local function moveMouseRelative(dx, dy)
     local current = mouse.getAbsolutePosition()
+    local velocity = math.sqrt(dx ^ 2 + dy ^ 2)
+    local scaledVelocity = accelerationCurve(velocity)
+    local factor = scaledVelocity / (velocity + 0.01) -- Avoid divide by zero
+    dx = dx * factor
+    dy = dy * factor
+
     mouse.setAbsolutePosition({
         x = current.x + (dx * MOUSE_SENSITIVITY),
         y = current.y + (dy * MOUSE_SENSITIVITY)
