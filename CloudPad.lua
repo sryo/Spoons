@@ -379,7 +379,7 @@ document.querySelectorAll('.key').forEach(btn => {
             }
         }
 
-        // Add the following code to trigger left click on mouse mode release
+        // trigger left click on mouse mode release
         if (state.mouseMode && e.changedTouches.length === 1) {
             const now = Date.now();
             sendMouseEvent('leftclick');
@@ -534,16 +534,24 @@ end)
 
 server:start()
 
-local ipAddress = getLocalIP()
-if ipAddress then
-    local url = "http://" .. ipAddress .. ":" .. PORT
+function getHostname()
+    local f = io.popen("/bin/hostname")
+    local hostname = f:read("*a") or ""
+    f:close()
+    hostname = string.gsub(hostname, "\n$", "")
+    return hostname
+end
+
+local hostname = getHostname()
+if hostname then
+    local url = "http://" .. hostname .. ":" .. PORT
     hotkey.bind({ "cmd", "ctrl" }, "C", function()
         pasteboard.setContents(url)
         alert.show("URL copied to clipboard!\n" .. url, 2)
     end)
     print("CloudPad running at: " .. url .. ". Hit ⌘⌃C and paste it on your device.")
 else
-    print("Could not determine IP address - URL copying disabled")
+    print("Could not determine hostname - No URL for you.")
 end
 
 return server
