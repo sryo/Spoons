@@ -1,4 +1,4 @@
-These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts currently help display time near the mouse cursor, prevent the menu bar from appearing, automatically tile windows of whitelisted applications, and open URLs in different browsers.
+These Hammerspoon scripts are designed to enhance the usability and productivity of macOS by providing various workspace management features. The scripts help display time near the mouse cursor, manage and dispose of .dmg files, provide a virtual keyboard for typing on your Mac from other devices, prevent the menu bar from appearing, automatically tile windows, or open URLs in different browsers.
 
 ### AutoDMG
 [`AutoDMG.lua`](https://github.com/sryo/Spoons/blob/main/AutoDMG.lua) simplifies the process of mounting DMG files, locating applications within them, and copying those applications to the Applications folder.
