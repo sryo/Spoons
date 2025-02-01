@@ -51,16 +51,6 @@ local modifierMap = {
     alt = "alt"
 }
 
-local function getLocalIP()
-    local addresses = network.addresses() or {}
-    for _, addr in ipairs(addresses) do
-        if addr:match("^%d+%.%d+%.%d+%.%d+$") and not addr:match("^127%.") then
-            return addr
-        end
-    end
-    return nil
-end
-
 local html = [[
 <!DOCTYPE html>
 <html lang="en">
@@ -77,70 +67,127 @@ local html = [[
     </script>
 </head>
 <body>
-    <div class="keyboard">
+    <div class="keyboard main active">
         <div class="row">
-            <button data-key="1" class="key">1</button>
-            <button data-key="2" class="key">2</button>
-            <button data-key="3" class="key">3</button>
-            <button data-key="4" class="key">4</button>
-            <button data-key="5" class="key">5</button>
-            <button data-key="6" class="key">6</button>
-            <button data-key="7" class="key">7</button>
-            <button data-key="8" class="key">8</button>
-            <button data-key="9" class="key">9</button>
-            <button data-key="0" class="key">0</button>
+            <button data-key="1" data-shift="!" data-option="|" class="key">1</button>
+            <button data-key="2" data-shift="/"" data-option="@" class="key">2</button>
+            <button data-key="3" data-shift="·" data-option="#" class="key">3</button>
+            <button data-key="4" data-shift="$" data-option="¢" class="key">4</button>
+            <button data-key="5" data-shift="%" data-option="∞" class="key">5</button>
+            <button data-key="6" data-shift="&" data-option="¬" class="key">6</button>
+            <button data-key="7" data-shift="/" data-option="÷" class="key">7</button>
+            <button data-key="8" data-shift="(" data-option="“" class="key">8</button>
+            <button data-key="9" data-shift=")" data-option="”" class="key">9</button>
+            <button data-key="0" data-shift="=" data-option="≠" class="key">0</button>
         </div>
-
         <div class="row">
-            <button data-key="q" class="key">q</button>
-            <button data-key="w" class="key">w</button>
-            <button data-key="e" class="key">e</button>
-            <button data-key="r" class="key">r</button>
-            <button data-key="t" class="key">t</button>
-            <button data-key="y" class="key">y</button>
-            <button data-key="u" class="key">u</button>
-            <button data-key="i" class="key">i</button>
-            <button data-key="o" class="key">o</button>
-            <button data-key="p" class="key">p</button>
+            <button data-key="q" data-shift="Q" data-option="œ" class="key">q</button>
+            <button data-key="w" data-shift="W" data-option="æ" class="key">w</button>
+            <button data-key="e" data-shift="E" data-option="€" class="key">e</button>
+            <button data-key="r" data-shift="R" data-option="®" class="key">r</button>
+            <button data-key="t" data-shift="T" data-option="†" class="key">t</button>
+            <button data-key="y" data-shift="Y" data-option="¥" class="key">y</button>
+            <button data-key="u" data-shift="U" data-option=" " class="key">u</button>
+            <button data-key="i" data-shift="I" data-option=" " class="key">i</button>
+            <button data-key="o" data-shift="O" data-option="ø" class="key">o</button>
+            <button data-key="p" data-shift="P" data-option="π" class="key">p</button>
         </div>
-
         <div class="row">
-            <button data-key="a" class="key">a</button>
-            <button data-key="s" class="key">s</button>
-            <button data-key="d" class="key">d</button>
-            <button data-key="f" class="key">f</button>
-            <button data-key="g" class="key">g</button>
-            <button data-key="h" class="key">h</button>
-            <button data-key="j" class="key">j</button>
-            <button data-key="k" class="key">k</button>
-            <button data-key="l" class="key">l</button>
-            <button data-key="ñ" class="key">ñ</button>
+            <button data-key="a" data-shift="A" data-option="å" class="key">a</button>
+            <button data-key="s" data-shift="S" data-option="∫" class="key">s</button>
+            <button data-key="d" data-shift="D" data-option="∂" class="key">d</button>
+            <button data-key="f" data-shift="F" data-option="ƒ" class="key">f</button>
+            <button data-key="g" data-shift="G" data-option="" class="key">g</button>
+            <button data-key="h" data-shift="H" data-option="™" class="key">h</button>
+            <button data-key="j" data-shift="J" data-option="¶" class="key">j</button>
+            <button data-key="k" data-shift="K" data-option="§" class="key">k</button>
+            <button data-key="l" data-shift="L" data-option=" " class="key">l</button>
+            <button data-key="ñ" data-shift="Ñ" data-option="~" class="key">ñ</button>
         </div>
-
         <div class="row">
             <button data-modifier="shift" class="key mod">⇧</button>
-            <button data-key="z" class="key">z</button>
-            <button data-key="x" class="key">x</button>
-            <button data-key="c" class="key">c</button>
-            <button data-key="v" class="key">v</button>
-            <button data-key="b" class="key">b</button>
-            <button data-key="n" class="key">n</button>
-            <button data-key="m" class="key">m</button>
-            <button data-key="." class="key">.</button>
+            <button data-key="z" data-shift="Z" data-option="Ω" class="key">z</button>
+            <button data-key="x" data-shift="X" data-option="∑" class="key">x</button>
+            <button data-key="c" data-shift="C" data-option="©" class="key">c</button>
+            <button data-key="v" data-shift="V" data-option="√" class="key">v</button>
+            <button data-key="b" data-shift="B" data-option="ß" class="key">b</button>
+            <button data-key="n" data-shift="N" data-option=" " class="key">n</button>
+            <button data-key="m" data-shift="M" data-option="µ" class="key">m</button>
+            <button data-key="." data-shift=":" data-option="…" class="key">.</button>
             <button data-key="backspace" class="key">⌫</button>
         </div>
-
         <div class="row">
             <button data-key="escape" class="key">⎋</button>
             <button data-modifier="ctrl" class="key mod">⌃</button>
             <button data-modifier="symbols" class="key mod">#</button>
             <button data-modifier="alt" class="key mod">⌥</button>
             <button data-modifier="cmd" class="key mod">⌘</button>
+            <button data-key="space" class="key space">␣</button>
+            <button data-modifier="fn" class="key">fn</button>
+            <button data-key="return" class="key">↵</button>
+        </div>
+    </div>
+    <div class="keyboard symbols">
+        <div class="row">
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+        </div>
+        <div class="row">
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+        </div>
+        <div class="row">
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+            <button data-key="" class="key"></button>
+        </div>
+        <div class="row">
+            <button data-key="left" class="key">←</button>
+            <button data-key="right" class="key">→</button>
+            <button data-key="up" class="key">↑</button>
+            <button data-key="down" class="key">↓</button>
+            <button data-mouse="scrollup" class="key">🠉</button>
+            <button data-mouse="scrolldown" class="key">🠋</button>
+            <button data-mouse="doubleclick" class="key">️L</button>
+            <button data-mouse="middleclick" class="key">M</button>
+            <button data-mouse="rightclick" class="key"> R</button>
+            <button data-key="delete" class="key">⌦</button>
+        </div>
+        <div class="row">
+            <button data-key="tab" class="key">⇥</button>
+            <button data-modifier="ctrl" class="key mod">⌃</button>
+            <button data-modifier="symbols" class="key mod">#</button>
+            <button data-modifier="alt" class="key mod">⌥</button>
+            <button data-modifier="cmd" class="key mod">⌘</button>
             <button data-key="space" class="key space"></button>
-            <button data-mouse="rightclick" class="key">☰</button>
+            <button data-key="fn" class="key">fn</button>
             <button data-key="return" class="key">⏎</button>
         </div>
     </div>
+
     <script src="/app.js"></script>
 </body>
 </html>
@@ -170,16 +217,22 @@ body {
 }
 
 .keyboard {
+    display: none;
+    position: absolute;
     width: 100%;
     height: 100%;
-    display: flex;
     flex-direction: column;
     transition: opacity 0.2s;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+.keyboard.active {
+    display: flex;
+}
+
 .mouse-mode .keyboard {
     opacity: 0.1;
+    pointer-events: none;
 }
 
 .row {
@@ -202,14 +255,14 @@ body {
     transition: all 0.1s;
 }
 
-body:not(.mouse-mode) .key:active {
+.key:not(.mod).active {
     background: #666;
     scale: 2;
     translate: 0 -20vh;
     transition: all 0s;
 }
 
-.key.active {
+.mod.active {
     background: #007AFF;
 }
 
@@ -236,218 +289,285 @@ body:not(.mouse-mode) .key:active {
 
 local js = [[
 const state = {
-    modifiers: new Set(),
-    mouseMode: false,
     activeTouches: new Map(),
-    lastClickTime: 0
+    activeModifiers: new Set(),
+    mouseMode: false,
+    lastClickTime: 0,
+    pendingKeys: new Map(),
+    scrollSpeed: 3,
+    currentLayer: 'main',
+    layers: {
+        main: document.querySelector('.main'),
+        symbols: document.querySelector('.symbols')
+    }
 };
 
 const TOUCH_THRESHOLD = 5;
 const LONG_PRESS_DURATION = 500;
-
+const BASE_SCROLL_AMOUNT = 15;
 let wakeLock = null;
+let cursor = null;
 
-async function requestWakeLock() {
-    try {
-        if ('wakeLock' in navigator) {
-            wakeLock = await navigator.wakeLock.request('screen');
-            console.log('Wake Lock acquired');
+function updateKeyLabels() {
+    const friendlyMapping = {
+        "backspace": "⌫",
+        "delete": "⌦",
+        "space": "␣",
+        "return": "↵",
+        "escape": "⎋",
+        "tab": "⇥",
+        "shift": "⇧"
+        // Add more mappings as needed.
+    };
 
-            wakeLock.addEventListener('release', () => {
-                console.log('Wake Lock released');
-            });
+    const mainKeys = document.querySelectorAll('.main .key[data-key]:not([data-modifier])');
+    mainKeys.forEach(key => {
+        const shiftActive = state.activeModifiers.has('shift');
+        const optionActive = state.activeModifiers.has('alt');
+        let displayText = key.dataset.key; // default
+
+        if (shiftActive && key.dataset.shift) {
+            displayText = key.dataset.shift;
+        } else if (optionActive && key.dataset.option) {
+            displayText = key.dataset.option;
+        } else if (friendlyMapping[displayText]) {
+            displayText = friendlyMapping[displayText];
         }
-    } catch (err) {
-        console.error('Error acquiring Wake Lock:', err);
-    }
-}
 
-// Request Wake Lock on initial load
-document.addEventListener('DOMContentLoaded', requestWakeLock);
-
-// Re-acquire Wake Lock when page becomes visible
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && wakeLock === null) {
-        requestWakeLock();
-    }
-});
-
-// Request Wake Lock on any touch interaction
-document.addEventListener('touchstart', () => {
-    if (wakeLock === null) {
-        requestWakeLock();
-    }
-}, { once: true });
-
-function toggleModifier(modifier) {
-    state.modifiers.has(modifier) ?
-        state.modifiers.delete(modifier) :
-        state.modifiers.add(modifier);
-    updateModifierUI(modifier);
-}
-
-function updateModifierUI(modifier) {
-    document.querySelectorAll(`[data-modifier="${modifier}"]`).forEach(btn => {
-        btn.classList.toggle('active', state.modifiers.has(modifier));
+        key.textContent = displayText;
     });
 }
 
+document.addEventListener('DOMContentLoaded', () => {
+    const keyboard = document.querySelector('.keyboard');
+    cursor = document.createElement('div');
+    cursor.id = 'cursor';
+    document.body.appendChild(cursor);
+
+    document.querySelectorAll('.keyboard').forEach(layer => {
+        layer.addEventListener('touchstart', onTouchStart);
+        layer.addEventListener('touchmove', onTouchMove);
+        layer.addEventListener('touchend', onTouchEnd);
+        layer.addEventListener('touchcancel', onTouchEnd);
+    });
+
+    updateKeyLabels();
+    requestWakeLock();
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') requestWakeLock();
+    });
+});
+
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => wakeLock = null);
+        }
+    } catch (err) {
+        console.error('Wake Lock Error:', err);
+    }
+}
+
+function toggleLayers() {
+    state.currentLayer = state.currentLayer === 'main' ? 'symbols' : 'main';
+    Object.entries(state.layers).forEach(([name, element]) => {
+        element.classList.toggle('active', name === state.currentLayer);
+    });
+    updateKeyLabels();
+}
+
+function onTouchStart(e) {
+    e.preventDefault();
+    Array.from(e.touches).forEach(touch => {
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (!element?.classList.contains('key')) return;
+
+        if (element.dataset.mouse) {
+            sendMouseEvent(element.dataset.mouse);
+            element.classList.add('active');
+            setTimeout(() => element.classList.remove('active'), 200);
+            return;
+        }
+
+        state.activeTouches.set(touch.identifier, {
+            x: touch.clientX,
+            y: touch.clientY,
+            element,
+            longPressTimer: setTimeout(() => {
+                if (e.touches.length === 3) sendMouseEvent('rightclick');
+            }, LONG_PRESS_DURATION)
+        });
+
+        updateTouch(element, touch.identifier, true);
+    });
+}
+
+function onTouchMove(e) {
+    e.preventDefault();
+    Array.from(e.touches).forEach(touch => {
+        const touchData = state.activeTouches.get(touch.identifier);
+        if (!touchData) return;
+
+        if (state.mouseMode) {
+            cursor.style.left = `${touch.clientX}px`;
+            cursor.style.top = `${touch.clientY}px`;
+        }
+
+        if (!state.mouseMode && e.touches.length === 1) {
+            const dx = touch.clientX - touchData.x;
+            const dy = touch.clientY - touchData.y;
+
+            if (Math.hypot(dx, dy) > TOUCH_THRESHOLD) {
+                enterMouseMode(touch);
+            }
+        }
+
+        if (state.mouseMode && e.touches.length === 1) {
+            const dx = (touch.clientX - touchData.x) * 1.5;
+            const dy = (touch.clientY - touchData.y) * 1.5;
+            touchData.x = touch.clientX;
+            touchData.y = touch.clientY;
+            sendMouseEvent('move', { dx, dy });
+        }
+
+        const newElement = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (newElement !== touchData.element) {
+            updateTouch(touchData.element, touch.identifier, false);
+            touchData.element = newElement;
+            updateTouch(newElement, touch.identifier, true);
+        }
+    });
+}
+
+function onTouchEnd(e) {
+    e.preventDefault();
+    Array.from(e.changedTouches).forEach(touch => {
+        const touchData = state.activeTouches.get(touch.identifier);
+        if (!touchData) return;
+
+        clearTimeout(touchData.longPressTimer);
+        updateTouch(touchData.element, touch.identifier, false);
+        state.activeTouches.delete(touch.identifier);
+
+        if (state.mouseMode) {
+            if (e.touches.length !== 1) exitMouseMode();
+            if (e.changedTouches.length === 1) {
+                sendMouseEvent('leftclick');
+            }
+        }
+    });
+}
+
+function updateTouch(element, touchId, isActive) {
+    if (element.dataset.modifier === 'symbols' && isActive) {
+        toggleLayers();
+        return;
+    }
+
+    if (element.dataset.mouse) return;
+
+    if (element.dataset.modifier) {
+        updateMod(element, isActive);
+    } else {
+        updateKey(element, touchId, isActive);
+    }
+}
+
+function updateMod(element, isActive) {
+    let modifier = element.dataset.modifier;
+
+    if (modifier === 'symbols') {
+        if (isActive) {
+            element.classList.toggle('active', state.currentLayer === 'symbols');
+        }
+        return;
+    }
+
+    if (isActive) {
+        if (state.activeModifiers.has(modifier)) {
+            state.activeModifiers.delete(modifier);
+        } else {
+            state.activeModifiers.add(modifier);
+        }
+
+        document.querySelectorAll(`[data-modifier="${element.dataset.modifier}"]`).forEach(btn => {
+            btn.classList.toggle('active', state.activeModifiers.has(modifier));
+        });
+
+        updateKeyLabels();
+    }
+}
+
+function updateKey(element, touchId, isActive) {
+    element.classList.toggle('active', isActive);
+
+    if (isActive) {
+        state.pendingKeys.set(touchId, {
+            element,
+            key: element.dataset.key
+        });
+    } else {
+        const keyData = state.pendingKeys.get(touchId);
+        if (keyData) {
+            sendKey(keyData.key);
+            state.pendingKeys.delete(touchId);
+        }
+    }
+}
+
+function enterMouseMode(touch) {
+    state.mouseMode = true;
+    document.body.classList.add('mouse-mode');
+    cursor.style.display = 'block';
+    cursor.style.left = `${touch.clientX}px`;
+    cursor.style.top = `${touch.clientY}px`;
+
+    state.pendingKeys.forEach((data, id) => {
+        data.element.classList.remove('active');
+        state.pendingKeys.delete(id);
+    });
+}
+
+function exitMouseMode() {
+    state.mouseMode = false;
+    document.body.classList.remove('mouse-mode');
+    cursor.style.display = 'none';
+}
+
 function sendKey(key) {
-    const modifiers = Array.from(state.modifiers);
+    const modifiers = Array.from(state.activeModifiers);
     fetch('/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'key', key, modifiers })
+        body: JSON.stringify({
+            type: 'key',
+            key,
+            modifiers
+        })
     }).catch(console.error);
 }
 
 function sendMouseEvent(type, data = {}) {
+    const payload = { type, ...data };
+    if (type === 'scroll') {
+        payload.amount = Math.round(BASE_SCROLL_AMOUNT * state.scrollSpeed);
+    }
+
     fetch('/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, ...data })
+        body: JSON.stringify(payload)
     }).catch(console.error);
 }
 
-document.querySelectorAll('.key').forEach(btn => {
-    btn.addEventListener('touchstart', e => {
-        e.preventDefault();
-        const modifier = btn.dataset.modifier;
-        const mouseAction = btn.dataset.mouse;
-        if (mouseAction) return sendMouseEvent(mouseAction);
-
-        Array.from(e.touches).forEach(touch => {
-            state.activeTouches.set(touch.identifier, {
-                x: touch.clientX,
-                y: touch.clientY,
-                startTime: Date.now(),
-                longPressTimer: modifier ? null : setTimeout(() => {
-                    if (e.touches.length === 3) sendMouseEvent('rightclick');
-                }, LONG_PRESS_DURATION)
-            });
-        });
-
-        modifier ? toggleModifier(modifier) : (e.touches.length === 1 && (state.mouseMode = false));
-    });
-
-    btn.addEventListener('touchmove', e => {
-        if (!state.activeTouches.size) return;
-
-        if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            const initial = state.activeTouches.get(touch.identifier);
-            const dx = touch.clientX - initial.x;
-            const dy = touch.clientY - initial.y;
-
-            if (!state.mouseMode && (Math.abs(dx) > TOUCH_THRESHOLD || Math.abs(dy) > TOUCH_THRESHOLD)) {
-                state.mouseMode = true;
-                document.body.classList.add('mouse-mode');
-            }
-
-            if (state.mouseMode) {
-                sendMouseEvent('move', { dx, dy });
-                initial.x = touch.clientX;
-                initial.y = touch.clientY;
-            }
-        }
-    });
-
-    btn.addEventListener('touchend', e => {
-        e.preventDefault();
-        const key = btn.dataset.key;
-        const mouseAction = btn.dataset.mouse; // Add this line to handle mouse actions
-        const modifier = btn.dataset.modifier;
-
-        Array.from(e.changedTouches).forEach(touch => {
-            const t = state.activeTouches.get(touch.identifier);
-            t && (clearTimeout(t.longPressTimer), state.activeTouches.delete(touch.identifier));
-        });
-
-        // Hide cursor when touch ends
-        cursor.style.display = 'none';
-
-        if (!state.mouseMode && !modifier) sendKey(key);
-
-        if (!state.mouseMode) {
-            const now = Date.now();
-            const touchCount = state.activeTouches.size + e.changedTouches.length;
-
-            if (touchCount === 2) {
-                const eventType = (now - state.lastClickTime < 300) ? 'doubleclick' : 'leftclick';
-                sendMouseEvent(eventType);
-                state.lastClickTime = now;
-            }
-        }
-
-        // trigger left click on mouse mode release
-        if (state.mouseMode && e.changedTouches.length === 1) {
-            const now = Date.now();
-            sendMouseEvent('leftclick');
-            state.lastClickTime = now;
-        }
-
-        state.activeTouches.size || (state.mouseMode = false, document.body.classList.remove('mouse-mode'));
-    });
-});
-
-const cursor = document.createElement('div');
-cursor.id = 'cursor';
-document.body.appendChild(cursor);
-
-document.addEventListener('touchmove', e => {
-    if (state.mouseMode && e.touches.length === 1) {
-        const touch = e.touches[0];
-        cursor.style.display = 'block';
-        cursor.style.left = `${touch.clientX}px`;
-        cursor.style.top = `${touch.clientY}px`;
-    } else {
-        cursor.style.display = 'none';
-    }
-}, { passive: true });
-
-document.addEventListener('contextmenu', e => e.preventDefault());
-
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('Service Worker registered'))
-            .catch(console.error);
+        navigator.serviceWorker.register('/sw.js');
     });
 }
-]]
 
-local manifest = [[
-{
-    "name": "CloudPad",
-    "short_name": "CloudPad",
-    "start_url": "/",
-    "display": "standalone",
-    "background_color": "#333333",
-    "theme_color": "#333333",
-    "icons": [
-        {
-            "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAMAAABlApw1AAAAA1BMVEUAAACnej3aAAAALElEQVR4nO3BMQEAAADCIPuntsUuYAAAAAAAAAAAAAAAAAAAAAAAAAAAAJA5dw8AAa0h7lUAAAAASUVORK5CYII=",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQAQMAAAC6caSPAAAAA1BMVEUAAACnej3aAAAANUlEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAGDvQAAAFGtB5jAAAAAElFTkSuQmCC",
-            "sizes": "512x512",
-            "type": "image/png"
-        }
-    ]
-}
-]]
-
-local sw = [[
-self.addEventListener('install', e => {
-    e.waitUntil(caches.open('cloudpad-v1')
-        .then(cache => cache.addAll(['/', '/app.css', '/app.js', '/manifest.json'])));
-});
-
-self.addEventListener('fetch', e => {
-    e.respondWith(caches.match(e.request).then(response => response || fetch(e.request)));
-});
+document.addEventListener('contextmenu', e => e.preventDefault());
 ]]
 
 local server = http.new(false, false)
@@ -549,7 +669,7 @@ if hostname then
         pasteboard.setContents(url)
         alert.show("URL copied to clipboard!\n" .. url, 2)
     end)
-    print("CloudPad running at: " .. url .. ". Hit ⌘⌃C and paste it on your device.")
+    print("CloudPad running at " .. url .. ". Hit ⌘⌃C and paste it on your device.")
 else
     print("Could not determine hostname - No URL for you.")
 end
