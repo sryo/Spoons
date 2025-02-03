@@ -1,13 +1,14 @@
 -- FrameMaster: https://github.com/sryo/Spoons/blob/main/FrameMaster.lua
 -- Take control of your Mac's 'hot corners', menu bar, and dock.
 
-local killMenu          = true  -- prevent the menu bar from appearing
-local killDock          = true  -- prevent the dock from appearing
-local onlyFullscreen    = false  -- but only on fullscreen spaces
-local buffer            = 4     -- increase if you still manage to activate them
-local showTooltips      = true  -- set this to false to improve performance if necessary
-local tooltipMaxLength  = 50    -- maximum length for tooltip messages
-local reopenAfterKill   = true  -- show an autoclosing modal to reopen the last killed app
+local killMenu         = true  -- prevent the menu bar from appearing
+local killDock         = true  -- prevent the dock from appearing
+local onlyFullscreen   = false -- but only on fullscreen spaces
+local buffer           = 4     -- increase if you still manage to activate them
+local showTooltips     = true  -- set this to false to improve performance if necessary
+local tooltipMaxLength = 50    -- maximum length for tooltip messages
+local reopenAfterKill  = true  -- show an autoclosing modal to reopen the last killed app
+local tooltipMargin    = 0     -- increase this value to add extra spacing if needed
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -22,24 +23,24 @@ local function getAppName(cornerAction)
 end
 
 local lastKilledApp = nil
+local lastKilledAppName = nil
 
 function showReopenDialog()
     if reopenAfterKill then
         local message = "You just killed " .. lastKilledAppName .. ". Would you like to reopen it?"
         local script = [[
             tell application "System Events"
-            activate
-            display dialog "]] .. message .. [[" buttons {"Ignore", "Reopen"} default button 2 giving up after 5
-            if result is not missing value and button returned of result is "Reopen" then
-            return "Reopen"
-            else
-            return "Ignore"
-            end if
+                activate
+                display dialog "]] .. message .. [[" buttons {"Ignore", "Reopen"} default button 2 giving up after 5
+                if result is not missing value and button returned of result is "Reopen" then
+                    return "Reopen"
+                else
+                    return "Ignore"
+                end if
             end tell
         ]]
         local appleScriptTask = hs.task.new("/usr/bin/osascript", function(exitCode, stdOut, stdErr)
             print("exitCode: " .. exitCode .. " stdOut: " .. stdOut .. " stdErr: " .. stdErr)
-
             if exitCode == 0 and stdOut:find("Reopen") then
                 hs.application.launchOrFocusByBundleID(lastKilledApp)
             end
@@ -80,8 +81,8 @@ hotCorners = {
                 showReopenDialog()
                 print(lastKilledApp)
             else
-                hs.eventtap.keyStroke({"cmd"}, "w")
-                hs.timer.usleep(100000)  -- Wait a little for the close action to complete
+                hs.eventtap.keyStroke({ "cmd" }, "w")
+                hs.timer.usleep(100000) -- Wait a little for the close action to complete
                 local allWindows = app:allWindows()
                 local visibleWindows = {}
                 for i, win in ipairs(allWindows) do
@@ -91,7 +92,7 @@ hotCorners = {
                 end
                 if #visibleWindows == 0 or not window then
                     app:kill()
-                    if nextWindow then 
+                    if nextWindow then
                         hs.timer.doAfter(0.5, function() nextWindow:focus() end)
                     end
                     executedActionMessage = "Quitted " .. getAppName()
@@ -100,7 +101,7 @@ hotCorners = {
                 end
             end
 
-            hs.timer.doAfter(.5, function()
+            hs.timer.doAfter(0.5, function()
                 local currentMousePosition = hs.mouse.absolutePosition()
                 hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.mouseMoved, currentMousePosition):post()
             end)
@@ -126,7 +127,7 @@ hotCorners = {
                 window:toggleZoom()
                 return "Zoomed " .. getWindowTitle()
             else
-                hs.eventtap.keyStroke({"ctrl", "cmd"}, "F")
+                hs.eventtap.keyStroke({ "ctrl", "cmd" }, "F")
                 return "Toggled Fullscreen for " .. getWindowTitle()
             end
         end,
@@ -191,37 +192,33 @@ local lastCorner = nil
 local lastTooltipTime = 0
 local lastTooltipCorner = nil
 
-local function getCurrentScreenSize()
-    local currentScreen = hs.mouse.getCurrentScreen()
-    return currentScreen and currentScreen:currentMode() or nil
+local function getCurrentScreenFrame()
+    local screen = hs.mouse.getCurrentScreen()
+    if screen then
+        return screen:frame()
+    end
+    return nil
 end
-
-local screenSize = getCurrentScreenSize()
-
-function updateScreenSize()
-    screenSize = getCurrentScreenSize()
-end
-
-screenWatcher = hs.screen.watcher.newWithActiveScreen(updateScreenSize)
-screenWatcher:start()
 
 function checkForHotCorner(x, y)
-    updateScreenSize()
-    return ((x <= 1 and y <= buffer) and "topLeft") or 
-           ((x >= screenSize.w - 1 and y <= buffer) and "topRight") or
-           ((x >= screenSize.w - 1 and y >= screenSize.h - buffer) and "bottomRight") or
-           ((x <= 1 and y >= screenSize.h - buffer) and "bottomLeft")
-end
+    local frame = getCurrentScreenFrame()
+    if not frame then return nil end
 
-function showTooltip(corner)
-    if corner ~= lastTooltipCorner or hs.timer.secondsSinceEpoch() - lastTooltipTime >= 1 then
-        local message = hotCorners[corner].message()
-        if message ~= "" then
-            showMessage(lastCorner, message)
-            lastTooltipTime = hs.timer.secondsSinceEpoch()
-            lastTooltipCorner = corner
-        end
+    local left   = frame.x
+    local right  = frame.x + frame.w
+    local top    = frame.y
+    local bottom = frame.y + frame.h
+
+    if x <= left + buffer and y <= top + buffer then
+        return "topLeft"
+    elseif x >= right - buffer and y <= top + buffer then
+        return "topRight"
+    elseif x >= right - buffer and y >= bottom - buffer then
+        return "bottomRight"
+    elseif x <= left + buffer and y >= bottom - buffer then
+        return "bottomLeft"
     end
+    return nil
 end
 
 function truncateString(input, maxLength)
@@ -233,51 +230,61 @@ function truncateString(input, maxLength)
     return input
 end
 
-tooltipAlert = hs.canvas.new({x = 0, y = 0, w = 1, h = 1})
+tooltipAlert = hs.canvas.new({ x = 0, y = 0, w = 1, h = 1 })
 tooltipAlert:level(hs.canvas.windowLevels._MaximumWindowLevelKey)
-
 tooltipAlert[1] = {
     type = "rectangle",
     action = "fill",
     roundedRectRadii = { xRadius = 4, yRadius = 4 },
-    fillColor = { white = 0, alpha = 0.75 },
-    frame = textFrame
+    fillColor = { white = 0, alpha = 0.75 }
 }
-
 tooltipAlert[2] = {
     type = "text",
-    text = styledMessage,
+    text = "",
     textLineBreak = "clip",
-    textColor = { white = 1, alpha = 1 },
-    frame = textFrame
+    textColor = { white = 1, alpha = 1 }
 }
+----------------------------------------------------------------
 
+-- Position and show the tooltip on the current screen.
 function showMessage(corner, message)
     local fontSize = 20
     local styledMessage = hs.styledtext.new(truncateString(message, tooltipMaxLength), {
-      font = {size = fontSize},
-      color = {white = 1, alpha = 1},
+        font = { size = fontSize },
+        color = { white = 1, alpha = 1 },
         shadow = {
-        offset = {h = -1, w = 0},
-        blurRadius = 2,
-        color = {alpha = 1}
-      }
+            offset = { h = -1, w = 0 },
+            blurRadius = 2,
+            color = { alpha = 1 }
+        }
     })
 
     local textSize = hs.drawing.getTextDrawingSize(styledMessage)
     local tooltipHeight = 24
-    local tooltipX = corner == "topLeft" or corner == "bottomLeft" or screenSize.w - textSize.w
-    local tooltipY = corner == "topLeft" or corner == "topRight" or screenSize.h - tooltipHeight
-    local textFrame = hs.geometry.rect(tooltipX, tooltipY, textSize.w, tooltipHeight)
 
+    local frame = getCurrentScreenFrame()
+    if not frame then return end
+
+    local tooltipX, tooltipY
+    if corner == "topLeft" or corner == "bottomLeft" then
+        tooltipX = frame.x + tooltipMargin
+    else
+        tooltipX = frame.x + frame.w - textSize.w - tooltipMargin
+    end
+
+    if corner == "topLeft" or corner == "topRight" then
+        tooltipY = frame.y + tooltipMargin
+    else
+        tooltipY = frame.y + frame.h - tooltipHeight - tooltipMargin
+    end
+
+    local textFrame = hs.geometry.rect(tooltipX, tooltipY, textSize.w, tooltipHeight)
     tooltipAlert:frame(textFrame)
     tooltipAlert[1].fillColor.alpha = 0.75
     tooltipAlert[2].text = styledMessage
     tooltipAlert[2].textColor.alpha = 1
     tooltipAlert:alpha(1)
     tooltipAlert:behavior("canJoinAllSpaces")
-    -- Note: for this to show up above full screen windows we need to hide the hammerspoon dock icon in hammerspoon preferences.
-
     tooltipAlert:show()
 
     if hideTooltipTimer then
@@ -291,10 +298,10 @@ function hideTooltip()
     local fadeOutStep = 0.025
     local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
     local currentAlpha = 1.0
+    local cornerToFade = lastCorner
     local function fade()
         local point = hs.mouse.absolutePosition()
-        if lastCorner == checkForHotCorner(point.x, point.y) then
-            -- cursor still in corner, return without fading tooltip.
+        if cornerToFade == checkForHotCorner(point.x, point.y) then
             return
         end
         currentAlpha = currentAlpha - fadeOutAlphaStep
@@ -309,47 +316,51 @@ function hideTooltip()
 end
 
 if showTooltips then
-    cornerHover = hs.eventtap.new({hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged}, function(event)
-        local point = hs.mouse.absolutePosition()
-        local currentCorner = checkForHotCorner(point.x, point.y)
+    cornerHover = hs.eventtap.new({ hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.flagsChanged },
+        function(event)
+            local point = hs.mouse.absolutePosition()
+            local currentCorner = checkForHotCorner(point.x, point.y)
 
-        -- If the mouse is in a corner, update the tooltip message and the last corner
-        if currentCorner and not isDesktop() then
-            lastCorner = currentCorner
-            showMessage(lastCorner, hotCorners[lastCorner].message())
-        -- If the mouse moved out from the last corner, hide the tooltip and clear the last corner
-        elseif lastCorner and not currentCorner then
-            hideTooltip()
-            lastCorner = nil
-        end
+            if currentCorner and not isDesktop() then
+                lastCorner = currentCorner
+                showMessage(lastCorner, hotCorners[lastCorner].message())
+            elseif lastCorner and not currentCorner then
+                hideTooltip()
+                lastCorner = nil
+            end
 
-        -- If Shift key status changed while the mouse is in a corner, update the tooltip message
-        if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
-            showMessage(lastCorner, hotCorners[lastCorner].message())
-        end
+            if lastCorner and event:getType() == hs.eventtap.event.types.flagsChanged then
+                showMessage(lastCorner, hotCorners[lastCorner].message())
+            end
 
-        local win = hs.window.focusedWindow()
-        local screenFrame = win and win:screen() and win:screen():fullFrame()
-        if screenFrame then
-            if (not onlyFullscreen) or (onlyFullscreen and win and win:isFullScreen()) then
-                if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and event:location().y < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
-                    return true
-                elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
-                    if dockPos == "bottom" and (screenFrame.h - event:location().y) < buffer and (event:location().x > buffer and event:location().x < screenFrame.w - buffer) then
+            local win = hs.window.focusedWindow()
+            local screen = win and win:screen() or hs.mouse.getCurrentScreen()
+            local screenFrame = screen and screen:fullFrame()
+            if screenFrame then
+                if (not onlyFullscreen) or (onlyFullscreen and win and win:isFullScreen()) then
+                    if killMenu and not hs.eventtap.checkKeyboardModifiers().shift and
+                        event:location().y < screenFrame.y + buffer and
+                        (event:location().x > screenFrame.x + buffer and event:location().x < screenFrame.x + screenFrame.w - buffer) then
                         return true
-                    elseif dockPos == "left" and event:location().x < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
-                        return true
-                    elseif dockPos == "right" and (screenFrame.w - event:location().x) < buffer and (event:location().y > buffer and event:location().y < screenFrame.h - buffer) then
-                        return true
+                    elseif killDock and not hs.eventtap.checkKeyboardModifiers().shift then
+                        if dockPos == "bottom" and (screenFrame.y + screenFrame.h - event:location().y) < buffer and
+                            (event:location().x > screenFrame.x + buffer and event:location().x < screenFrame.x + screenFrame.w - buffer) then
+                            return true
+                        elseif dockPos == "left" and (event:location().x - screenFrame.x) < buffer and
+                            (event:location().y > screenFrame.y + buffer and event:location().y < screenFrame.y + screenFrame.h - buffer) then
+                            return true
+                        elseif dockPos == "right" and (screenFrame.x + screenFrame.w - event:location().x) < buffer and
+                            (event:location().y > screenFrame.y + buffer and event:location().y < screenFrame.y + screenFrame.h - buffer) then
+                            return true
+                        end
                     end
                 end
             end
-        end
-        return false
-    end):start()
+            return false
+        end):start()
 end
 
-cornerClick = hs.eventtap.new({hs.eventtap.event.types.leftMouseDown}, function(event)
+cornerClick = hs.eventtap.new({ hs.eventtap.event.types.leftMouseDown }, function(event)
     local point = hs.mouse.absolutePosition()
     lastCorner = checkForHotCorner(point.x, point.y)
     if lastCorner and not isDesktop() then
