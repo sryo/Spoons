@@ -125,6 +125,14 @@ Note: Actions may vary depending on the active application. Default actions incl
 | Munch characters (Delete)            | <kbd>SPACE</kbd><kbd>M</kbd> |
 | Insert a new line (Return)           | <kbd>SPACE</kbd><kbd>,</kbd> |
 
+### AppTimeout
+[`AppTimeout.lua`](https://github.com/sryo/Spoons/blob/main/AppTimeout.lua) - automatically close apps that have no windows.
+
+### NoTunes
+[`NoTunes.lua`](https://github.com/sryo/Spoons/blob/main/NoTunes.lua) - Block iTunes/Music and launch Spotify instead.
+
+### WanderFocus
+[`WanderFocus.lua`](https://github.com/sryo/Spoons/blob/main/WanderFocus.lua) - A focus-follows-mouse implementation.
 
 ### FAQ
 
