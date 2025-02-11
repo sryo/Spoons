@@ -248,6 +248,10 @@ tooltipAlert[2] = {
 
 -- Position and show the tooltip on the current screen.
 function showMessage(corner, message)
+    if fadeTimer then
+        fadeTimer:stop()
+        fadeTimer = nil
+    end
     local fontSize = 20
     local styledMessage = hs.styledtext.new(truncateString(message, tooltipMaxLength), {
         font = { size = fontSize },
@@ -293,12 +297,20 @@ function showMessage(corner, message)
     hideTooltipTimer = hs.timer.doAfter(0.75, hideTooltip)
 end
 
+local fadeTimer = nil
+
 function hideTooltip()
+    if fadeTimer then
+        fadeTimer:stop()
+        fadeTimer = nil
+    end
+
     local fadeOutDuration = 0.125
     local fadeOutStep = 0.025
     local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
-    local currentAlpha = 1.0
+    local currentAlpha = tooltipAlert:alpha()
     local cornerToFade = lastCorner
+
     local function fade()
         local point = hs.mouse.absolutePosition()
         if cornerToFade == checkForHotCorner(point.x, point.y) then
@@ -307,12 +319,14 @@ function hideTooltip()
         currentAlpha = currentAlpha - fadeOutAlphaStep
         tooltipAlert:alpha(currentAlpha)
         if currentAlpha > 0 then
-            hs.timer.doAfter(fadeOutStep, fade)
+            fadeTimer = hs.timer.doAfter(fadeOutStep, fade)
         else
             tooltipAlert:hide()
+            fadeTimer = nil
         end
     end
-    fade()
+
+    fadeTimer = hs.timer.doAfter(0, fade)
 end
 
 if showTooltips then
