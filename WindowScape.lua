@@ -167,10 +167,10 @@ local function tileWindows()
 
     for _, scr in ipairs(allScreens) do
         local screenFrame = scr:frame()
-        local screenWindows = {}
 
+        local screenWindows = {}
         for _, win in ipairs(windowOrderBySpace[currentSpace] or {}) do
-            if win:screen():id() == scr:id() then
+            if win:screen():id() == scr:id() and not win:isFullScreen() then
                 table.insert(screenWindows, win)
             end
         end
@@ -179,68 +179,106 @@ local function tileWindows()
             goto continue
         end
 
-        local orientation = screenFrame.w > screenFrame.h and "horizontal" or "vertical"
-
-        screenWindows = hs.fnutils.filter(screenWindows, function(win)
-            return not win:isFullScreen()
-        end)
-
-        local collapsedWindows = getCollapsedWindows(screenWindows)
-        local nonCollapsedWindows = #screenWindows - #collapsedWindows
-
-        -- Calculate tile dimensions based on screen orientation
-        local tileWidth, tileHeight
-        if orientation == "horizontal" then
-            tileWidth = (screenFrame.w - (nonCollapsedWindows - 1) * tileGap) / nonCollapsedWindows
-            tileHeight = screenFrame.h - (#collapsedWindows > 0 and collapsedWindowHeight + tileGap or 0)
-        else
-            tileWidth = screenFrame.w
-            tileHeight = (screenFrame.h - (#collapsedWindows > 0 and (#collapsedWindows * (collapsedWindowHeight + tileGap) - tileGap) or 0) - (nonCollapsedWindows - 1) * tileGap) /
-                nonCollapsedWindows
+        local collapsedWins = getCollapsedWindows(screenWindows)
+        local nonCollapsedWins = {}
+        for _, w in ipairs(screenWindows) do
+            if w:size().h > collapsedWindowHeight then
+                table.insert(nonCollapsedWins, w)
+            end
         end
 
-        local nonCollapsedWinX, nonCollapsedWinY = screenFrame.x, screenFrame.y
-        local collapsedWinX = screenFrame.x
-        local collapsedWinY = orientation == "horizontal"
-            and screenFrame.y + screenFrame.h - collapsedWindowHeight
-            or screenFrame.y + screenFrame.h - (#collapsedWindows * (collapsedWindowHeight + tileGap))
+        local numCollapsed = #collapsedWins
+        local numNonCollapsed = #nonCollapsedWins
 
-        for _, win in ipairs(screenWindows) do
-            local isCollapsed = win:size().h <= collapsedWindowHeight
-            local newFrame
+        local orientation = (screenFrame.w > screenFrame.h) and "horizontal" or "vertical"
 
-            if isCollapsed then
-                newFrame = {
-                    x = collapsedWinX,
-                    y = collapsedWinY,
-                    w = orientation == "horizontal" and tileWidth or screenFrame.w,
-                    h = collapsedWindowHeight
-                }
-                if orientation == "horizontal" then
-                    collapsedWinX = collapsedWinX + tileWidth + tileGap
-                else
-                    collapsedWinY = collapsedWinY + collapsedWindowHeight + tileGap
-                end
-            else
-                newFrame = {
-                    x = nonCollapsedWinX,
-                    y = nonCollapsedWinY,
-                    w = tileWidth,
-                    h = tileHeight
-                }
-                if orientation == "horizontal" then
-                    nonCollapsedWinX = nonCollapsedWinX + tileWidth + tileGap
-                else
-                    nonCollapsedWinY = nonCollapsedWinY + tileHeight + tileGap
+        if orientation == "horizontal" then
+            local collapsedAreaHeight = (numCollapsed > 0) and (collapsedWindowHeight + tileGap) or 0
+            local mainAreaHeight = screenFrame.h - collapsedAreaHeight
+
+            if numNonCollapsed > 0 then
+                local tileWidth = (screenFrame.w - (numNonCollapsed - 1) * tileGap) / numNonCollapsed
+                local tileHeight = mainAreaHeight
+
+                local currentX = screenFrame.x
+                local currentY = screenFrame.y
+
+                for _, win in ipairs(nonCollapsedWins) do
+                    local newFrame = {
+                        x = currentX,
+                        y = currentY,
+                        w = tileWidth,
+                        h = tileHeight
+                    }
+                    win:setFrame(geometry.rect(newFrame), 0)
+                    currentX = currentX + tileWidth + tileGap
                 end
             end
 
-            win:setFrame(geometry.rect(newFrame), 0)
+            if numCollapsed > 0 then
+                local collapsedWidth = (screenFrame.w - (numCollapsed - 1) * tileGap) / numCollapsed
+                local collapsedX = screenFrame.x
+                local collapsedY = screenFrame.y + mainAreaHeight
+
+                for _, win in ipairs(collapsedWins) do
+                    local newFrame = {
+                        x = collapsedX,
+                        y = collapsedY,
+                        w = collapsedWidth,
+                        h = collapsedWindowHeight
+                    }
+                    win:setFrame(geometry.rect(newFrame), 0)
+                    collapsedX = collapsedX + collapsedWidth + tileGap
+                end
+            end
+        else
+            local collapsedAreaHeight = 0
+            if numCollapsed > 0 then
+                collapsedAreaHeight = (collapsedWindowHeight + tileGap) * numCollapsed - tileGap
+            end
+
+            local mainAreaHeight = screenFrame.h - collapsedAreaHeight
+
+            if numNonCollapsed > 0 then
+                local tileWidth  = screenFrame.w
+                local tileHeight = (mainAreaHeight - (numNonCollapsed - 1) * tileGap) / numNonCollapsed
+
+                local currentX   = screenFrame.x
+                local currentY   = screenFrame.y
+
+                for _, win in ipairs(nonCollapsedWins) do
+                    local newFrame = {
+                        x = currentX,
+                        y = currentY,
+                        w = tileWidth,
+                        h = tileHeight
+                    }
+                    win:setFrame(geometry.rect(newFrame), 0)
+                    currentY = currentY + tileHeight + tileGap
+                end
+            end
+
+            if numCollapsed > 0 then
+                local collapsedX = screenFrame.x
+                local collapsedY = screenFrame.y + mainAreaHeight
+
+                for _, win in ipairs(collapsedWins) do
+                    local newFrame = {
+                        x = collapsedX,
+                        y = collapsedY,
+                        w = screenFrame.w,
+                        h = collapsedWindowHeight
+                    }
+                    win:setFrame(geometry.rect(newFrame), 0)
+                    collapsedY = collapsedY + collapsedWindowHeight + tileGap
+                end
+            end
         end
 
         ::continue::
     end
 end
+
 
 local function isSystem(win)
     return win and (win:role() == "AXScrollArea" or win:subrole() == "AXSystemDialog")
@@ -301,13 +339,11 @@ end
 
 local function handleWindowEvent()
     updateWindowOrder()
-    hs.timer.doAfter(0.1, function()
-        tileWindows()
-        local focusedWindow = window.focusedWindow()
-        if focusedWindow then
-            drawActiveWindowOutline(focusedWindow)
-        end
-    end)
+    tileWindows()
+    local focusedWindow = window.focusedWindow()
+    if focusedWindow then
+        drawActiveWindowOutline(focusedWindow)
+    end
 end
 
 local function toggleFocusedWindowInWhitelist()
@@ -533,7 +569,6 @@ local function handleTTTaps(event)
             end
         end
     elseif touchCount < initialFingerCount then
-
         log("Finger(s) lifted, but gesture continues")
     end
 
@@ -616,6 +651,17 @@ local function handleWindowDestroyed(win)
     end
 end
 
+local eventDebounce = nil
+local function debouncedHandleWindowEvent()
+    if eventDebounce then
+        eventDebounce:stop()
+    end
+    eventDebounce = hs.timer.doAfter(0.05, function()
+        handleWindowEvent()
+        eventDebounce = nil
+    end)
+end
+
 window.filter.default:subscribe({
     window.filter.windowCreated,
     window.filter.windowHidden,
@@ -624,7 +670,7 @@ window.filter.default:subscribe({
     window.filter.windowUnminimized,
     window.filter.windowMoved,
     window.filter.windowsChanged
-}, handleWindowEvent)
+}, debouncedHandleWindowEvent)
 
 window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
 window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
