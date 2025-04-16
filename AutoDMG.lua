@@ -1,4 +1,4 @@
--- AutoDMG: A zero-click DMG installer for Hammerspoon.
+-- AutoDMG: A zero-click DMG installer for Hammerspoon, now with quarantine removal
 
 function findVolumeMountLocation(commandOutput)
     local mountLocation = commandOutput:match("/Volumes/[^%s\"<]+")
@@ -73,12 +73,25 @@ function installApplicationToApps(diskLocation, originalDMG)
                         local appName = appLocation:match("([^/]+)%.app$")
                         local existingAppPath = "/Applications/" .. appName .. ".app"
 
+                        -- Remove any old version first
                         local removeOldVersion = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
+                            -- Copy new version
                             local copyNewVersion = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
                                 if copyExitCode == 0 then
-                                    hs.console.printStyledtext("Successfully installed app to Applications: " .. appName)
-                                    ejectDMG(diskLocation, originalDMG)
-                                    hs.alert(appName .. " has been installed successfully.")
+                                    hs.console.printStyledtext("Copied new version to /Applications: " .. appName)
+                                    -- Remove quarantine attribute so macOS won't re-translocate
+                                    local cleanQuarantine = hs.task.new("/usr/bin/xattr",
+                                        function(qExitCode, qStdOut, qStdErr)
+                                            if qExitCode == 0 then
+                                                hs.console.printStyledtext("Removed quarantine from: " .. existingAppPath)
+                                            else
+                                                hs.console.printStyledtext("Failed to remove quarantine: " ..
+                                                (qStdErr or "unknown error"))
+                                            end
+                                            ejectDMG(diskLocation, originalDMG)
+                                            hs.alert(appName .. " has been installed and is ready to use.")
+                                        end, { "-dr", "com.apple.quarantine", existingAppPath })
+                                    cleanQuarantine:start()
                                 else
                                     hs.console.printStyledtext("Application installation failed: " ..
                                     (copyStdErr or "unknown error"))
@@ -88,12 +101,13 @@ function installApplicationToApps(diskLocation, originalDMG)
                             copyNewVersion:start()
                         end, { "-rf", existingAppPath })
                         removeOldVersion:start()
-                        return -- Exit after handling the first app
+
+                        return -- we've handled the first .app found
                     end
                 end
             end
 
-            -- Only check for PKG if no app was found and handled
+            -- If no .app was found, fall back to PKG
             local pkgPath = findPKGFile(diskLocation)
             if pkgPath then
                 installPKG(pkgPath)
@@ -108,7 +122,6 @@ function installApplicationToApps(diskLocation, originalDMG)
         end
     end, { diskLocation, "-name", "*.app", "-maxdepth", "1" })
 
-    -- Add debug logging before starting the find task
     hs.console.printStyledtext("Starting find command: find " .. diskLocation .. " -name *.app -maxdepth 1")
     appFinder:start()
 end
@@ -128,7 +141,6 @@ end
 function openDMG(dmgPath)
     hs.console.printStyledtext("Opening DMG: " .. dmgPath)
 
-    -- Create a task with input stream enabled for EULA acceptance
     local mountDisk = hs.task.new("/usr/bin/hdiutil", function(exitCode, stdOut, stdErr)
         if exitCode == 0 then
             hs.console.printStyledtext("Successfully opened DMG")
@@ -145,7 +157,6 @@ function openDMG(dmgPath)
         end
     end, { "attach", dmgPath, "-plist", "-noautoopen", "-noautofsck", "-noverify", "-ignorebadchecksums", "-noidme" })
 
-    -- Enable standard input for the task
     mountDisk:setInput("Y\n")
     mountDisk:start()
 end
@@ -155,6 +166,7 @@ function showInstallationError(errorMessage)
     hs.console.printStyledtext("Installation failed: " .. errorMessage)
 end
 
+-- Watch the Downloads folder for new DMGs
 local downloadsFolder = os.getenv("HOME") .. "/Downloads"
 local handledDMGs = {}
 local lastModifiedTime = nil
@@ -166,7 +178,6 @@ end
 function findDMGs(folderPath)
     local dmgFiles = {}
     local iterator, directoryObj = hs.fs.dir(folderPath)
-
     if iterator then
         for file in iterator, directoryObj do
             if isDMGFile(file) then
@@ -178,7 +189,6 @@ function findDMGs(folderPath)
             end
         end
     end
-
     return dmgFiles
 end
 
@@ -201,15 +211,13 @@ function scanDownloadsFolder()
     end
 end
 
--- Initialize lastModifiedTime with the current modification time of the Downloads folder
-local folderInfo = hs.fs.attributes(downloadsFolder)
-if folderInfo then
-    lastModifiedTime = folderInfo.modification
-end
-
-scanDownloadsFolder()
-downloadsFolderWatcher = hs.timer.doEvery(5, function()
+-- Initialize and start watcher
+do
+    local folderInfo = hs.fs.attributes(downloadsFolder)
+    if folderInfo then
+        lastModifiedTime = folderInfo.modification
+    end
     scanDownloadsFolder()
-end)
-
-hs.console.printStyledtext("AutoDMG is ready: watching Downloads folder for new DMGs")
+    downloadsFolderWatcher = hs.timer.doEvery(5, scanDownloadsFolder)
+    hs.console.printStyledtext("AutoDMG is ready: watching Downloads folder for new DMGs")
+end
