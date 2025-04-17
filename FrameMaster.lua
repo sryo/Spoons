@@ -244,9 +244,7 @@ tooltipAlert[2] = {
     textLineBreak = "clip",
     textColor = { white = 1, alpha = 1 }
 }
-----------------------------------------------------------------
 
--- Position and show the tooltip on the current screen.
 function showMessage(corner, message)
     if fadeTimer then
         fadeTimer:stop()
