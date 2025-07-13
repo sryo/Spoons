@@ -16,7 +16,11 @@ local function checkApps()
             name ~= "‎WhatsApp" and
             name ~= "Activity Monitor" and
             name ~= "Hammerspoon" then
-            if #app:allWindows() == 0 then
+            local allWindows = hs.window.filter.new(function(win)
+                return win:application():name() == name
+            end)
+
+            if #allWindows:getWindows() == 0 then
                 if not windowlessApps[name] then
                     windowlessApps[name] = os.time()
                     print(string.format("Monitoring %s", name))
@@ -33,5 +37,5 @@ local function checkApps()
     end
 end
 
-checkAppsTimer = hs.timer.new(60, checkApps):start()
+checkAppsTimer = hs.timer.new(20, checkApps):start()
 print("AppTimeout is running")
