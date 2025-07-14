@@ -1,7 +1,7 @@
--- AutoDMG: A zero-click DMG installer for Hammerspoon, now with quarantine removal
+-- AutoDMG: A zero-click DMG installer for Hammerspoon
 
 function findVolumeMountLocation(commandOutput)
-    local mountLocation = commandOutput:match("/Volumes/[^%s\"<]+")
+    local mountLocation = commandOutput:match("<key>mount%-point</key>%s*<string>([^<]+)</string>")
     if mountLocation then
         hs.console.printStyledtext("Successfully mounted DMG at: " .. mountLocation)
         return mountLocation
@@ -73,20 +73,19 @@ function installApplicationToApps(diskLocation, originalDMG)
                         local appName = appLocation:match("([^/]+)%.app$")
                         local existingAppPath = "/Applications/" .. appName .. ".app"
 
-                        -- Remove any old version first
+                        -- remove any old version first
                         local removeOldVersion = hs.task.new("/bin/rm", function(rmExitCode, rmStdOut, rmStdErr)
-                            -- Copy new version
+                            -- copy new version
                             local copyNewVersion = hs.task.new("/bin/cp", function(copyExitCode, copyStdOut, copyStdErr)
                                 if copyExitCode == 0 then
                                     hs.console.printStyledtext("Copied new version to /Applications: " .. appName)
-                                    -- Remove quarantine attribute so macOS won't re-translocate
-                                    local cleanQuarantine = hs.task.new("/usr/bin/xattr",
+                                    local cleanQuarantine = hs.task.new("/usr/bin/xattr", -- remove quarantine attribute (for Java apps)
                                         function(qExitCode, qStdOut, qStdErr)
                                             if qExitCode == 0 then
                                                 hs.console.printStyledtext("Removed quarantine from: " .. existingAppPath)
                                             else
                                                 hs.console.printStyledtext("Failed to remove quarantine: " ..
-                                                (qStdErr or "unknown error"))
+                                                    (qStdErr or "unknown error"))
                                             end
                                             ejectDMG(diskLocation, originalDMG)
                                             hs.alert(appName .. " has been installed and is ready to use.")
@@ -94,7 +93,7 @@ function installApplicationToApps(diskLocation, originalDMG)
                                     cleanQuarantine:start()
                                 else
                                     hs.console.printStyledtext("Application installation failed: " ..
-                                    (copyStdErr or "unknown error"))
+                                        (copyStdErr or "unknown error"))
                                     showInstallationError("Failed to install application")
                                 end
                             end, { "-Rf", appLocation, "/Applications/" })
