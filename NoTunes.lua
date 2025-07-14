@@ -27,13 +27,9 @@ local function blockAndReplace()
     end
 end
 
-local timer = hs.timer.doEvery(2, function()
-    pcall(blockAndReplace)
-end)
 local watcher = hs.application.watcher.new(function(event, app)
     pcall(blockAndReplace)
 end)
 
 watcher:start()
-timer:start()
-return { timer = timer, watcher = watcher }
+return { watcher = watcher }
