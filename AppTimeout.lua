@@ -13,11 +13,13 @@ local function checkApps()
             name ~= "Transmission" and
             name ~= "Calendar" and
             name ~= "Stickies" and
+            name ~= "Spotify" and
             name ~= "‎WhatsApp" and
             name ~= "Activity Monitor" and
             name ~= "Hammerspoon" then
             local allWindows = hs.window.filter.new(function(win)
-                return win:application():name() == name
+                local winApp = win:application()
+                return winApp and winApp:name() == name
             end)
 
             if #allWindows:getWindows() == 0 then
