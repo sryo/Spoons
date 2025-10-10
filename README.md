@@ -106,6 +106,17 @@ Note: Actions may vary depending on the active application. Default actions incl
 | Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> or 4 fingers touch + a tap to the right |
 
 
+#### Tip: Disable the Dock permanently
+Install the included LaunchAgent to keep the Dock disabled across reboots.
+
+Warning: This action doesn't just hide the Dock. It stops the underlying process, which also disables Mission Control and the <kbd>⌘</kbd>+<kbd>Tab</kbd> App Switcher. This is intended for keyboard-focused users who use alternative app switching methods.
+
+To install, copy the entire command block below, paste it into your terminal, and press <kbd>Enter</kbd>. The change will take effect on your next login.
+
+```bash
+mkdir -p ~/Library/LaunchAgents && cp -f ./local.disable-dock.plist ~/Library/LaunchAgents/ && launchctl disable gui/$(id -u)/com.apple.Dock.agent && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.disable-dock.plist && launchctl enable gui/$(id -u)/local.disable-dock && launchctl kickstart -k gui/$(id -u)/local.disable-dock
+```
+
 ![zxnav](https://github.com/user-attachments/assets/aa33821c-baea-4c8f-8fe8-629f8e54bd5e)
 ### ZXNav
 [`ZXNav.lua`](https://github.com/sryo/Spoons/blob/main/ZXNav.lua) - Moves text navigation and editing actions closer to the spacebar for easier reach.
