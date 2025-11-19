@@ -1,43 +1,63 @@
--- AppTimeout: automatically close apps that have no windows
+-- AppTimeout: automatically close apps that have no windows left
+
+local checkInterval = 10
+local timeoutDuration = 300
+
+-- Set to 'true' to keep it alive
+local ignoredApps = {
+    ["Finder"] = true,
+    ["Dock"] = true,
+    ["SystemUIServer"] = true,
+    ["ControlCenter"] = true,
+    ["Transmission"] = true,
+    ["Calendar"] = true,
+    ["Stickies"] = true,
+    ["Spotify"] = true,
+    ["‎WhatsApp"] = true,
+    ["Activity Monitor"] = true,
+    ["Hammerspoon"] = true,
+    ["loginwindow"] = true,
+    ["Spotlight"] = true,
+}
 
 local windowlessApps = {}
 
 local function checkApps()
-    for _, app in ipairs(hs.application.runningApplications()) do
-        local name = app:name()
-        if app:kind() == 1 and
-            name ~= "Finder" and
-            name ~= "Dock" and
-            name ~= "SystemUIServer" and
-            name ~= "ControlCenter" and
-            name ~= "Transmission" and
-            name ~= "Calendar" and
-            name ~= "Stickies" and
-            name ~= "Spotify" and
-            name ~= "‎WhatsApp" and
-            name ~= "Activity Monitor" and
-            name ~= "Hammerspoon" then
-            local allWindows = hs.window.filter.new(function(win)
-                local winApp = win:application()
-                return winApp and winApp:name() == name
-            end)
+    local runningApps = hs.application.runningApplications()
 
-            if #allWindows:getWindows() == 0 then
-                if not windowlessApps[name] then
-                    windowlessApps[name] = os.time()
-                    print(string.format("Monitoring %s", name))
-                elseif os.time() - windowlessApps[name] >= 300 then
-                    print(string.format("Closing %s", name))
-                    app:kill()
-                    windowlessApps[name] = nil
+    for _, app in ipairs(runningApps) do
+        local name = app:name()
+        local bundleID = app:bundleID()
+
+        if name and app:kind() == 1 then
+            if not ignoredApps[name] then
+                local windows = app:allWindows()
+
+                if #windows == 0 and not app:isFrontmost() then
+                    if not windowlessApps[name] then
+                        windowlessApps[name] = os.time()
+                        print(string.format("AppTimeout: Monitoring %s (No windows)", name))
+                    elseif os.time() - windowlessApps[name] >= timeoutDuration then
+                        print(string.format("AppTimeout: Closing %s (Timeout reached)", name))
+                        app:kill()
+                        windowlessApps[name] = nil
+                    end
+                else
+                    if windowlessApps[name] then
+                        windowlessApps[name] = nil
+                        print(string.format("AppTimeout: Stopped monitoring %s", name))
+                    end
                 end
-            elseif windowlessApps[name] then
-                windowlessApps[name] = nil
-                print(string.format("Stopped monitoring %s", name))
             end
+        end
+    end
+
+    for name, _ in pairs(windowlessApps) do
+        if not hs.application.get(name) then
+            windowlessApps[name] = nil
         end
     end
 end
 
-checkAppsTimer = hs.timer.new(20, checkApps):start()
+checkAppsTimer = hs.timer.new(checkInterval, checkApps):start()
 print("AppTimeout is running")
