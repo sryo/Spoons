@@ -32,6 +32,7 @@ local ttTaps              = nil
 local outlineRefreshTimer = nil
 local lastOutlineFrame    = nil
 local trackedFocusedWinId = nil
+local outlineHideCounter  = 0    -- Counter to prevent hiding on momentary visibility glitches
 
 -- Drag tracking state
 local tilingCount         = 0   -- Counter to distinguish our moves from user drags (handles overlapping tiles)
@@ -395,18 +396,29 @@ local function refreshOutline()
         return
     end
 
-    -- Check if focused window changed
+    -- Check if focused window changed - if so, just return and let handleWindowFocused deal with it
     local winId = win:id()
     if winId ~= trackedFocusedWinId then
-        stopOutlineRefresh()
-        return
+        return  -- Don't stop refresh here, handleWindowFocused will restart it for the new window
     end
 
-    if win:isVisible() and not win:isFullScreen() and not isSystem(win) then
+    local isVisible = win:isVisible()
+    local isFullScreen = win:isFullScreen()
+    local isSys = isSystem(win)
+
+    local condResult = isVisible and not isFullScreen and not isSys
+    if condResult then
+        outlineHideCounter = 0  -- Reset counter on success
         local frame = win:frame()
-        updateOutlineFrame(frame)
+        if frame then
+            updateOutlineFrame(frame)
+        end
     else
-        if activeWindowOutline then activeWindowOutline:hide() end
+        -- Only hide after multiple consecutive failures (handles momentary visibility glitches)
+        outlineHideCounter = outlineHideCounter + 1
+        if outlineHideCounter >= 10 then  -- ~160ms at 60fps
+            if activeWindowOutline then activeWindowOutline:hide() end
+        end
     end
 end
 
@@ -415,6 +427,7 @@ local function startOutlineRefresh(win)
     if not win then return end
 
     trackedFocusedWinId = win:id()
+    outlineHideCounter = 0  -- Reset counter
     -- Poll at 60fps during potential drag operations
     outlineRefreshTimer = timer.doEvery(0.016, refreshOutline)
 end
@@ -439,8 +452,14 @@ end
 
 local function handleWindowFocused(win)
     if win and win:isVisible() and not win:isFullScreen() and not isSystem(win) then
-        if isAppIncluded(win:application(), win) then
+        -- Only trigger tiling if not already tiling (prevent cascade from setFrame focus shifts)
+        if tilingCount == 0 and isAppIncluded(win:application(), win) then
             tileWindows()
+            -- Restore focus if setFrame caused it to shift to another window
+            local currentFocus = window.focusedWindow()
+            if currentFocus and currentFocus:id() ~= win:id() then
+                win:focus()
+            end
         end
         drawActiveWindowOutline(win)
     else
@@ -451,11 +470,18 @@ local function handleWindowFocused(win)
 end
 
 local function handleWindowEvent()
+    local focusedWindow = window.focusedWindow()
     updateWindowOrder()
     tileWindows()
-    local focusedWindow = window.focusedWindow()
-    if focusedWindow then
+    -- Restore focus if setFrame caused it to shift during tiling
+    if focusedWindow and focusedWindow:isVisible() then
+        local currentFocus = window.focusedWindow()
+        if currentFocus and currentFocus:id() ~= focusedWindow:id() then
+            focusedWindow:focus()
+        end
         drawActiveWindowOutline(focusedWindow)
+    elseif window.focusedWindow() then
+        drawActiveWindowOutline(window.focusedWindow())
     end
 end
 
@@ -557,6 +583,7 @@ local function moveWindowInOrder(direction)
     focusedWindow:focus()
     local newFrame = focusedWindow:frame()
     moveMouseWithWindow(oldFrame, newFrame)
+    drawActiveWindowOutline(focusedWindow)
 end
 
 local function moveWindowToAdjacentScreen(direction)
@@ -625,15 +652,20 @@ local function moveWindowToAdjacentScreen(direction)
         h = relH * targetFrame.h
     }
 
+    -- Hide outline during transition to prevent it showing on old screen
+    stopOutlineRefresh()
+    if activeWindowOutline then activeWindowOutline:hide() end
+
     focusedWindow:setFrame(geometry.rect(newFrame), 0)
 
     -- Update window order - will be recalculated on next tileWindows call
-    hs.timer.doAfter(0.1, function()
+    hs.timer.doAfter(0.15, function()
         focusedWindow:focus()
         updateWindowOrder()
         tileWindows()
         local finalFrame = focusedWindow:frame()
         moveMouseWithWindow(oldFrame, finalFrame)
+        drawActiveWindowOutline(focusedWindow)
     end)
 end
 
@@ -644,16 +676,11 @@ local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
     local dropCenterY = dropFrame.y + dropFrame.h / 2
     local horizontal = (screenFrame.w > screenFrame.h)
 
-    log("Drop position: centerX=" ..
-    dropCenterX .. ", centerY=" .. dropCenterY .. ", horizontal=" .. tostring(horizontal))
-
     local insertIndex = 1
     for i, win in ipairs(screenWindows) do
         local winFrame = win:frame()
         local winCenterX = winFrame.x + winFrame.w / 2
         local winCenterY = winFrame.y + winFrame.h / 2
-
-        log("  Window " .. i .. " (" .. (win:title() or "?") .. "): centerX=" .. winCenterX)
 
         if horizontal then
             if dropCenterX > winCenterX then
@@ -666,13 +693,10 @@ local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
         end
     end
 
-    log("Final insertIndex: " .. insertIndex)
     return insertIndex
 end
 
 local function handleWindowMoved(win)
-    -- Ignore if we're currently tiling (counter > 0 means tiling in progress)
-    if tilingCount > 0 then return end
     if not win then return end
 
     local app = win:application()
@@ -682,43 +706,155 @@ local function handleWindowMoved(win)
     local sz = win:size()
     if sz and sz.h <= cfg.collapsedWindowHeight then return end
 
-    -- Cancel any pending reposition
+    -- Capture current frame immediately
+    local capturedFrame = win:frame()
+    if not capturedFrame then return end
+
+    local winScreen = win:screen()
+    if not winScreen then return end
+
+    local currentSpace = getCurrentSpace()
+    local screenFrame = winScreen:frame()
+    local screenId = winScreen:id()
+    local horizontal = (screenFrame.w > screenFrame.h)
+
+    -- Get all non-collapsed windows for this screen
+    local currentOrder = windowOrderBySpace[currentSpace] or {}
+    local screenWindows = {}
+
+    for _, w in ipairs(currentOrder) do
+        if w and not w:isFullScreen() then
+            local s = w:screen()
+            local wsz = w:size()
+            if s and s:id() == screenId and wsz and wsz.h > cfg.collapsedWindowHeight then
+                table.insert(screenWindows, w)
+            end
+        end
+    end
+
+    if #screenWindows == 0 then return end
+
+    -- Calculate what size this window "should" have based on current weights
+    local totalWeight = 0
+    for _, w in ipairs(screenWindows) do
+        totalWeight = totalWeight + getWindowWeight(w)
+    end
+
+    local totalGaps = math.max(#screenWindows - 1, 0) * cfg.tileGap
+    local availableSpace = horizontal and (screenFrame.w - totalGaps) or (screenFrame.h - totalGaps)
+    local expectedSize = availableSpace * getWindowWeight(win) / totalWeight
+    local actualSize = horizontal and capturedFrame.w or capturedFrame.h
+
+    -- Check if this was a resize (size changed significantly)
+    local sizeDiff = math.abs(actualSize - expectedSize)
+    local wasResized = sizeDiff > 20  -- threshold for resize detection
+
+    -- Always process resizes (user dragging border), but skip moves during programmatic tiling
+    if wasResized and #screenWindows >= 2 then
+        -- Find index of this window in screen order
+        local winIndex = nil
+        for i, w in ipairs(screenWindows) do
+            if w:id() == win:id() then
+                winIndex = i
+                break
+            end
+        end
+        if not winIndex then return end
+
+        -- Calculate expected position based on weights to determine which edge was dragged
+        local expectedPos = horizontal and screenFrame.x or screenFrame.y
+        for i = 1, winIndex - 1 do
+            local w = screenWindows[i]
+            local wWeight = getWindowWeight(w)
+            local wSize = math.floor(availableSpace * wWeight / totalWeight)
+            expectedPos = expectedPos + wSize + cfg.tileGap
+        end
+
+        local actualPos = horizontal and capturedFrame.x or capturedFrame.y
+        local positionMoved = math.abs(actualPos - expectedPos) > 10
+
+        -- Determine which edge was dragged and find adjacent window
+        local adjacentWin = nil
+        if positionMoved then
+            -- Left/top edge was dragged - affect previous window
+            if winIndex > 1 then
+                adjacentWin = screenWindows[winIndex - 1]
+            end
+        else
+            -- Right/bottom edge was dragged - affect next window
+            if winIndex < #screenWindows then
+                adjacentWin = screenWindows[winIndex + 1]
+            end
+        end
+
+        if adjacentWin then
+            -- Calculate size change and transfer weight only to/from adjacent window
+            local oldWeight = getWindowWeight(win)
+            local adjOldWeight = getWindowWeight(adjacentWin)
+            local combinedWeight = oldWeight + adjOldWeight
+
+            local newWeight = (actualSize / availableSpace) * totalWeight
+            newWeight = math.max(0.2, math.min(newWeight, combinedWeight - 0.2))
+
+            local adjNewWeight = combinedWeight - newWeight
+            adjNewWeight = math.max(0.2, adjNewWeight)
+
+            setWindowWeight(win, newWeight)
+            setWindowWeight(adjacentWin, adjNewWeight)
+        end
+
+        -- Cancel any pending reposition since this was a resize
+        if pendingReposition then
+            pendingReposition:stop()
+            pendingReposition = nil
+        end
+
+        tileWindows()
+        return
+    end
+
+    -- For moves (not resizes), skip during programmatic tiling to prevent focus stealing
+    if tilingCount > 0 then return end
+
+    -- For moves (not resizes), use delayed handling with debounce
     if pendingReposition then
         pendingReposition:stop()
     end
 
-    -- Wait a bit for the drag to finish, then reposition
     pendingReposition = timer.doAfter(0.3, function()
         pendingReposition = nil
 
-        log("Window moved (user drag): " .. (win:title() or "?"))
-
-        local currentSpace = getCurrentSpace()
-        local winScreen = win:screen()
-        if not winScreen then
+        -- Re-fetch current state since time has passed
+        local space = getCurrentSpace()
+        local order = windowOrderBySpace[space] or {}
+        local scrn = win:screen()
+        if not scrn then
             tileWindows()
             return
         end
 
-        local screenFrame = winScreen:frame()
-        local screenId = winScreen:id()
+        local scrFrame = scrn:frame()
+        local scrId = scrn:id()
 
-        -- Get non-collapsed windows for this screen (excluding the moved window)
-        local currentOrder = windowOrderBySpace[currentSpace] or {}
-        local otherWindows = {}
-        local movedWinInOrder = false
-
-        for _, w in ipairs(currentOrder) do
+        local scrnWindows = {}
+        for _, w in ipairs(order) do
             if w and not w:isFullScreen() then
                 local s = w:screen()
                 local wsz = w:size()
-                if s and s:id() == screenId and wsz and wsz.h > cfg.collapsedWindowHeight then
-                    if w:id() == win:id() then
-                        movedWinInOrder = true
-                    else
-                        table.insert(otherWindows, w)
-                    end
+                if s and s:id() == scrId and wsz and wsz.h > cfg.collapsedWindowHeight then
+                    table.insert(scrnWindows, w)
                 end
+            end
+        end
+
+        local otherWindows = {}
+        local movedWinInOrder = false
+
+        for _, w in ipairs(scrnWindows) do
+            if w:id() == win:id() then
+                movedWinInOrder = true
+            else
+                table.insert(otherWindows, w)
             end
         end
 
@@ -727,60 +863,54 @@ local function handleWindowMoved(win)
             return
         end
 
-        -- Log old order
-        local oldTitles = {}
-        for _, w in ipairs(otherWindows) do table.insert(oldTitles, w:title() or "?") end
-        log("Other windows before insert: " .. table.concat(oldTitles, ", "))
+        -- Find current index in screen windows
+        local currentIndex = 0
+        for i, w in ipairs(scrnWindows) do
+            if w:id() == win:id() then
+                currentIndex = i
+                break
+            end
+        end
 
-        -- Calculate new position based on where window was dropped
-        local newIndex = calculateDropPosition(win, otherWindows, screenFrame)
+        local newIndex = calculateDropPosition(win, otherWindows, scrFrame)
         newIndex = math.max(1, math.min(newIndex, #otherWindows + 1))
 
-        -- Insert at new position
-        table.insert(otherWindows, newIndex, win)
+        -- If position changed, update the order
+        if newIndex ~= currentIndex then
+            table.insert(otherWindows, newIndex, win)
 
-        -- Log new screen order
-        local newTitles = {}
-        for _, w in ipairs(otherWindows) do table.insert(newTitles, w:title() or "?") end
-        log("Screen windows after insert: " .. table.concat(newTitles, ", "))
+            local newOrder = {}
+            local collapsedOnScreen = {}
 
-        -- Rebuild the full order: windows on other screens + collapsed stay in original relative order
-        -- but windows on this screen use the new otherWindows order
-        local newOrder = {}
-        local collapsedOnScreen = {}
-
-        -- First, collect collapsed windows on this screen
-        for _, w in ipairs(currentOrder) do
-            local wsz = w:size()
-            if wsz and wsz.h <= cfg.collapsedWindowHeight then
-                local s = w:screen()
-                if s and s:id() == screenId then
-                    table.insert(collapsedOnScreen, w)
+            for _, w in ipairs(order) do
+                local wsz = w:size()
+                if wsz and wsz.h <= cfg.collapsedWindowHeight then
+                    local s = w:screen()
+                    if s and s:id() == scrId then
+                        table.insert(collapsedOnScreen, w)
+                    end
                 end
             end
-        end
 
-        -- Add windows from other screens (in original order)
-        for _, w in ipairs(currentOrder) do
-            local s = w:screen()
-            if s and s:id() ~= screenId then
+            for _, w in ipairs(order) do
+                local s = w:screen()
+                if s and s:id() ~= scrId then
+                    table.insert(newOrder, w)
+                end
+            end
+
+            for _, w in ipairs(otherWindows) do
                 table.insert(newOrder, w)
             end
+
+            for _, w in ipairs(collapsedOnScreen) do
+                table.insert(newOrder, w)
+            end
+
+            windowOrderBySpace[space] = newOrder
         end
 
-        -- Add non-collapsed windows on this screen in new order
-        for _, w in ipairs(otherWindows) do
-            table.insert(newOrder, w)
-        end
-
-        -- Add collapsed windows on this screen at the end
-        for _, w in ipairs(collapsedOnScreen) do
-            table.insert(newOrder, w)
-        end
-
-        log("Drag reposition: moved to position " .. newIndex)
-
-        windowOrderBySpace[currentSpace] = newOrder
+        -- Always retile to snap window back to position
         tileWindows()
         win:focus()
     end)
@@ -863,8 +993,6 @@ local function handleBorderResize(event)
                 startSize1 = border.horizontal and border.win1:frame().w or border.win1:frame().h,
                 startSize2 = border.horizontal and border.win2:frame().w or border.win2:frame().h
             }
-            log("Border resize started between: " ..
-            (border.win1:title() or "?") .. " and " .. (border.win2:title() or "?"))
             return true -- Consume the event
         end
     elseif eventType == eventtap.event.types.leftMouseDragged then
@@ -897,7 +1025,6 @@ local function handleBorderResize(event)
         end
     elseif eventType == eventtap.event.types.leftMouseUp then
         if borderResizeState then
-            log("Border resize ended")
             borderResizeState = nil
             return true -- Consume the event
         end
@@ -917,14 +1044,12 @@ local function startBorderResizeRecognition()
         eventtap.event.types.leftMouseUp
     }, handleBorderResize)
     borderResizeTap:start()
-    log("Border resize recognition started")
 end
 
 local function stopBorderResizeRecognition()
     if borderResizeTap then
         borderResizeTap:stop()
         borderResizeTap = nil
-        log("Border resize recognition stopped")
     end
 end
 
@@ -951,7 +1076,6 @@ local function handleTTTaps(event)
 
     if touchCount == 0 and lastTouchCount <= initialFingerCount then
         if initialFingerCount > 0 then
-            log("Gesture ended")
             initialFingerCount    = 0
             gestureStartTime      = 0
             initialTouchPositions = {}
@@ -967,7 +1091,6 @@ local function handleTTTaps(event)
             for i = 1, touchCount do
                 initialTouchPositions[i] = touches[i].normalizedPosition.x
             end
-            log("Gesture started with " .. initialFingerCount .. " fingers")
         end
     elseif touchCount >= initialFingerCount and gestureStartTime then
         if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > gestureStartThreshold then
@@ -989,21 +1112,16 @@ local function handleTTTaps(event)
             if additionalFingerPosition then
                 local side = additionalFingerPosition <= 0.5 and "left" or "right"
                 if currentTime - lastActionTime > 0.5 then
-                    log(initialFingerCount .. "-finger gesture detected, additional finger on the " .. side)
                     if initialFingerCount == 3 then
                         if side == "left" then
-                            log("Executing: Move window to previous position in order")
                             moveWindowInOrder("backward")
                         else
-                            log("Executing: Move window to next position in order")
                             moveWindowInOrder("forward")
                         end
                     elseif initialFingerCount == 4 then
                         if side == "left" then
-                            log("Executing: Move window to previous screen")
                             moveWindowToAdjacentScreen("previous")
                         else
-                            log("Executing: Move window to next screen")
                             moveWindowToAdjacentScreen("next")
                         end
                     end
@@ -1011,8 +1129,6 @@ local function handleTTTaps(event)
                 end
             end
         end
-    elseif touchCount < initialFingerCount then
-        log("Finger(s) lifted, but gesture continues")
     end
 
     lastTouchCount = touchCount
@@ -1020,10 +1136,7 @@ local function handleTTTaps(event)
 end
 
 local function startTTTapsRecognition()
-    if not cfg.enableTTTaps then
-        log("TTTaps recognition is disabled")
-        return
-    end
+    if not cfg.enableTTTaps then return end
 
     if ttTaps then
         ttTaps:stop()
@@ -1031,21 +1144,18 @@ local function startTTTapsRecognition()
 
     ttTaps = eventtap.new({ eventtap.event.types.gesture }, handleTTTaps)
     ttTaps:start()
-    log("TTTaps recognition started")
 end
 
 local function stopTTTapsRecognition()
     if ttTaps then
         ttTaps:stop()
         ttTaps = nil
-        log("TTTaps recognition stopped")
     end
 end
 
 local function checkTTTapsRecognition()
     if not cfg.enableTTTaps then return end
     if not ttTaps or not ttTaps:isEnabled() then
-        log("TTTaps recognition was stopped, restarting...")
         startTTTapsRecognition()
     end
 end
@@ -1076,7 +1186,6 @@ local function bindHotkeys()
     hotkey.bind(cfg.mods, "0", function()
         windowWeights = {}
         tileWindows()
-        log("All window weights reset to equal")
     end)
 
     if cfg.enableTTTaps then
@@ -1089,13 +1198,11 @@ local function handleWindowDestroyed(_)
     pruneStaleWeights() -- Clean up weights for the destroyed window
     updateWindowOrder()
     tileWindows()
-    local newFocusedWindow = window.focusedWindow()
-    if newFocusedWindow then
-        handleWindowFocused(newFocusedWindow)
-    else
-        if activeWindowOutline then
-            activeWindowOutline:hide()
-        end
+    -- Don't call handleWindowFocused here - the windowFocused event subscription
+    -- will fire naturally when macOS focuses a new window, avoiding double-handling
+    -- that can cause focus flickering
+    if not window.focusedWindow() and activeWindowOutline then
+        activeWindowOutline:hide()
     end
 end
 
@@ -1133,15 +1240,6 @@ end):start()
 local function preventGC()
     pruneStaleSpaces()  -- Clean up stale space entries
     pruneStaleWeights() -- Clean up weights for closed windows
-    if cfg.enableTTTaps then
-        if ttTaps then
-            log("TTTaps recognition is active")
-        else
-            log("TTTaps recognition is not active")
-        end
-    else
-        log("TTTaps recognition is disabled")
-    end
 end
 
 hs.timer.doEvery(3600, preventGC) -- Hourly status and cleanup
@@ -1165,8 +1263,5 @@ function restartWindowScapeTTTaps()
     if cfg.enableTTTaps then
         stopTTTapsRecognition()
         startTTTapsRecognition()
-        log("WindowScape TTTaps recognition manually restarted")
-    else
-        log("TTTaps recognition is disabled, cannot restart")
     end
 end
