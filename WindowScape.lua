@@ -38,10 +38,6 @@ local outlineHideCounter  = 0    -- Counter to prevent hiding on momentary visib
 local tilingCount         = 0   -- Counter to distinguish our moves from user drags (handles overlapping tiles)
 local pendingReposition   = nil -- Timer for delayed reposition check
 
--- Border resize state
-local borderResizeState   = nil -- { win1, win2, startX/Y, startWeight1, startWeight2, horizontal }
-local borderResizeTap     = nil -- eventtap for border resize
-local borderResizeZone    = 8   -- pixels from border to trigger resize cursor
 
 local listedApps          = {}  -- bundleIDs or app names
 local listPath            = hs.configdir .. "/WindowScape_apps.json"
@@ -81,6 +77,8 @@ local function pruneStaleSpaces()
 end
 
 local function saveList()
+    -- Remove existing file first (hs.json.write doesn't overwrite)
+    os.remove(listPath)
     local ok, err = json.write(listedApps, listPath, true)
     if not ok then log("Failed to save app list: " .. tostring(err)) end
 end
@@ -586,6 +584,64 @@ local function moveWindowInOrder(direction)
     drawActiveWindowOutline(focusedWindow)
 end
 
+local function focusAdjacentWindow(direction)
+    local currentSpace = getCurrentSpace()
+    local focusedWindow = window.focusedWindow()
+    local currentOrder = windowOrderBySpace[currentSpace] or {}
+
+    -- Get non-collapsed windows on current screen
+    local focusedScreen = focusedWindow and focusedWindow:screen()
+    local screenWindows = {}
+
+    for _, win in ipairs(currentOrder) do
+        local sz = win:size()
+        local winScreen = win:screen()
+        if sz and sz.h > cfg.collapsedWindowHeight then
+            -- If we have a focused window, only consider windows on same screen
+            if not focusedScreen or (winScreen and winScreen:id() == focusedScreen:id()) then
+                table.insert(screenWindows, win)
+            end
+        end
+    end
+
+    if #screenWindows == 0 then return end
+
+    -- Find current focused index
+    local focusedIndex = 0
+    if focusedWindow then
+        for i, win in ipairs(screenWindows) do
+            if win:id() == focusedWindow:id() then
+                focusedIndex = i
+                break
+            end
+        end
+    end
+
+    -- Calculate target index
+    local targetIndex
+    if direction == "forward" or direction == "next" then
+        targetIndex = (focusedIndex % #screenWindows) + 1
+    else
+        targetIndex = focusedIndex > 1 and (focusedIndex - 1) or #screenWindows
+    end
+
+    local targetWin = screenWindows[targetIndex]
+    if targetWin then
+        local oldFrame = focusedWindow and focusedWindow:frame()
+        local newFrame = targetWin:frame()
+
+        targetWin:focus()
+        drawActiveWindowOutline(targetWin)
+
+        -- Move mouse to center of new window
+        if newFrame then
+            local centerX = newFrame.x + newFrame.w / 2
+            local centerY = newFrame.y + newFrame.h / 2
+            mouse.absolutePosition({ x = centerX, y = centerY })
+        end
+    end
+end
+
 local function moveWindowToAdjacentScreen(direction)
     local focusedWindow = window.focusedWindow()
     if not focusedWindow then
@@ -813,9 +869,6 @@ local function handleWindowMoved(win)
         return
     end
 
-    -- For moves (not resizes), skip during programmatic tiling to prevent focus stealing
-    if tilingCount > 0 then return end
-
     -- For moves (not resizes), use delayed handling with debounce
     if pendingReposition then
         pendingReposition:stop()
@@ -912,153 +965,21 @@ local function handleWindowMoved(win)
 
         -- Always retile to snap window back to position
         tileWindows()
-        win:focus()
     end)
 end
 
-local function findBorderAtPoint(x, y)
-    -- Find if mouse is near a border between two adjacent tiled windows
-    local currentSpace = getCurrentSpace()
-    local ordered = windowOrderBySpace[currentSpace] or {}
-
-    -- Get non-collapsed windows on the screen containing the point
-    local targetScreen = screen.find(geometry.point(x, y))
-    if not targetScreen then return nil end
-
-    local screenId = targetScreen:id()
-    local screenFrame = targetScreen:frame()
-    local horizontal = (screenFrame.w > screenFrame.h)
-
-    local screenWindows = {}
-    for _, win in ipairs(ordered) do
-        if win and not win:isFullScreen() then
-            local s = win:screen()
-            local sz = win:size()
-            if s and s:id() == screenId and sz and sz.h > cfg.collapsedWindowHeight then
-                table.insert(screenWindows, win)
-            end
-        end
-    end
-
-    if #screenWindows < 2 then return nil end
-
-    -- Check borders between adjacent windows
-    for i = 1, #screenWindows - 1 do
-        local win1 = screenWindows[i]
-        local win2 = screenWindows[i + 1]
-        local frame1 = win1:frame()
-        local frame2 = win2:frame()
-
-        if frame1 and frame2 then
-            if horizontal then
-                -- Check vertical border (right edge of win1)
-                local borderX = frame1.x + frame1.w
-                if math.abs(x - borderX) <= borderResizeZone then
-                    -- Check if y is within the window height
-                    if y >= frame1.y and y <= frame1.y + frame1.h then
-                        return { win1 = win1, win2 = win2, horizontal = true, borderPos = borderX }
-                    end
-                end
-            else
-                -- Check horizontal border (bottom edge of win1)
-                local borderY = frame1.y + frame1.h
-                if math.abs(y - borderY) <= borderResizeZone then
-                    -- Check if x is within the window width
-                    if x >= frame1.x and x <= frame1.x + frame1.w then
-                        return { win1 = win1, win2 = win2, horizontal = false, borderPos = borderY }
-                    end
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
-local function handleBorderResize(event)
-    local eventType = event:getType()
-    local mousePos = mouse.absolutePosition()
-
-    if eventType == eventtap.event.types.leftMouseDown then
-        local border = findBorderAtPoint(mousePos.x, mousePos.y)
-        if border then
-            -- Start border resize
-            borderResizeState = {
-                win1 = border.win1,
-                win2 = border.win2,
-                horizontal = border.horizontal,
-                startPos = border.horizontal and mousePos.x or mousePos.y,
-                startWeight1 = getWindowWeight(border.win1),
-                startWeight2 = getWindowWeight(border.win2),
-                startSize1 = border.horizontal and border.win1:frame().w or border.win1:frame().h,
-                startSize2 = border.horizontal and border.win2:frame().w or border.win2:frame().h
-            }
-            return true -- Consume the event
-        end
-    elseif eventType == eventtap.event.types.leftMouseDragged then
-        if borderResizeState then
-            local currentPos = borderResizeState.horizontal and mousePos.x or mousePos.y
-            local delta = currentPos - borderResizeState.startPos
-
-            -- Calculate new sizes
-            local totalSize = borderResizeState.startSize1 + borderResizeState.startSize2
-            local newSize1 = math.max(50, math.min(totalSize - 50, borderResizeState.startSize1 + delta))
-            local newSize2 = totalSize - newSize1
-
-            -- Convert sizes to weights (proportional to original weight/size ratio)
-            local ratio1 = borderResizeState.startWeight1 / borderResizeState.startSize1
-            local ratio2 = borderResizeState.startWeight2 / borderResizeState.startSize2
-            local avgRatio = (ratio1 + ratio2) / 2
-
-            setWindowWeight(borderResizeState.win1, newSize1 * avgRatio)
-            setWindowWeight(borderResizeState.win2, newSize2 * avgRatio)
-
-            -- Retile to show the change
-            tilingCount = tilingCount + 1
-            tileWindowsInternal()
-            timer.doAfter(0.05, function()
-                tilingCount = tilingCount - 1
-                if tilingCount < 0 then tilingCount = 0 end
-            end)
-
-            return true -- Consume the event
-        end
-    elseif eventType == eventtap.event.types.leftMouseUp then
-        if borderResizeState then
-            borderResizeState = nil
-            return true -- Consume the event
-        end
-    end
-
-    return false
-end
-
-local function startBorderResizeRecognition()
-    if borderResizeTap then
-        borderResizeTap:stop()
-    end
-
-    borderResizeTap = eventtap.new({
-        eventtap.event.types.leftMouseDown,
-        eventtap.event.types.leftMouseDragged,
-        eventtap.event.types.leftMouseUp
-    }, handleBorderResize)
-    borderResizeTap:start()
-end
-
-local function stopBorderResizeRecognition()
-    if borderResizeTap then
-        borderResizeTap:stop()
-        borderResizeTap = nil
-    end
-end
 
 local initialFingerCount    = 0
 local gestureStartTime      = 0
 local lastActionTime        = 0
-local gestureStartThreshold = 0.005
+local gestureStartThreshold = 0.15  -- Time to let all initial fingers settle before detecting +1
 local lastTouchCount        = 0
 local initialTouchPositions = {}
+
+-- Double-tap detection
+local lastTapTime           = 0
+local lastTapFingerCount    = 0
+local doubleTapThreshold    = 0.35  -- Max time between taps for double-tap
 
 local function handleTTTaps(event)
     local eventType = event:getType(true)
@@ -1066,15 +987,32 @@ local function handleTTTaps(event)
         return false
     end
 
-    local touchDetails = event:getTouchDetails()
-    if not touchDetails then return false end
-    if touchDetails.pressure then return false end
-
     local touches = event:getTouches()
     local touchCount = touches and #touches or 0
     local currentTime = hs.timer.secondsSinceEpoch()
 
-    if touchCount == 0 and lastTouchCount <= initialFingerCount then
+    local touchDetails = event:getTouchDetails()
+    if not touchDetails then return false end
+    if touchDetails.pressure then return false end
+
+    if touchCount == 0 then
+        -- All fingers lifted - check for double-tap
+        if initialFingerCount == 3 then
+            if lastTapFingerCount == 3 and (currentTime - lastTapTime) < doubleTapThreshold then
+                -- Double tap detected!
+                if currentTime - lastActionTime > 0.3 then
+                    toggleFocusedWindowInList()
+                    lastActionTime = currentTime
+                end
+                lastTapTime = 0
+                lastTapFingerCount = 0
+            else
+                -- Record this tap for potential double-tap
+                lastTapTime = currentTime
+                lastTapFingerCount = 3
+            end
+        end
+
         if initialFingerCount > 0 then
             initialFingerCount    = 0
             gestureStartTime      = 0
@@ -1085,12 +1023,20 @@ local function handleTTTaps(event)
     end
 
     if initialFingerCount == 0 then
-        if touchCount == 3 or touchCount == 4 then
+        if touchCount == 2 or touchCount == 3 or touchCount == 4 then
             initialFingerCount = touchCount
             gestureStartTime = currentTime
             for i = 1, touchCount do
                 initialTouchPositions[i] = touches[i].normalizedPosition.x
             end
+        end
+    elseif touchCount > initialFingerCount and touchCount <= 4 and gestureStartTime and (currentTime - gestureStartTime < gestureStartThreshold) then
+        -- More fingers added during settling period - update initial count
+        initialFingerCount = touchCount
+        gestureStartTime = currentTime
+        initialTouchPositions = {}
+        for i = 1, touchCount do
+            initialTouchPositions[i] = touches[i].normalizedPosition.x
         end
     elseif touchCount >= initialFingerCount and gestureStartTime then
         if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > gestureStartThreshold then
@@ -1112,13 +1058,22 @@ local function handleTTTaps(event)
             if additionalFingerPosition then
                 local side = additionalFingerPosition <= 0.5 and "left" or "right"
                 if currentTime - lastActionTime > 0.5 then
-                    if initialFingerCount == 3 then
+                    if initialFingerCount == 2 then
+                        -- 2+1: Focus previous/next window
+                        if side == "left" then
+                            focusAdjacentWindow("backward")
+                        else
+                            focusAdjacentWindow("forward")
+                        end
+                    elseif initialFingerCount == 3 then
+                        -- 3+1: Move window in tiling order
                         if side == "left" then
                             moveWindowInOrder("backward")
                         else
                             moveWindowInOrder("forward")
                         end
                     elseif initialFingerCount == 4 then
+                        -- 4+1: Move window to adjacent screen
                         if side == "left" then
                             moveWindowToAdjacentScreen("previous")
                         else
@@ -1132,7 +1087,7 @@ local function handleTTTaps(event)
     end
 
     lastTouchCount = touchCount
-    return true
+    return false  -- Don't consume event, let other taps receive it
 end
 
 local function startTTTapsRecognition()
@@ -1232,6 +1187,7 @@ window.filter.default:subscribe(window.filter.windowMoved, handleWindowMoved)
 window.filter.default:subscribe(window.filter.windowDestroyed, handleWindowDestroyed)
 window.filter.default:subscribe(window.filter.windowFocused, handleWindowFocused)
 
+
 spaces.watcher.new(function(_)
     handleWindowEvent()
 end):start()
@@ -1252,11 +1208,10 @@ end
 updateWindowOrder()
 tileWindows()
 bindHotkeys()
-startBorderResizeRecognition()
 
 log("WindowScape initialized" ..
     (cfg.enableTTTaps and " with TTTaps recognition" or " without TTTaps recognition") ..
-    ", drag-to-reposition, and border resize")
+    " and drag-to-reposition")
 
 -- Public helper to restart the gesture recognizer manually
 function restartWindowScapeTTTaps()
