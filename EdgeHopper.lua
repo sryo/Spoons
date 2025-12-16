@@ -1,4 +1,4 @@
--- EdgeHopper: Toroidal screen wrapping with GNOME-style pressure barriers
+-- EdgeHopper.lua: Wrap the mouse cursor when it moves off the edge of the screen
 
 -- Configuration
 local PRESSURE_THRESHOLD = 300 -- pixels of accumulated pressure to trigger

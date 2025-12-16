@@ -20,23 +20,30 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 [`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.
 
 #### Features
-- Hot corners: Define custom actions for each corner of the screen. Actions are defined in the hotCorners table and can be updated as needed.
-- Keep the dock and menubar hidden.
-- Reopen last app: When an app is killed, a modal will be shown to allow you to easily reopen it.
+- Hot corners: Define custom actions for each corner of the screen.
+- Block menu bar and dock from appearing (configurable).
+- Reopen last app: When an app is killed, a dialog appears to reopen it.
+- WindowScape integration: Uses simulated fullscreen and snapshot minimize when available.
 
 #### How to Use
 
 | Action                        | Shortcut                                              |
 |-------------------------------|-------------------------------------------------------|
-| Close or Quit App          | Move mouse to the top-left corner                     |
-| Kill Frontmost App         | <kbd>⇧ SHIFT</kbd> + move mouse to the top-left corner |
-| Reopen Last App Modal      | Automatically shown when an app is killed             |
-| Toggle Fullscreen          | Move mouse to the top-right corner                    |
-| Zoom Window                | <kbd>⇧ SHIFT</kbd> + move mouse to the top-right corner |
-| Minimize Window            | Move mouse to the bottom-right corner                 |
-| Hide App                   | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-right corner |
-| Open Finder                | Move mouse to the bottom-left corner                  |
-| Open System Preferences    | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-left corner |
+| **Top-Left Corner** |                                                       |
+| Close window or Quit app      | Move mouse to the top-left corner                     |
+| Kill app (force quit)         | <kbd>⇧ SHIFT</kbd> + move mouse to the top-left corner |
+| **Top-Right Corner** |                                                      |
+| Toggle Fullscreen             | Move mouse to the top-right corner                    |
+| Zoom Window                   | <kbd>⇧ SHIFT</kbd> + move mouse to the top-right corner |
+| **Bottom-Right Corner** |                                                   |
+| Minimize Window               | Move mouse to the bottom-right corner                 |
+| Hide App                      | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-right corner |
+| **Bottom-Left Corner** |                                                    |
+| Open Finder                   | Move mouse to the bottom-left corner                  |
+| Open System Preferences       | <kbd>⇧ SHIFT</kbd> + move mouse to the bottom-left corner |
+| **Automatic** |                                                             |
+| Reopen killed app dialog      | Shown automatically after killing an app              |
+| Block menu bar/dock           | Move mouse to screen edges (hold <kbd>⇧ SHIFT</kbd> to bypass) |
 
 
 ![hyperlinkhijacker](https://github.com/user-attachments/assets/330318f0-2bfd-4502-bc80-5d1ab06adabe)
@@ -99,11 +106,24 @@ Note: Actions may vary depending on the active application. Default actions incl
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| Add/Remove app to/from whitelist | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd><</kbd> |
+| **Window Management** |                                           |
+| Add/Remove app to/from whitelist | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>,</kbd> |
 | Move window backward in tiling order | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>←</kbd> or 3 fingers touch + a tap to the left |
 | Move window forward in tiling order  | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>→</kbd> or 3 fingers touch + a tap to the right |
-| Move window to previous space       | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or 4 fingers touch + a tap to the left |
-| Move window to next space           | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> or 4 fingers touch + a tap to the right |
+| Move window to previous screen      | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>←</kbd> or 4 fingers touch + a tap to the left |
+| Move window to next screen          | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>⌥ ALT</kbd><kbd>→</kbd> or 4 fingers touch + a tap to the right |
+| Toggle fullscreen                   | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>F</kbd> |
+| Toggle pseudotiling                 | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>P</kbd> |
+| Force retile all windows            | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>R</kbd> |
+| **Layout Controls** |                                             |
+| Cycle through layouts               | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>L</kbd> |
+| Increase master area ratio          | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>]</kbd> |
+| Decrease master area ratio          | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>[</kbd> |
+| Increase window weight              | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>=</kbd> |
+| Decrease window weight              | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>-</kbd> |
+| Reset all window weights            | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>0</kbd> |
+| **Settings** |                                                  |
+| Toggle animations                   | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>A</kbd> |
 
 
 #### Tip: Disable the Dock permanently
@@ -135,6 +155,8 @@ mkdir -p ~/Library/LaunchAgents && cp -f ./local.disable-dock.plist ~/Library/La
 | **Text Manipulation**                |                              |
 | Munch characters (Delete)            | <kbd>SPACE</kbd><kbd>M</kbd> |
 | Insert a new line (Return)           | <kbd>SPACE</kbd><kbd>,</kbd> |
+| Tab                                  | <kbd>SPACE</kbd><kbd>.</kbd> |
+| Escape                               | <kbd>SPACE</kbd><kbd>/</kbd> |
 
 ### AppTimeout
 [`AppTimeout.lua`](https://github.com/sryo/Spoons/blob/main/AppTimeout.lua) - automatically close apps that have no windows.
