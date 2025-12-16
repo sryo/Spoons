@@ -1,14 +1,15 @@
 -- FrameMaster: https://github.com/sryo/Spoons/blob/main/FrameMaster.lua
 -- Take control of your Mac's 'hot corners', menu bar, and dock.
 
-local killMenu         = true  -- prevent the menu bar from appearing
-local killDock         = true  -- prevent the dock from appearing
-local onlyFullscreen   = false -- but only on fullscreen spaces
-local buffer           = 4     -- increase if you still manage to activate them
-local showTooltips     = true  -- set this to false to improve performance if necessary
-local tooltipMaxLength = 50    -- maximum length for tooltip messages
-local reopenAfterKill  = true  -- show an autoclosing modal to reopen the last killed app
-local tooltipMargin    = 0     -- increase this value to add extra spacing if needed
+local killMenu           = true  -- prevent the menu bar from appearing
+local killDock           = true  -- prevent the dock from appearing
+local onlyFullscreen     = false -- but only on fullscreen spaces
+local buffer             = 4     -- increase if you still manage to activate them
+local showTooltips       = true  -- set this to false to improve performance if necessary
+local tooltipMaxLength   = 50    -- maximum length for tooltip messages
+local reopenAfterKill    = true  -- show an autoclosing modal to reopen the last killed app
+local tooltipMargin      = 0     -- increase this value to add extra spacing if needed
+local useWindowScape     = true  -- use WindowScape's simulated fullscreen and snapshot minimize
 
 local function getWindowTitle(cornerAction)
     local window = hs.window.focusedWindow()
@@ -127,15 +128,26 @@ hotCorners = {
                 window:toggleZoom()
                 return "Zoomed " .. getWindowTitle()
             else
-                hs.eventtap.keyStroke({ "ctrl", "cmd" }, "F")
-                return "Toggled Fullscreen for " .. getWindowTitle()
+                -- Use WindowScape's simulated fullscreen if available and enabled
+                if useWindowScape and windowScapeToggleFullscreen then
+                    return windowScapeToggleFullscreen()
+                else
+                    hs.eventtap.keyStroke({ "ctrl", "cmd" }, "F")
+                    return "Toggled Fullscreen for " .. getWindowTitle()
+                end
             end
         end,
         message = function()
             if hs.eventtap.checkKeyboardModifiers().shift then
                 return "Zoom " .. getWindowTitle()
             else
-                return "Toggle Fullscreen for " .. getWindowTitle()
+                -- Check if in simulated fullscreen
+                local window = hs.window.focusedWindow()
+                if useWindowScape and windowScapeIsFullscreen and windowScapeIsFullscreen(window) then
+                    return "Exit Fullscreen for " .. getWindowTitle()
+                else
+                    return "Toggle Fullscreen for " .. getWindowTitle()
+                end
             end
         end
     },
@@ -144,11 +156,17 @@ hotCorners = {
             local window = hs.window.focusedWindow()
             if not window or isDesktop() or window:isFullScreen() then return "No action" end
             if hs.eventtap.checkKeyboardModifiers().shift then
-                window:application():hide()
+                local app = window:application()
+                if app then app:hide() end
                 return "Hid " .. getWindowTitle()
             else
-                window:minimize()
-                return "Minimized " .. getWindowTitle()
+                -- Use WindowScape's snapshot minimize if available and enabled
+                if useWindowScape and windowScapeMinimize then
+                    return windowScapeMinimize()
+                else
+                    window:minimize()
+                    return "Minimized " .. getWindowTitle()
+                end
             end
         end,
         message = function()
@@ -244,7 +262,9 @@ tooltipAlert[2] = {
     textLineBreak = "clip",
     textColor = { white = 1, alpha = 1 }
 }
+----------------------------------------------------------------
 
+-- Position and show the tooltip on the current screen.
 function showMessage(corner, message)
     if fadeTimer then
         fadeTimer:stop()

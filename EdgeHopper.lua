@@ -1,7 +1,7 @@
--- EdgeHopper.lua: Wrap the mouse cursor when it moves off the edge of the screen
+-- EdgeHopper: Toroidal screen wrapping with GNOME-style pressure barriers
 
 -- Configuration
-local PRESSURE_THRESHOLD = 100 -- pixels of accumulated pressure to trigger
+local PRESSURE_THRESHOLD = 300 -- pixels of accumulated pressure to trigger
 local PRESSURE_TIMEOUT = 1000  -- ms window for pressure accumulation
 local MAX_PRESSURE_PER_EVENT = 15
 local CORNER_EXCLUSION = 10
@@ -19,6 +19,9 @@ local ENABLED_EDGES = {
 
 -- Multi-monitor behavior: "current" = wrap within current screen, "all" = wrap across all screens
 local WRAP_MODE = "current"
+
+-- Allow dragging items through the portal
+local ALLOW_DRAG_THROUGH = true
 
 -- State
 local pressureEvents = {}
@@ -500,131 +503,132 @@ local function isShiftHeld()
     return hs.eventtap.checkKeyboardModifiers().shift
 end
 
-mouseTunnelHandler = hs.eventtap.new({ hs.eventtap.event.types.mouseMoved }, function(e)
-    -- Shift bypass - disable wrapping while shift is held
-    if isShiftHeld() then
-        hideMembrane()
-        hideGhost()
-        reset()
-        resetDwell()
-        return false
-    end
-
-    local pos = e:location()
-    local screen = hs.mouse.getCurrentScreen()
-    if not screen then return false end
-    local frame = screen:fullFrame()
-
-    if inCorner(pos.x, pos.y, frame) or isDragging() then
-        currentEdge = nil
-        reset()
-        resetDwell()
-        isTriggered = false
-        hideMembrane()
-        hideGhost()
-        return false
-    end
-
-    -- Check if we left the buffer zone entirely - reset dwell
-    if not inBufferZone(pos.x, pos.y, frame) then
-        resetDwell()
-        if currentEdge then
-            currentEdge = nil
-            isTriggered = false
+mouseTunnelHandler = hs.eventtap.new({ hs.eventtap.event.types.mouseMoved, hs.eventtap.event.types.leftMouseDragged },
+    function(e)
+        -- Shift bypass - disable wrapping while shift is held
+        if isShiftHeld() then
+            hideMembrane()
+            hideGhost()
             reset()
+            resetDwell()
+            return false
+        end
+
+        local pos = e:location()
+        local screen = hs.mouse.getCurrentScreen()
+        if not screen then return false end
+        local frame = screen:fullFrame()
+
+        if inCorner(pos.x, pos.y, frame) or (isDragging() and not ALLOW_DRAG_THROUGH) then
+            currentEdge = nil
+            reset()
+            resetDwell()
+            isTriggered = false
+            hideMembrane()
+            hideGhost()
+            return false
+        end
+
+        -- Check if we left the buffer zone entirely - reset dwell
+        if not inBufferZone(pos.x, pos.y, frame) then
+            resetDwell()
+            if currentEdge then
+                currentEdge = nil
+                isTriggered = false
+                reset()
+                hideMembrane()
+                hideGhost()
+            end
+            return false
+        end
+
+        local edge = getEdgeAt(pos.x, pos.y, frame)
+
+        -- In buffer zone but not at edge - might be dwelling
+        if not edge then
+            if currentEdge then
+                currentEdge = nil
+                isTriggered = false
+                reset()
+                hideMembrane()
+                hideGhost()
+            end
+            -- Start dwell timer if not already dwelling
+            if not isDwelling and not dwellTimer then
+                startDwellTimer()
+            end
+            return false
+        end
+
+        -- Check if this edge is enabled
+        if not ENABLED_EDGES[edge] then
+            return false
+        end
+
+        -- At edge
+        currentEdge = edge
+
+        -- If dwelling, ignore pressure until user leaves buffer zone
+        if isDwelling then
+            return false
+        end
+
+        -- If already triggered, wait until pointer leaves
+        if isTriggered then
+            return false
+        end
+
+        local dx = e:getProperty(hs.eventtap.event.properties.mouseEventDeltaX)
+        local dy = e:getProperty(hs.eventtap.event.properties.mouseEventDeltaY)
+
+        local distanceAcross = getDistanceAcross(edge, dx, dy)
+        local distanceAlong = getDistanceAlong(edge, dx, dy)
+
+        -- Single strong push triggers immediately
+        if distanceAcross >= PRESSURE_THRESHOLD then
+            trigger(edge, pos.x, pos.y, screen)
+            return true
+        end
+
+        -- Reject if sliding more than pushing
+        if distanceAlong > distanceAcross then
+            return false
+        end
+
+        -- Accumulate pressure
+        local now = hs.timer.absoluteTime() / 1000000
+        lastTime = now
+        trimOldEvents(now)
+
+        local distance = math.min(MAX_PRESSURE_PER_EVENT, distanceAcross)
+        if distance > 0 then
+            table.insert(pressureEvents, { time = now, distance = distance })
+            currentPressure = currentPressure + distance
+            stopDwellTimer()
+        else
+            if not dwellTimer and not isDwelling then
+                startDwellTimer()
+            end
+        end
+
+        -- Update visual
+        local progress = math.min(1, currentPressure / PRESSURE_THRESHOLD)
+        if progress > 0.05 then
+            updateMembrane(edge, pos.x, pos.y, frame, progress)
+            showGhostBulge(edge, pos.x, pos.y, screen, progress)
+        else
             hideMembrane()
             hideGhost()
         end
-        return false
-    end
 
-    local edge = getEdgeAt(pos.x, pos.y, frame)
-
-    -- In buffer zone but not at edge - might be dwelling
-    if not edge then
-        if currentEdge then
-            currentEdge = nil
-            isTriggered = false
-            reset()
-            hideMembrane()
-            hideGhost()
+        -- Check threshold
+        if currentPressure >= PRESSURE_THRESHOLD then
+            trigger(edge, pos.x, pos.y, screen)
+            return true
         end
-        -- Start dwell timer if not already dwelling
-        if not isDwelling and not dwellTimer then
-            startDwellTimer()
-        end
+
         return false
-    end
-
-    -- Check if this edge is enabled
-    if not ENABLED_EDGES[edge] then
-        return false
-    end
-
-    -- At edge
-    currentEdge = edge
-
-    -- If dwelling, ignore pressure until user leaves buffer zone
-    if isDwelling then
-        return false
-    end
-
-    -- If already triggered, wait until pointer leaves
-    if isTriggered then
-        return false
-    end
-
-    local dx = e:getProperty(hs.eventtap.event.properties.mouseEventDeltaX)
-    local dy = e:getProperty(hs.eventtap.event.properties.mouseEventDeltaY)
-
-    local distanceAcross = getDistanceAcross(edge, dx, dy)
-    local distanceAlong = getDistanceAlong(edge, dx, dy)
-
-    -- Single strong push triggers immediately
-    if distanceAcross >= PRESSURE_THRESHOLD then
-        trigger(edge, pos.x, pos.y, screen)
-        return true
-    end
-
-    -- Reject if sliding more than pushing
-    if distanceAlong > distanceAcross then
-        return false
-    end
-
-    -- Accumulate pressure
-    local now = hs.timer.absoluteTime() / 1000000
-    lastTime = now
-    trimOldEvents(now)
-
-    local distance = math.min(MAX_PRESSURE_PER_EVENT, distanceAcross)
-    if distance > 0 then
-        table.insert(pressureEvents, { time = now, distance = distance })
-        currentPressure = currentPressure + distance
-        stopDwellTimer()
-    else
-        if not dwellTimer and not isDwelling then
-            startDwellTimer()
-        end
-    end
-
-    -- Update visual
-    local progress = math.min(1, currentPressure / PRESSURE_THRESHOLD)
-    if progress > 0.05 then
-        updateMembrane(edge, pos.x, pos.y, frame, progress)
-        showGhostBulge(edge, pos.x, pos.y, screen, progress)
-    else
-        hideMembrane()
-        hideGhost()
-    end
-
-    -- Check threshold
-    if currentPressure >= PRESSURE_THRESHOLD then
-        trigger(edge, pos.x, pos.y, screen)
-        return true
-    end
-
-    return false
-end):start()
+    end):start()
 
 mouseTunnelScreenWatcher = hs.screen.watcher.new(function()
     mouseTunnelHandler:stop()

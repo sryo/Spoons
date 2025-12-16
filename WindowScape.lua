@@ -30,10 +30,11 @@ local json                = require("hs.json")
 local hotkey              = require("hs.hotkey")
 local canvas              = require("hs.canvas")
 local axuielement         = require("hs.axuielement")
-local menubar             = require("hs.menubar")
 
 local cfg                 = {
     outlineColor          = { red = .1, green = .3, blue = .9, alpha = 0.8 },
+    outlineColorPinned    = { red = .9, green = .6, blue = .1, alpha = 0.8 },
+    outlineColorPseudo    = { red = .6, green = .1, blue = .9, alpha = 0.8 },
     outlineThickness      = 16,
     tileGap               = 0,
     collapsedWindowHeight = 12,
@@ -45,6 +46,17 @@ local cfg                 = {
     exclusionMode         = true,
     -- Debounce for bursty window events
     eventDebounceSeconds  = 0.075,
+    -- Animation settings
+    enableAnimations      = true,
+    animationDuration     = 0.15, -- seconds
+    animationFPS          = 60,
+    -- Layout mode: "weighted" (default), "dwindle", "master"
+    layoutMode            = "weighted",
+    -- Master layout settings
+    masterRatio           = 0.55,   -- Master window takes 55% of space
+    masterPosition        = "left", -- "left", "right", "top", "bottom"
+    -- Debug logging
+    debugLogging          = false,
 }
 
 local activeWindowOutline = nil
@@ -65,7 +77,14 @@ local listPath            = hs.configdir .. "/WindowScape_apps.json"
 
 local windowOrderBySpace  = {}
 local windowWeights       = {} -- windowId -> weight (default 1.0)
-local pinnedWindows       = {} -- windowId -> true (windows excluded from tiling)
+local pseudoWindows       = {} -- windowId -> { preferredW, preferredH } (windows that maintain aspect ratio)
+
+-- Focus history for "focus last" behavior
+local focusHistory        = {} -- array of winIds, most recent first
+local focusHistoryMax     = 10 -- keep last N focused windows
+
+-- Animation state
+local activeAnimations    = {} -- winId -> { timer, startFrame, targetFrame, startTime }
 
 -- Simulated fullscreen state
 local simulatedFullscreen = {
@@ -76,28 +95,159 @@ local simulatedFullscreen = {
     zoomOverlays = {},     -- Canvas overlays on zoom buttons
     minimizeOverlays = {}, -- Canvas overlays on minimize buttons
     pinOverlays = {},      -- Canvas overlays on pin buttons
+    closeOverlays = {},    -- Canvas overlays on close buttons
 }
 
 -- Snapshot thumbnails for "minimized" windows
 local windowSnapshots     = {
-    windows = {},          -- winId -> { win, canvas, originalFrame }
-    order = {},            -- Array of winIds in order of minimization
-    container = nil,       -- Canvas container for all thumbnails
-    isCreating = false,    -- Prevent re-entrancy during snapshot creation
-    isCreatingStart = 0,   -- Timestamp when isCreating was set true (for stuck detection)
+    windows = {},        -- winId -> { win, canvas, originalFrame }
+    order = {},          -- Array of winIds in order of minimization
+    container = nil,     -- Canvas container for all thumbnails
+    isCreating = false,  -- Prevent re-entrancy during snapshot creation
+    isCreatingStart = 0, -- Timestamp when isCreating was set true (for stuck detection)
 }
+
+-- Focus the previously focused window (skipping minimized/hidden windows)
+local function focusPreviousWindow(excludeWinId)
+    for _, winId in ipairs(focusHistory) do
+        if winId ~= excludeWinId then
+            -- Check if window still exists and is visible
+            local win = hs.window.get(winId)
+            if win and win:isVisible() and not windowSnapshots.windows[winId] then
+                win:focus()
+                return true
+            end
+        end
+    end
+    return false
+end
 
 -- Forward declarations for functions used in timer callbacks
 local createZoomOverlay
 local createMinimizeOverlay
 local createPinOverlay
+local createCloseOverlay
 local updateButtonOverlays
 local updateButtonOverlaysWithRetry
 local showSnapshotContextMenu
+local hideSnapshotTooltip
+local snapshotTooltipCurrentWinId
 
 local function log(message)
-    -- Debug logging enabled
-    print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
+    if cfg.debugLogging then
+        print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
+    end
+end
+
+-- Parabolic easing function (ease-out cubic, like Hypr)
+local function easeOutCubic(t)
+    return 1 - math.pow(1 - t, 3)
+end
+
+-- Interpolate between two values
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+-- Interpolate between two colors
+local function lerpColor(c1, c2, t)
+    return {
+        red = lerp(c1.red or 0, c2.red or 0, t),
+        green = lerp(c1.green or 0, c2.green or 0, t),
+        blue = lerp(c1.blue or 0, c2.blue or 0, t),
+        alpha = lerp(c1.alpha or 1, c2.alpha or 1, t),
+    }
+end
+
+-- Cancel any running animation for a window
+local function cancelAnimation(winId)
+    if activeAnimations[winId] then
+        if activeAnimations[winId].timer then
+            activeAnimations[winId].timer:stop()
+        end
+        activeAnimations[winId] = nil
+    end
+end
+
+-- Animated setFrame with parabolic easing
+local function animatedSetFrame(win, targetFrame, onComplete)
+    if not win then return end
+    local winId = win:id()
+    if not winId then
+        win:setFrame(geometry.rect(targetFrame), 0)
+        if onComplete then onComplete() end
+        return
+    end
+
+    -- Cancel any existing animation for this window
+    cancelAnimation(winId)
+
+    -- If animations disabled, just set immediately
+    if not cfg.enableAnimations then
+        win:setFrame(geometry.rect(targetFrame), 0)
+        if onComplete then onComplete() end
+        return
+    end
+
+    local startFrame = win:frame()
+    if not startFrame then
+        win:setFrame(geometry.rect(targetFrame), 0)
+        if onComplete then onComplete() end
+        return
+    end
+
+    -- Skip animation if frames are nearly identical
+    local dx = math.abs(startFrame.x - targetFrame.x)
+    local dy = math.abs(startFrame.y - targetFrame.y)
+    local dw = math.abs(startFrame.w - targetFrame.w)
+    local dh = math.abs(startFrame.h - targetFrame.h)
+    if dx < 2 and dy < 2 and dw < 2 and dh < 2 then
+        win:setFrame(geometry.rect(targetFrame), 0)
+        if onComplete then onComplete() end
+        return
+    end
+
+    local startTime = timer.secondsSinceEpoch()
+    local duration = cfg.animationDuration
+    local interval = 1 / cfg.animationFPS
+
+    local animTimer
+    animTimer = timer.doEvery(interval, function()
+        local elapsed = timer.secondsSinceEpoch() - startTime
+        local t = math.min(elapsed / duration, 1)
+        local ease = easeOutCubic(t)
+
+        local currentFrame = {
+            x = lerp(startFrame.x, targetFrame.x, ease),
+            y = lerp(startFrame.y, targetFrame.y, ease),
+            w = lerp(startFrame.w, targetFrame.w, ease),
+            h = lerp(startFrame.h, targetFrame.h, ease),
+        }
+
+        win:setFrame(geometry.rect(currentFrame), 0)
+
+        if t >= 1 then
+            animTimer:stop()
+            activeAnimations[winId] = nil
+            -- Ensure final frame is exact
+            win:setFrame(geometry.rect(targetFrame), 0)
+            if onComplete then onComplete() end
+        end
+    end)
+
+    activeAnimations[winId] = {
+        timer = animTimer,
+        startFrame = startFrame,
+        targetFrame = targetFrame,
+        startTime = startTime,
+    }
+end
+
+-- Cancel all running animations
+local function cancelAllAnimations()
+    for winId, _ in pairs(activeAnimations) do
+        cancelAnimation(winId)
+    end
 end
 
 -- Safe wrapper for win:application() to avoid "Unable to fetch NSRunningApplication" errors
@@ -163,9 +313,6 @@ local function isAppIncluded(app, win)
 
     -- Exclude windows that are hidden via snapshots (alpha=0)
     if winId and windowSnapshots.windows[winId] then return false end
-
-    -- Exclude pinned windows (user manually excluded from tiling)
-    if winId and pinnedWindows[winId] then return false end
 
     local bundleID = app:bundleID()
     local appName  = app:name()
@@ -257,16 +404,29 @@ local function setWindowWeight(win, weight)
     windowWeights[winId] = math.max(0.1, weight) -- Minimum 0.1 to prevent invisible windows
 end
 
--- Clean up weights for closed windows
+-- Clean up weights and focus history for closed windows
 local function pruneStaleWeights()
     local validIds = {}
     for _, win in ipairs(window.allWindows()) do
         local winId = win:id()
         if winId then validIds[winId] = true end
     end
+    -- Prune weights
     for winId in pairs(windowWeights) do
         if not validIds[winId] then
             windowWeights[winId] = nil
+        end
+    end
+    -- Prune focus history
+    for i = #focusHistory, 1, -1 do
+        if not validIds[focusHistory[i]] then
+            table.remove(focusHistory, i)
+        end
+    end
+    -- Prune pseudo windows
+    for winId in pairs(pseudoWindows) do
+        if not validIds[winId] then
+            pseudoWindows[winId] = nil
         end
     end
 end
@@ -322,13 +482,9 @@ local function getSnapshotSizeForWindow(winFrame)
     return { w = w, h = h }
 end
 
--- Legacy function for backward compatibility
+-- Default snapshot size (used as fallback)
 local function getSnapshotSize()
     return { w = snapshotColumnWidth - snapshotPadding * 2, h = 80 }
-end
-
-local function getSnapshotMaxSize()
-    return getSnapshotSize()
 end
 
 -- Get the reserved area for snapshots (returns nil if no snapshots)
@@ -395,6 +551,209 @@ local function distributeEven(total, gaps, count)
     return base, rem
 end
 
+-- Apply pseudotiling: center window within its tile slot if it has preferred size
+local function applyPseudoTiling(win, tileFrame)
+    local winId = win:id()
+    if not winId or not pseudoWindows[winId] then
+        return tileFrame
+    end
+
+    local pref = pseudoWindows[winId]
+    local prefW = math.min(pref.preferredW, tileFrame.w)
+    local prefH = math.min(pref.preferredH, tileFrame.h)
+
+    -- Center within tile
+    return {
+        x = tileFrame.x + (tileFrame.w - prefW) / 2,
+        y = tileFrame.y + (tileFrame.h - prefH) / 2,
+        w = prefW,
+        h = prefH,
+    }
+end
+
+-- Dwindle layout: binary split each new window into smallest tile
+local function tileDwindle(screenFrame, windows, horizontal)
+    if #windows == 0 then return end
+
+    -- First window takes full space
+    local frames = {}
+    frames[1] = { x = screenFrame.x, y = screenFrame.y, w = screenFrame.w, h = screenFrame.h }
+
+    -- Each subsequent window splits the last tile
+    for i = 2, #windows do
+        local lastFrame = frames[i - 1]
+        local splitHorizontal = (i % 2 == 0) == horizontal -- Alternate split direction
+
+        if splitHorizontal then
+            local halfW = math.floor((lastFrame.w - cfg.tileGap) / 2)
+            frames[i - 1] = { x = lastFrame.x, y = lastFrame.y, w = halfW, h = lastFrame.h }
+            frames[i] = {
+                x = lastFrame.x + halfW + cfg.tileGap,
+                y = lastFrame.y,
+                w = lastFrame.w - halfW - cfg.tileGap,
+                h =
+                    lastFrame.h
+            }
+        else
+            local halfH = math.floor((lastFrame.h - cfg.tileGap) / 2)
+            frames[i - 1] = { x = lastFrame.x, y = lastFrame.y, w = lastFrame.w, h = halfH }
+            frames[i] = {
+                x = lastFrame.x,
+                y = lastFrame.y + halfH + cfg.tileGap,
+                w = lastFrame.w,
+                h = lastFrame.h -
+                    halfH - cfg.tileGap
+            }
+        end
+    end
+
+    -- Apply frames with animation and pseudotiling
+    for i, win in ipairs(windows) do
+        local finalFrame = applyPseudoTiling(win, frames[i])
+        animatedSetFrame(win, finalFrame)
+    end
+end
+
+-- Master-stack layout: one master window + stack of secondary windows
+local function tileMaster(screenFrame, windows, horizontal)
+    if #windows == 0 then return end
+
+    local masterWin = windows[1]
+    local stackWins = {}
+    for i = 2, #windows do
+        table.insert(stackWins, windows[i])
+    end
+
+    local masterFrame, stackFrame
+
+    -- Determine master position based on config and orientation
+    local masterLeft = (cfg.masterPosition == "left") or (cfg.masterPosition == "top")
+    local masterHorizontal = (cfg.masterPosition == "left") or (cfg.masterPosition == "right")
+
+    if horizontal then
+        -- Landscape: master on left/right, stack on opposite side
+        local masterW = math.floor(screenFrame.w * cfg.masterRatio)
+        local stackW = screenFrame.w - masterW - cfg.tileGap
+
+        if masterLeft then
+            masterFrame = { x = screenFrame.x, y = screenFrame.y, w = masterW, h = screenFrame.h }
+            stackFrame = { x = screenFrame.x + masterW + cfg.tileGap, y = screenFrame.y, w = stackW, h = screenFrame.h }
+        else
+            stackFrame = { x = screenFrame.x, y = screenFrame.y, w = stackW, h = screenFrame.h }
+            masterFrame = { x = screenFrame.x + stackW + cfg.tileGap, y = screenFrame.y, w = masterW, h = screenFrame.h }
+        end
+    else
+        -- Portrait: master on top/bottom, stack below/above
+        local masterH = math.floor(screenFrame.h * cfg.masterRatio)
+        local stackH = screenFrame.h - masterH - cfg.tileGap
+
+        if masterLeft then
+            masterFrame = { x = screenFrame.x, y = screenFrame.y, w = screenFrame.w, h = masterH }
+            stackFrame = { x = screenFrame.x, y = screenFrame.y + masterH + cfg.tileGap, w = screenFrame.w, h = stackH }
+        else
+            stackFrame = { x = screenFrame.x, y = screenFrame.y, w = screenFrame.w, h = stackH }
+            masterFrame = { x = screenFrame.x, y = screenFrame.y + stackH + cfg.tileGap, w = screenFrame.w, h = masterH }
+        end
+    end
+
+    -- Set master window
+    local finalMasterFrame = applyPseudoTiling(masterWin, masterFrame)
+    animatedSetFrame(masterWin, finalMasterFrame)
+
+    -- Stack windows vertically (landscape) or horizontally (portrait)
+    if #stackWins > 0 then
+        if horizontal then
+            -- Stack vertically
+            local stackItemH = math.floor((stackFrame.h - (#stackWins - 1) * cfg.tileGap) / #stackWins)
+            local y = stackFrame.y
+            for i, win in ipairs(stackWins) do
+                local h = (i == #stackWins) and (stackFrame.y + stackFrame.h - y) or stackItemH
+                local frame = { x = stackFrame.x, y = y, w = stackFrame.w, h = h }
+                local finalFrame = applyPseudoTiling(win, frame)
+                animatedSetFrame(win, finalFrame)
+                y = y + h + cfg.tileGap
+            end
+        else
+            -- Stack horizontally
+            local stackItemW = math.floor((stackFrame.w - (#stackWins - 1) * cfg.tileGap) / #stackWins)
+            local x = stackFrame.x
+            for i, win in ipairs(stackWins) do
+                local w = (i == #stackWins) and (stackFrame.x + stackFrame.w - x) or stackItemW
+                local frame = { x = x, y = stackFrame.y, w = w, h = stackFrame.h }
+                local finalFrame = applyPseudoTiling(win, frame)
+                animatedSetFrame(win, finalFrame)
+                x = x + w + cfg.tileGap
+            end
+        end
+    end
+end
+
+-- Weighted layout (original behavior with animations)
+local function tileWeighted(screenFrame, nonCollapsedWins, collapsedWins, horizontal)
+    local numCollapsed = #collapsedWins
+    local numNonCollapsed = #nonCollapsedWins
+
+    if horizontal then
+        local collapsedAreaHeight = (numCollapsed > 0) and (cfg.collapsedWindowHeight + cfg.tileGap) or 0
+        local mainAreaHeight = screenFrame.h - collapsedAreaHeight
+
+        -- Non-collapsed main area, tiled horizontally with weights
+        if numNonCollapsed > 0 then
+            local widths = distributeWeighted(screenFrame.w, cfg.tileGap, nonCollapsedWins)
+            local x = screenFrame.x
+            for i, win in ipairs(nonCollapsedWins) do
+                local tileFrame = { x = x, y = screenFrame.y, w = widths[i], h = mainAreaHeight }
+                local finalFrame = applyPseudoTiling(win, tileFrame)
+                animatedSetFrame(win, finalFrame)
+                x = x + widths[i] + cfg.tileGap
+            end
+        end
+
+        -- Collapsed strip at the bottom
+        if numCollapsed > 0 then
+            local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, numCollapsed)
+            local collapsedX = screenFrame.x
+            local collapsedY = screenFrame.y + mainAreaHeight
+            for i, win in ipairs(collapsedWins) do
+                local w = baseW + ((i == numCollapsed) and remW or 0)
+                local newFrame = { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight }
+                animatedSetFrame(win, newFrame)
+                collapsedX = collapsedX + w + cfg.tileGap
+            end
+        end
+    else
+        -- Vertical monitor layout
+        local collapsedAreaHeight = 0
+        if numCollapsed > 0 then
+            collapsedAreaHeight = (cfg.collapsedWindowHeight + cfg.tileGap) * numCollapsed - cfg.tileGap
+        end
+        local mainAreaHeight = screenFrame.h - collapsedAreaHeight
+
+        -- Non-collapsed main area, distributed heights with weights
+        if numNonCollapsed > 0 then
+            local heights = distributeWeighted(mainAreaHeight, cfg.tileGap, nonCollapsedWins)
+            local y = screenFrame.y
+            for i, win in ipairs(nonCollapsedWins) do
+                local tileFrame = { x = screenFrame.x, y = y, w = screenFrame.w, h = heights[i] }
+                local finalFrame = applyPseudoTiling(win, tileFrame)
+                animatedSetFrame(win, finalFrame)
+                y = y + heights[i] + cfg.tileGap
+            end
+        end
+
+        -- Collapsed area
+        if numCollapsed > 0 then
+            local collapsedX = screenFrame.x
+            local collapsedY = screenFrame.y + mainAreaHeight
+            for _, win in ipairs(collapsedWins) do
+                local newFrame = { x = collapsedX, y = collapsedY, w = screenFrame.w, h = cfg.collapsedWindowHeight }
+                animatedSetFrame(win, newFrame)
+                collapsedY = collapsedY + cfg.collapsedWindowHeight + cfg.tileGap
+            end
+        end
+    end
+end
+
 local function tileWindowsInternal()
     updateWindowOrder()
     local currentSpace = getCurrentSpace()
@@ -429,86 +788,72 @@ local function tileWindowsInternal()
             end
         end
 
-        local numCollapsed    = #collapsedWins
-        local numNonCollapsed = #nonCollapsedWins
-        local horizontal      = (screenFrame.w > screenFrame.h)
+        local horizontal = (screenFrame.w > screenFrame.h)
 
-        if horizontal then
-            local collapsedAreaHeight = (numCollapsed > 0) and (cfg.collapsedWindowHeight + cfg.tileGap) or 0
-            local mainAreaHeight      = screenFrame.h - collapsedAreaHeight
-
-            -- Non-collapsed main area, tiled horizontally with weights
-            if numNonCollapsed > 0 then
-                local widths = distributeWeighted(screenFrame.w, cfg.tileGap, nonCollapsedWins)
-                local x = screenFrame.x
-                for i, win in ipairs(nonCollapsedWins) do
-                    local newFrame = { x = x, y = screenFrame.y, w = widths[i], h = mainAreaHeight }
-                    win:setFrame(geometry.rect(newFrame), 0)
-                    x = x + widths[i] + cfg.tileGap
+        -- Choose layout mode
+        if cfg.layoutMode == "dwindle" then
+            tileDwindle(screenFrame, nonCollapsedWins, horizontal)
+            -- Handle collapsed windows in dwindle mode (just stack at bottom/right)
+            if #collapsedWins > 0 then
+                local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, #collapsedWins)
+                local collapsedX = screenFrame.x
+                local collapsedY = screenFrame.y + screenFrame.h - cfg.collapsedWindowHeight
+                for i, win in ipairs(collapsedWins) do
+                    local w = baseW + ((i == #collapsedWins) and remW or 0)
+                    animatedSetFrame(win, { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight })
+                    collapsedX = collapsedX + w + cfg.tileGap
                 end
             end
-
-            -- Collapsed strip at the bottom, tiled horizontally (equal distribution)
-            if numCollapsed > 0 then
-                local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, numCollapsed)
+        elseif cfg.layoutMode == "master" then
+            tileMaster(screenFrame, nonCollapsedWins, horizontal)
+            -- Handle collapsed windows in master mode
+            if #collapsedWins > 0 then
+                local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, #collapsedWins)
                 local collapsedX = screenFrame.x
-                local collapsedY = screenFrame.y + mainAreaHeight
+                local collapsedY = screenFrame.y + screenFrame.h - cfg.collapsedWindowHeight
                 for i, win in ipairs(collapsedWins) do
-                    local w = baseW + ((i == numCollapsed) and remW or 0)
-                    local newFrame = { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight }
-                    win:setFrame(geometry.rect(newFrame), 0)
+                    local w = baseW + ((i == #collapsedWins) and remW or 0)
+                    animatedSetFrame(win, { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight })
                     collapsedX = collapsedX + w + cfg.tileGap
                 end
             end
         else
-            -- Vertical monitor layout: non-collapsed stacked vertically, collapsed stacked below
-            local collapsedAreaHeight = 0
-            if numCollapsed > 0 then
-                collapsedAreaHeight = (cfg.collapsedWindowHeight + cfg.tileGap) * numCollapsed - cfg.tileGap
-            end
-            local mainAreaHeight = screenFrame.h - collapsedAreaHeight
-
-            -- Non-collapsed main area, full width, distributed heights with weights
-            if numNonCollapsed > 0 then
-                local heights = distributeWeighted(mainAreaHeight, cfg.tileGap, nonCollapsedWins)
-                local y = screenFrame.y
-                for i, win in ipairs(nonCollapsedWins) do
-                    local newFrame = { x = screenFrame.x, y = y, w = screenFrame.w, h = heights[i] }
-                    win:setFrame(geometry.rect(newFrame), 0)
-                    y = y + heights[i] + cfg.tileGap
-                end
-            end
-
-            -- Collapsed area: each its own row
-            if numCollapsed > 0 then
-                local collapsedX = screenFrame.x
-                local collapsedY = screenFrame.y + mainAreaHeight
-                for _, win in ipairs(collapsedWins) do
-                    local newFrame = { x = collapsedX, y = collapsedY, w = screenFrame.w, h = cfg.collapsedWindowHeight }
-                    win:setFrame(geometry.rect(newFrame), 0)
-                    collapsedY = collapsedY + cfg.collapsedWindowHeight + cfg.tileGap
-                end
-            end
+            -- Default: weighted layout
+            tileWeighted(screenFrame, nonCollapsedWins, collapsedWins, horizontal)
         end
 
         ::continue::
     end
 end
 
+local tilingDelayTimer = nil
+
 local function tileWindows()
     -- Don't tile if in simulated fullscreen or during snapshot creation
     if simulatedFullscreen.active then return end
     if windowSnapshots.isCreating then return end
-    tilingCount = tilingCount + 1
+
+    -- Cancel any running animations before starting new tile
+    cancelAllAnimations()
+
+    -- Cancel pending tilingCount decrement
+    if tilingDelayTimer then
+        tilingDelayTimer:stop()
+        tilingDelayTimer = nil
+    end
+
+    tilingCount = 1 -- Reset to 1 instead of incrementing (prevents runaway count)
     tilingStartTime = timer.secondsSinceEpoch()
     local ok, err = pcall(tileWindowsInternal)
     if not ok then
         log("Error in tileWindowsInternal: " .. tostring(err))
     end
     -- Decrement after a brief delay to allow windowMoved events to fire
-    timer.doAfter(0.1, function()
-        tilingCount = tilingCount - 1
-        if tilingCount < 0 then tilingCount = 0 end
+    -- Extend delay slightly for animations
+    local delay = cfg.enableAnimations and (cfg.animationDuration + 0.1) or 0.15
+    tilingDelayTimer = timer.doAfter(delay, function()
+        tilingCount = 0
+        tilingDelayTimer = nil
     end)
 end
 
@@ -528,21 +873,115 @@ local function framesEqual(f1, f2)
     return f1.x == f2.x and f1.y == f2.y and f1.w == f2.w and f1.h == f2.h
 end
 
-local function updateOutlineFrame(frame)
+-- Get the appropriate outline color based on window state
+local function getOutlineColorForWindow(win)
+    if not win then return cfg.outlineColor end
+    local winId = win:id()
+    if not winId then return cfg.outlineColor end
+
+    -- Check if app is excluded from tiling (app-level only)
+    local app = safeGetApplication(win)
+    local isExcluded = app and not isAppIncluded(app, win)
+
+    if isExcluded then
+        return cfg.outlineColorPinned
+    elseif pseudoWindows[winId] then
+        return cfg.outlineColorPseudo
+    end
+    return cfg.outlineColor
+end
+
+-- Current outline color for animation
+local currentOutlineColor = nil
+local targetOutlineColor = nil
+local outlineColorAnimTimer = nil
+
+local function animateOutlineColor(targetColor)
+    if not activeWindowOutline then return end
+    if not targetColor then return end
+
+    -- Check if target color is same as current target (avoid restarting same animation)
+    if targetOutlineColor then
+        local targetDiff = math.abs((targetOutlineColor.red or 0) - (targetColor.red or 0)) +
+            math.abs((targetOutlineColor.green or 0) - (targetColor.green or 0)) +
+            math.abs((targetOutlineColor.blue or 0) - (targetColor.blue or 0))
+        if targetDiff < 0.01 then
+            return -- Already animating to this color
+        end
+    end
+
+    -- Stop existing animation
+    if outlineColorAnimTimer then
+        outlineColorAnimTimer:stop()
+        outlineColorAnimTimer = nil
+    end
+
+    if not currentOutlineColor then
+        currentOutlineColor = targetColor
+        targetOutlineColor = targetColor
+        activeWindowOutline:setStrokeColor(currentOutlineColor)
+        return
+    end
+
+    -- Check if colors are already equal
+    local colorDiff = math.abs((currentOutlineColor.red or 0) - (targetColor.red or 0)) +
+        math.abs((currentOutlineColor.green or 0) - (targetColor.green or 0)) +
+        math.abs((currentOutlineColor.blue or 0) - (targetColor.blue or 0))
+    if colorDiff < 0.01 then
+        currentOutlineColor = targetColor
+        targetOutlineColor = targetColor
+        activeWindowOutline:setStrokeColor(currentOutlineColor)
+        return
+    end
+
+    targetOutlineColor = targetColor
+
+    local startColor = {
+        red = currentOutlineColor.red,
+        green = currentOutlineColor.green,
+        blue = currentOutlineColor.blue,
+        alpha = currentOutlineColor.alpha
+    }
+    local startTime = timer.secondsSinceEpoch()
+    local duration = 0.15 -- Faster animation
+
+    outlineColorAnimTimer = timer.doEvery(0.016, function()
+        local elapsed = timer.secondsSinceEpoch() - startTime
+        local t = math.min(elapsed / duration, 1)
+        local ease = easeOutCubic(t)
+
+        currentOutlineColor = lerpColor(startColor, targetOutlineColor, ease)
+        if activeWindowOutline then
+            activeWindowOutline:setStrokeColor(currentOutlineColor)
+        end
+
+        if t >= 1 then
+            outlineColorAnimTimer:stop()
+            outlineColorAnimTimer = nil
+        end
+    end)
+end
+
+local function updateOutlineFrame(frame, win)
     if not frame then return end
-    if framesEqual(frame, lastOutlineFrame) then return end
 
     local adjustedFrame = { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
+    local targetColor = getOutlineColorForWindow(win)
 
     if not activeWindowOutline then
         activeWindowOutline = drawing.rectangle(geometry.rect(adjustedFrame))
-        activeWindowOutline:setStrokeColor(cfg.outlineColor)
+        currentOutlineColor = targetColor
+        activeWindowOutline:setStrokeColor(currentOutlineColor)
         activeWindowOutline:setFill(false)
         activeWindowOutline:setStrokeWidth(cfg.outlineThickness)
         activeWindowOutline:setRoundedRectRadii(cfg.outlineThickness / 2, cfg.outlineThickness / 2)
         activeWindowOutline:setLevel(drawing.windowLevels.floating)
     else
-        activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
+        if not framesEqual(adjustedFrame, lastOutlineFrame) then
+            activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
+        end
+        -- Animate color change
+        animateOutlineColor(targetColor)
     end
 
     lastOutlineFrame = adjustedFrame
@@ -572,7 +1011,7 @@ local function refreshOutline()
         outlineHideCounter = 0 -- Reset counter on success
         local frame = win:frame()
         if frame then
-            updateOutlineFrame(frame)
+            updateOutlineFrame(frame, win)
         end
     else
         -- Only hide after multiple consecutive failures (handles momentary visibility glitches)
@@ -599,7 +1038,7 @@ local function drawActiveWindowOutline(win)
         if not frame then return end
 
         trackedFocusedWinId = win:id()
-        updateOutlineFrame(frame)
+        updateOutlineFrame(frame, win)
         startOutlineRefresh(win)
     else
         trackedFocusedWinId = nil
@@ -613,17 +1052,20 @@ end
 
 local function getZoomButtonRect(win)
     if not win then return nil end
-    local axWin = axuielement.windowElement(win)
-    if not axWin then return nil end
+    local ok, result = pcall(function()
+        local axWin = axuielement.windowElement(win)
+        if not axWin then return nil end
 
-    local zoomButton = axWin:attributeValue("AXZoomButton")
-    if not zoomButton then return nil end
+        local zoomButton = axWin:attributeValue("AXZoomButton")
+        if not zoomButton then return nil end
 
-    local pos = zoomButton:attributeValue("AXPosition")
-    local size = zoomButton:attributeValue("AXSize")
-    if not (pos and size) then return nil end
+        local pos = zoomButton:attributeValue("AXPosition")
+        local size = zoomButton:attributeValue("AXSize")
+        if not (pos and size) then return nil end
 
-    return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+        return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+    end)
+    return ok and result or nil
 end
 
 local function clearZoomOverlays()
@@ -647,13 +1089,261 @@ local function clearPinOverlays()
     simulatedFullscreen.pinOverlays = {}
 end
 
+local function clearCloseOverlays()
+    for _, overlay in pairs(simulatedFullscreen.closeOverlays) do
+        if overlay then overlay:delete() end
+    end
+    simulatedFullscreen.closeOverlays = {}
+end
+
 -- Remove a winId from the snapshot order list
 local function removeFromSnapshotOrder(winId)
+    -- Hide tooltip if it was showing for this snapshot
+    if snapshotTooltipCurrentWinId == winId then
+        hideSnapshotTooltip()
+    end
     for i, id in ipairs(windowSnapshots.order) do
         if id == winId then
             table.remove(windowSnapshots.order, i)
             return
         end
+    end
+end
+
+-- Snapshot Tooltip
+
+local snapshotTooltipMaxLength = 40
+local snapshotTooltipCanvas = nil
+local snapshotTooltipFadeTimer = nil
+local snapshotTooltipHideTimer = nil
+snapshotTooltipCurrentWinId = nil -- forward declared
+
+local function truncateMiddle(input, maxLength)
+    maxLength = maxLength or 40
+    if #input > maxLength then
+        local partLen = math.floor(maxLength / 2)
+        input = input:sub(1, partLen - 2) .. '...' .. input:sub(-partLen)
+    end
+    return input
+end
+
+local function initSnapshotTooltip()
+    if snapshotTooltipCanvas then return end
+    snapshotTooltipCanvas = canvas.new({ x = 0, y = 0, w = 1, h = 1 })
+    snapshotTooltipCanvas:level(canvas.windowLevels._MaximumWindowLevelKey)
+    snapshotTooltipCanvas:appendElements({
+        type = "rectangle",
+        action = "fill",
+        roundedRectRadii = { xRadius = 4, yRadius = 4 },
+        fillColor = { white = 0, alpha = 0.75 }
+    })
+    snapshotTooltipCanvas:appendElements({
+        type = "text",
+        text = "",
+        textLineBreak = "wordWrap",
+        frame = { x = 0, y = 0, w = "100%", h = "100%" }
+    })
+    snapshotTooltipCanvas:behavior("canJoinAllSpaces")
+end
+
+local function showSnapshotTooltip(winId, snapFrame)
+    print("[WindowScape] showSnapshotTooltip called for winId: " .. tostring(winId))
+    local data = windowSnapshots.windows[winId]
+    if not data or not data.win then
+        print("[WindowScape] No data or win for tooltip")
+        return
+    end
+
+    local title = data.win:title() or "Untitled"
+    local app = safeGetApplication(data.win)
+    local appName = app and app:name() or ""
+
+    -- Format: Two lines - App name (bold) and Window title
+    local message
+    if appName ~= "" and title ~= "" and appName ~= title then
+        message = appName .. "\n" .. title
+    elseif appName ~= "" then
+        message = appName
+    else
+        message = title
+    end
+
+    initSnapshotTooltip()
+
+    if snapshotTooltipFadeTimer then
+        snapshotTooltipFadeTimer:stop()
+        snapshotTooltipFadeTimer = nil
+    end
+    if snapshotTooltipHideTimer then
+        snapshotTooltipHideTimer:stop()
+        snapshotTooltipHideTimer = nil
+    end
+
+    local fontSize = 12
+    local padding = 8
+    local maxWidth = 180
+
+    -- Truncate each line if too long
+    local lines = {}
+    for line in message:gmatch("[^\n]+") do
+        if #line > 30 then
+            line = line:sub(1, 27) .. "..."
+        end
+        table.insert(lines, line)
+    end
+    local truncatedMessage = table.concat(lines, "\n")
+
+    local styledMessage = hs.styledtext.new(truncatedMessage, {
+        font = { size = fontSize },
+        color = { white = 1, alpha = 1 },
+        paragraphStyle = { alignment = "center" },
+        shadow = {
+            offset = { h = -1, w = 0 },
+            blurRadius = 2,
+            color = { alpha = 1 }
+        }
+    })
+
+    local textSize = hs.drawing.getTextDrawingSize(styledMessage)
+    local tooltipW = math.min(textSize.w, maxWidth) + padding * 2
+    local tooltipH = textSize.h + padding
+
+    -- Position tooltip centered vertically on the snapshot, to the left
+    local tooltipX = snapFrame.x - tooltipW - 8
+    local tooltipY = snapFrame.y + (snapFrame.h - tooltipH) / 2
+
+    -- Ensure tooltip stays on screen
+    local scr = screen.mainScreen()
+    local scrFrame = scr:frame()
+
+    -- If tooltip would go off left edge, show on right side of snapshot
+    if tooltipX < scrFrame.x then
+        tooltipX = snapFrame.x + snapFrame.w + 8
+    end
+
+    -- Clamp vertical position
+    if tooltipY < scrFrame.y then tooltipY = scrFrame.y + 4 end
+    if tooltipY + tooltipH > scrFrame.y + scrFrame.h then
+        tooltipY = scrFrame.y + scrFrame.h - tooltipH - 4
+    end
+
+    local tooltipFrame = { x = tooltipX, y = tooltipY, w = tooltipW, h = tooltipH }
+    snapshotTooltipCanvas:frame(tooltipFrame)
+    snapshotTooltipCanvas:elementAttribute(1, "fillColor", { white = 0, alpha = 0.75 })
+    snapshotTooltipCanvas:elementAttribute(2, "text", styledMessage)
+    snapshotTooltipCanvas:alpha(1)
+    snapshotTooltipCanvas:show()
+
+    snapshotTooltipCurrentWinId = winId
+end
+
+hideSnapshotTooltip = function()
+    if not snapshotTooltipCanvas then return end
+
+    if snapshotTooltipFadeTimer then
+        snapshotTooltipFadeTimer:stop()
+        snapshotTooltipFadeTimer = nil
+    end
+
+    local fadeOutDuration = 0.125
+    local fadeOutStep = 0.025
+    local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
+    local currentAlpha = snapshotTooltipCanvas:alpha()
+
+    local function fade()
+        currentAlpha = currentAlpha - fadeOutAlphaStep
+        if currentAlpha > 0 then
+            snapshotTooltipCanvas:alpha(currentAlpha)
+            snapshotTooltipFadeTimer = timer.doAfter(fadeOutStep, fade)
+        else
+            snapshotTooltipCanvas:hide()
+            snapshotTooltipFadeTimer = nil
+            snapshotTooltipCurrentWinId = nil
+        end
+    end
+
+    fade()
+end
+
+-- Button Tooltip
+
+local buttonTooltipCanvas = nil
+local buttonTooltipHideTimer = nil
+
+local function showButtonTooltip(text, x, y)
+    if not buttonTooltipCanvas then
+        buttonTooltipCanvas = canvas.new({ x = 0, y = 0, w = 1, h = 1 })
+        buttonTooltipCanvas:level(canvas.windowLevels._MaximumWindowLevelKey)
+        buttonTooltipCanvas:appendElements({
+            type = "rectangle",
+            action = "fill",
+            roundedRectRadii = { xRadius = 4, yRadius = 4 },
+            fillColor = { white = 0, alpha = 0.8 }
+        })
+        buttonTooltipCanvas:appendElements({
+            type = "text",
+            text = "",
+            textLineBreak = "clip",
+            frame = { x = 0, y = 0, w = "100%", h = "100%" }
+        })
+    end
+
+    if buttonTooltipHideTimer then
+        buttonTooltipHideTimer:stop()
+        buttonTooltipHideTimer = nil
+    end
+
+    local fontSize = 12
+    local styledText = hs.styledtext.new(text, {
+        font = { size = fontSize },
+        color = { white = 1, alpha = 1 },
+        paragraphStyle = { alignment = "center" },
+    })
+
+    local textSize = hs.drawing.getTextDrawingSize(styledText)
+    local padding = 6
+    local tooltipW = textSize.w + padding * 2
+    local tooltipH = textSize.h + 2
+
+    -- Position below the button
+    local tooltipX = x - tooltipW / 2
+    local tooltipY = y + 20
+
+    -- Clamp tooltip to screen bounds
+    local mouseScreen = hs.mouse.getCurrentScreen()
+    if mouseScreen then
+        local scrFrame = mouseScreen:frame()
+        -- Clamp X
+        if tooltipX < scrFrame.x then
+            tooltipX = scrFrame.x
+        elseif tooltipX + tooltipW > scrFrame.x + scrFrame.w then
+            tooltipX = scrFrame.x + scrFrame.w - tooltipW
+        end
+        -- Clamp Y
+        if tooltipY + tooltipH > scrFrame.y + scrFrame.h then
+            tooltipY = y - tooltipH - 5 -- Show above button instead
+        end
+    end
+
+    buttonTooltipCanvas:frame({ x = tooltipX, y = tooltipY, w = tooltipW, h = tooltipH })
+    buttonTooltipCanvas:elementAttribute(2, "text", styledText)
+    buttonTooltipCanvas:show()
+
+    buttonTooltipHideTimer = timer.doAfter(2, function()
+        if buttonTooltipCanvas then
+            buttonTooltipCanvas:hide()
+        end
+        buttonTooltipHideTimer = nil
+    end)
+end
+
+local function hideButtonTooltip()
+    if buttonTooltipHideTimer then
+        buttonTooltipHideTimer:stop()
+        buttonTooltipHideTimer = nil
+    end
+    if buttonTooltipCanvas then
+        buttonTooltipCanvas:hide()
     end
 end
 
@@ -689,25 +1379,48 @@ local function updateSnapshotLayout()
 end
 
 -- Refresh snapshot images to reflect current window content
-local function refreshSnapshots()
-    if windowSnapshots.isCreating then return end
-    if #windowSnapshots.order == 0 then return end
+-- After initial refreshes, slow down to save CPU
+local snapshotRefreshCount = 0
+local snapshotSlowRefreshInterval = 10 -- After 10 fast refreshes, slow down
 
-    for winId, data in pairs(windowSnapshots.windows) do
-        if data and data.win and data.canvas then
-            local win = data.win
-            -- Take a new snapshot of the window
-            local newSnapshot = win:snapshot()
-            if newSnapshot then
-                -- Update the image element (index 2, after the background rectangle)
-                data.canvas[2].image = newSnapshot
+local function refreshSnapshots()
+    local ok, err = pcall(function()
+        if windowSnapshots.isCreating then return end
+
+        local count = 0
+        for _ in pairs(windowSnapshots.windows) do count = count + 1 end
+
+        if count == 0 then
+            snapshotRefreshCount = 0
+            return
+        end
+
+        -- After initial fast refreshes, only refresh every 10th call (every 5 seconds)
+        snapshotRefreshCount = snapshotRefreshCount + 1
+        if snapshotRefreshCount > snapshotSlowRefreshInterval then
+            if snapshotRefreshCount % 10 ~= 0 then
+                return
             end
         end
+
+        for winId, data in pairs(windowSnapshots.windows) do
+            if data and data.canvas then
+                -- Use snapshotForID with keepTransparency=true to capture off-screen windows
+                local newSnapshot = hs.window.snapshotForID(winId, true)
+                if newSnapshot then
+                    data.canvas[2].image = newSnapshot
+                end
+            end
+        end
+    end)
+    if not ok then
+        print("[WindowScape] refreshSnapshots error: " .. tostring(err))
     end
 end
 
--- Timer to periodically refresh snapshots
-local snapshotRefreshTimer = timer.doEvery(2, refreshSnapshots)
+-- Timer to periodically refresh snapshots (every 0.5 seconds)
+-- Store in windowSnapshots table to prevent garbage collection
+windowSnapshots.refreshTimer = timer.doEvery(0.5, refreshSnapshots)
 
 local function restoreFromSnapshot(winId)
     local data = windowSnapshots.windows[winId]
@@ -817,19 +1530,50 @@ local function createSnapshot(win)
     windowSnapshots.isCreating = true
     windowSnapshots.isCreatingStart = timer.secondsSinceEpoch()
 
-    -- Take snapshot before minimizing
+    local winFrame = win:frame()
+    local scr = screen.mainScreen()
+    local scrFrame = scr:frame()
+
+    -- Take snapshot before hiding - this can be slow
     local snapshot = win:snapshot()
     if not snapshot then
-        -- Can't create snapshot, abort (minimize doesn't work without Dock anyway)
         windowSnapshots.isCreating = false
         print("[WindowScape] Could not take snapshot of window, aborting minimize")
         return
     end
 
-    local winFrame = win:frame()
     local snapSize = getSnapshotSizeForWindow(winFrame)
-    local scr = screen.mainScreen()
-    local scrFrame = scr:frame()
+
+    -- Add placeholder to snapshot order BEFORE hiding/retiling so space gets reserved
+    windowSnapshots.windows[winId] = {
+        win = win,
+        canvas = nil, -- Will be set after animation
+        originalFrame = winFrame,
+        snapSize = snapSize,
+    }
+    table.insert(windowSnapshots.order, winId)
+
+    -- Hide the window IMMEDIATELY after snapshot (before any calculations)
+    win:setFrame(
+        geometry.rect({
+            x = scrFrame.x + scrFrame.w + 100,
+            y = scrFrame.y + scrFrame.h + 100,
+            w = winFrame.w,
+            h = winFrame.h
+        }),
+        0)
+
+    -- Immediately retile and focus previous window (don't wait for animation)
+    -- Use tileWindowsInternal directly since isCreating flag would block tileWindows()
+    updateWindowOrder()
+    tileWindowsInternal()
+    focusPreviousWindow(winId)
+
+    -- Draw outline for newly focused window immediately
+    local newFocused = window.focusedWindow()
+    if newFocused and newFocused:id() ~= winId then
+        drawActiveWindowOutline(newFocused)
+    end
     local isLandscape = scrFrame.w > scrFrame.h
 
     -- Calculate target position by summing existing snapshot heights
@@ -866,10 +1610,6 @@ local function createSnapshot(win)
     })
     animCanvas:level(canvas.windowLevels.floating)
     animCanvas:show()
-
-    -- Hide the window by moving it off-screen (keep original size for snapshot refresh)
-    -- The window is excluded from tiling via the isAppIncluded check
-    win:setFrame(geometry.rect({ x = scrFrame.x + scrFrame.w + 100, y = scrFrame.y + scrFrame.h + 100, w = winFrame.w, h = winFrame.h }), 0)
 
     -- Animate to thumbnail position
     local steps = 12
@@ -911,25 +1651,25 @@ local function createSnapshot(win)
                 imageScaling = "scaleProportionally",
             })
 
-            -- Add close button indicator (small X in corner)
+            -- Add close button indicator (small X in left corner)
             snapshotCanvas:appendElements({
                 type = "circle",
                 action = "fill",
-                center = { x = snapSize.w - 10, y = 10 },
+                center = { x = 10, y = 10 },
                 radius = 6,
                 fillColor = { red = 0.8, green = 0.2, blue = 0.2, alpha = 0.8 },
             })
 
-            -- Add app icon in bottom-left corner
+            -- Add app icon in bottom-center
             local app = safeGetApplication(win)
             if app then
                 local appIcon = app:bundleID() and hs.image.imageFromAppBundle(app:bundleID())
                 if appIcon then
-                    local iconSize = 20
+                    local iconSize = 32
                     snapshotCanvas:appendElements({
                         type = "image",
                         image = appIcon,
-                        frame = { x = 4, y = snapSize.h - iconSize - 4, w = iconSize, h = iconSize },
+                        frame = { x = (snapSize.w - iconSize) / 2, y = snapSize.h - iconSize - 4, w = iconSize, h = iconSize },
                         imageScaling = "scaleToFit",
                     })
                 end
@@ -937,10 +1677,82 @@ local function createSnapshot(win)
 
             snapshotCanvas:level(canvas.windowLevels.floating)
             snapshotCanvas:clickActivating(false)
-            snapshotCanvas:canvasMouseEvents(true, true, false, false)
+            snapshotCanvas:canvasMouseEvents(true, true, true, true) -- Enable enter/exit events
+
+            -- Store state for zoom animation
+            local zoomScale = 1.1
+            local isZoomed = false
+            local zoomAnimTimer = nil
+
+            -- Smooth zoom animation using canvas transformation
+            local function animateZoom(canv, fromScale, toScale, duration)
+                if zoomAnimTimer then zoomAnimTimer:stop() end
+
+                local startTime = timer.secondsSinceEpoch()
+                local fps = 60
+                local interval = 1 / fps
+                local data = windowSnapshots.windows[winId]
+                if not data then return end
+
+                -- Get the base position (unzoomed center)
+                local baseX = data.baseX or canv:frame().x
+                local baseY = data.baseY or canv:frame().y
+
+                zoomAnimTimer = timer.doEvery(interval, function()
+                    local elapsed = timer.secondsSinceEpoch() - startTime
+                    local t = math.min(elapsed / duration, 1)
+                    local ease = easeOutCubic(t)
+                    local currentScale = lerp(fromScale, toScale, ease)
+
+                    -- Calculate new size and position to keep centered
+                    local newW = data.snapSize.w * currentScale
+                    local newH = data.snapSize.h * currentScale
+                    local offsetX = (data.snapSize.w - newW) / 2
+                    local offsetY = (data.snapSize.h - newH) / 2
+
+                    canv:frame({
+                        x = baseX + offsetX,
+                        y = baseY + offsetY,
+                        w = newW,
+                        h = newH
+                    })
+
+                    -- Scale all internal elements proportionally
+                    canv:transformation(hs.canvas.matrix.scale(currentScale))
+
+                    if t >= 1 then
+                        zoomAnimTimer:stop()
+                        zoomAnimTimer = nil
+                    end
+                end)
+            end
 
             snapshotCanvas:mouseCallback(function(c, msg, id, x, y)
-                if msg == "mouseDown" then
+                if msg == "mouseEnter" then
+                    -- Show tooltip on hover
+                    local snapFrame = c:frame()
+                    showSnapshotTooltip(winId, snapFrame)
+                    -- Zoom in animation
+                    if not isZoomed then
+                        isZoomed = true
+                        local data = windowSnapshots.windows[winId]
+                        if data then
+                            -- Store base position before zooming
+                            local currentFrame = c:frame()
+                            data.baseX = currentFrame.x
+                            data.baseY = currentFrame.y
+                            animateZoom(c, 1.0, zoomScale, 0.1)
+                        end
+                    end
+                elseif msg == "mouseExit" then
+                    -- Hide tooltip when leaving
+                    hideSnapshotTooltip()
+                    -- Zoom out animation
+                    if isZoomed then
+                        isZoomed = false
+                        animateZoom(c, zoomScale, 1.0, 0.1)
+                    end
+                elseif msg == "mouseDown" then
                     -- Check for right-click
                     local buttons = mouse.getButtons()
                     if buttons.right then
@@ -948,12 +1760,14 @@ local function createSnapshot(win)
                         return
                     end
                 elseif msg == "mouseUp" then
+                    -- Hide tooltip on click
+                    hideSnapshotTooltip()
                     -- Only handle left-click
                     local buttons = mouse.getButtons()
                     if buttons.right then return end
 
-                    -- Check if clicked on close button (top-right corner)
-                    if x > snapSize.w - 20 and y < 20 then
+                    -- Check if clicked on close button (top-left corner)
+                    if x < 20 and y < 20 then
                         -- Close the window
                         if win and safeGetApplication(win) then
                             win:close()
@@ -975,23 +1789,22 @@ local function createSnapshot(win)
 
             snapshotCanvas:show()
 
-            windowSnapshots.windows[winId] = {
-                win = win,
-                canvas = snapshotCanvas,
-                originalFrame = winFrame,
-                snapSize = snapSize,
-            }
-            table.insert(windowSnapshots.order, winId)
+            -- Update the placeholder with the actual canvas (entry already exists)
+            if windowSnapshots.windows[winId] then
+                windowSnapshots.windows[winId].canvas = snapshotCanvas
+            end
 
             windowSnapshots.isCreating = false
 
-            -- Retile to account for reserved snapshot area
+            -- Update snapshot layout and button overlays (retile already done)
             updateSnapshotLayout()
-            updateWindowOrder()
-            tileWindows()
-
-            -- Recreate button overlays
             updateButtonOverlaysWithRetry()
+
+            -- Ensure outline is visible for focused window
+            local focused = window.focusedWindow()
+            if focused then
+                drawActiveWindowOutline(focused)
+            end
         end
     end)
 end
@@ -1072,7 +1885,7 @@ showSnapshotContextMenu = function(winId, data)
         },
     }
 
-    local menu = menubar.new(false)
+    local menu = hs.menubar.new(false)
     menu:setMenu(menuItems)
     menu:popupMenu(mouse.absolutePosition(), true)
     -- Clean up after a delay
@@ -1083,17 +1896,38 @@ end
 
 local function getMinimizeButtonRect(win)
     if not win then return nil end
-    local axWin = axuielement.windowElement(win)
-    if not axWin then return nil end
+    local ok, result = pcall(function()
+        local axWin = axuielement.windowElement(win)
+        if not axWin then return nil end
 
-    local minimizeButton = axWin:attributeValue("AXMinimizeButton")
-    if not minimizeButton then return nil end
+        local minimizeButton = axWin:attributeValue("AXMinimizeButton")
+        if not minimizeButton then return nil end
 
-    local pos = minimizeButton:attributeValue("AXPosition")
-    local size = minimizeButton:attributeValue("AXSize")
-    if not (pos and size) then return nil end
+        local pos = minimizeButton:attributeValue("AXPosition")
+        local size = minimizeButton:attributeValue("AXSize")
+        if not (pos and size) then return nil end
 
-    return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+        return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+    end)
+    return ok and result or nil
+end
+
+local function getCloseButtonRect(win)
+    if not win then return nil end
+    local ok, result = pcall(function()
+        local axWin = axuielement.windowElement(win)
+        if not axWin then return nil end
+
+        local closeButton = axWin:attributeValue("AXCloseButton")
+        if not closeButton then return nil end
+
+        local pos = closeButton:attributeValue("AXPosition")
+        local size = closeButton:attributeValue("AXSize")
+        if not (pos and size) then return nil end
+
+        return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+    end)
+    return ok and result or nil
 end
 
 local function exitSimulatedFullscreen()
@@ -1122,6 +1956,7 @@ local function exitSimulatedFullscreen()
     simulatedFullscreen.window = nil
 
     -- Clear overlays
+    clearCloseOverlays()
     clearZoomOverlays()
     clearMinimizeOverlays()
     clearPinOverlays()
@@ -1167,6 +2002,7 @@ local function enterSimulatedFullscreen(win)
     if activeWindowOutline then activeWindowOutline:hide() end
 
     -- Clear button overlays during fullscreen
+    clearCloseOverlays()
     clearZoomOverlays()
     clearMinimizeOverlays()
     clearPinOverlays()
@@ -1194,13 +2030,34 @@ local function enterSimulatedFullscreen(win)
     win:setFrame(geometry.rect(screenFrame), 0)
     win:focus()
 
+    -- Check if window actually filled the screen (some apps like IINA maintain aspect ratio)
+    -- If not, center the window
+    timer.doAfter(0.05, function()
+        if not simulatedFullscreen.active then return end
+        local actualFrame = win:frame()
+        if not actualFrame then return end
+
+        -- If window is smaller than screen, center it
+        if actualFrame.w < screenFrame.w or actualFrame.h < screenFrame.h then
+            local centeredX = screenFrame.x + (screenFrame.w - actualFrame.w) / 2
+            local centeredY = screenFrame.y + (screenFrame.h - actualFrame.h) / 2
+            win:setFrame(geometry.rect({
+                x = centeredX,
+                y = centeredY,
+                w = actualFrame.w,
+                h = actualFrame.h
+            }), 0)
+        end
+    end)
+
     -- Create overlays for the fullscreen window so user can exit or minimize
-    timer.doAfter(0.1, function()
+    timer.doAfter(0.15, function()
         if not simulatedFullscreen.active then return end
         local winId = win:id()
         if not winId then return end
 
         -- Clear any stale overlays first
+        clearCloseOverlays()
         clearZoomOverlays()
         clearMinimizeOverlays()
         clearPinOverlays()
@@ -1248,17 +2105,34 @@ createZoomOverlay = function(win)
         fillColor = { alpha = 0.01 }, -- Nearly invisible but clickable
         roundedRectRadii = { xRadius = 5, yRadius = 5 },
     })
-    overlay:level(canvas.windowLevels.dock)
+    overlay:level(canvas.windowLevels.floating)
     overlay:clickActivating(false)
-    overlay:canvasMouseEvents(true, true, false, false)
+    overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg, id, x, y)
-        if msg == "mouseUp" then
+        local frame = c:frame()
+        local centerX = frame.x + frame.w / 2
+        local centerY = frame.y + frame.h / 2
+
+        if msg == "mouseEnter" then
+            c:elementAttribute(1, "fillColor", { green = 0.6, alpha = 0.3 })
+            showButtonTooltip("Fullscreen", centerX, centerY)
+        elseif msg == "mouseExit" then
+            c:elementAttribute(1, "fillColor", { alpha = 0.01 })
+            hideButtonTooltip()
+        elseif msg == "mouseDown" then
+            c:elementAttribute(1, "fillColor", { green = 0.8, alpha = 0.5 })
+        elseif msg == "mouseUp" then
+            hideButtonTooltip()
+
+            local currentWin = hs.window.get(winId)
+            if not currentWin then return end
+
             if simulatedFullscreen.active and simulatedFullscreen.window and
                 simulatedFullscreen.window:id() == winId then
                 exitSimulatedFullscreen()
             else
-                enterSimulatedFullscreen(win)
+                enterSimulatedFullscreen(currentWin)
             end
         end
     end)
@@ -1291,12 +2165,25 @@ createMinimizeOverlay = function(win)
         fillColor = { alpha = 0.01 }, -- Nearly invisible but clickable
         roundedRectRadii = { xRadius = 5, yRadius = 5 },
     })
-    overlay:level(canvas.windowLevels.popUpMenu)
+    overlay:level(canvas.windowLevels.floating)
     overlay:clickActivating(false)
-    overlay:canvasMouseEvents(true, true, false, false)
+    overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg, id, x, y)
-        if msg == "mouseUp" then
+        local frame = c:frame()
+        local centerX = frame.x + frame.w / 2
+        local centerY = frame.y + frame.h / 2
+
+        if msg == "mouseEnter" then
+            c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, alpha = 0.3 })
+            showButtonTooltip("Minimize", centerX, centerY)
+        elseif msg == "mouseExit" then
+            c:elementAttribute(1, "fillColor", { alpha = 0.01 })
+            hideButtonTooltip()
+        elseif msg == "mouseDown" then
+            c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, alpha = 0.5 })
+        elseif msg == "mouseUp" then
+            hideButtonTooltip()
             createSnapshot(win)
         end
     end)
@@ -1309,10 +2196,11 @@ end
 local function updatePinOverlayAppearance(overlay, isPinned)
     if not overlay then return end
     -- Use elementAttribute to properly update the canvas element
+    -- Element 1 is the hover highlight, element 2 is the main circle indicator
     local newColor = isPinned
-        and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.9 }  -- Orange when pinned
-        or { red = 0.3, green = 0.3, blue = 0.3, alpha = 0.6 }   -- Gray when unpinned
-    overlay:elementAttribute(1, "fillColor", newColor)
+        and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.9 } -- Orange when pinned
+        or { red = 0.3, green = 0.3, blue = 0.3, alpha = 0.6 }  -- Gray when unpinned
+    overlay:elementAttribute(2, "fillColor", newColor)
 end
 
 -- Helper to calculate pin button frame for a window
@@ -1324,17 +2212,19 @@ local function getPinButtonFrame(win)
 
     -- Try to get actual titlebar height from close button position
     local titlebarHeight = 28 -- Default macOS titlebar height
-    local axWin = axuielement.windowElement(win)
-    if axWin then
-        local closeButton = axWin:attributeValue("AXCloseButton")
-        if closeButton then
-            local pos = closeButton:attributeValue("AXPosition")
-            if pos then
-                -- Titlebar is roughly twice the distance from top to close button center
-                titlebarHeight = (pos.y - winFrame.y + 7) * 2
+    local ok, _ = pcall(function()
+        local axWin = axuielement.windowElement(win)
+        if axWin then
+            local closeButton = axWin:attributeValue("AXCloseButton")
+            if closeButton then
+                local pos = closeButton:attributeValue("AXPosition")
+                if pos then
+                    -- Titlebar is roughly twice the distance from top to close button center
+                    titlebarHeight = (pos.y - winFrame.y + 7) * 2
+                end
             end
         end
-    end
+    end)
 
     local buttonSize = 14
     local buttonMargin = 12
@@ -1352,65 +2242,198 @@ createPinOverlay = function(win)
     local winId = win:id()
     if not winId then return nil end
 
-    local overlayFrame = getPinButtonFrame(win)
-    if not overlayFrame then return nil end
+    local rect = getPinButtonFrame(win)
+    if not rect then return nil end
 
-    local buttonSize = overlayFrame.w
-    local isPinned = pinnedWindows[winId] == true
+    local app = safeGetApplication(win)
+    -- App is "excluded" if in exclusion list (app-level only now)
+    local isExcluded = app and not isAppIncluded(app, win)
+
+    -- Make overlay slightly larger for easier clicking (same as other buttons)
+    local padding = 4
+    local overlayFrame = {
+        x = rect.x - padding,
+        y = rect.y - padding,
+        w = rect.w + padding * 2,
+        h = rect.h + padding * 2
+    }
 
     local overlay = canvas.new(overlayFrame)
-    -- Circle indicator
+    -- Element 1: hover highlight rectangle (same style as close/minimize/fullscreen)
+    overlay:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = { alpha = 0.01 }, -- Nearly invisible but clickable
+        roundedRectRadii = { xRadius = 5, yRadius = 5 },
+    })
+    -- Element 2: Circle indicator
+    local baseColor = isExcluded
+        and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.9 } -- Orange when excluded
+        or { red = 0.3, green = 0.3, blue = 0.3, alpha = 0.6 }  -- Gray when included
+    local centerX = overlayFrame.w / 2
+    local centerY = overlayFrame.h / 2
+    local radius = rect.w / 2
     overlay:appendElements({
         type = "circle",
         action = "fill",
-        center = { x = buttonSize / 2, y = buttonSize / 2 },
-        radius = buttonSize / 2,
-        fillColor = isPinned
-            and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.9 }  -- Orange when pinned
-            or { red = 0.3, green = 0.3, blue = 0.3, alpha = 0.6 },  -- Gray when unpinned
+        center = { x = centerX, y = centerY },
+        radius = radius,
+        fillColor = baseColor,
     })
-    -- Pin icon (vertical line)
+    -- Element 3: Pin icon (vertical line) - centered in circle
     overlay:appendElements({
         type = "segments",
         action = "stroke",
         strokeColor = { white = 1, alpha = 0.9 },
         strokeWidth = 1.5,
         coordinates = {
-            { x = buttonSize / 2, y = 2 },
-            { x = buttonSize / 2, y = buttonSize - 2 },
+            { x = centerX, y = centerY - radius + 2 },
+            { x = centerX, y = centerY + radius - 2 },
         },
     })
-    -- Pin icon (horizontal line at top)
+    -- Element 4: Pin icon (horizontal line at top) - centered in circle
     overlay:appendElements({
         type = "segments",
         action = "stroke",
         strokeColor = { white = 1, alpha = 0.9 },
         strokeWidth = 1.5,
         coordinates = {
-            { x = 3, y = 4 },
-            { x = buttonSize - 3, y = 4 },
+            { x = centerX - radius + 3, y = centerY - radius + 4 },
+            { x = centerX + radius - 3, y = centerY - radius + 4 },
         },
     })
 
     overlay:level(canvas.windowLevels.floating)
     overlay:clickActivating(false)
-    overlay:canvasMouseEvents(true, true, false, false)
+    overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg, id, x, y)
-        if msg == "mouseUp" then
-            -- Toggle pin state
-            if pinnedWindows[winId] then
-                pinnedWindows[winId] = nil
-                log("Unpinned window: " .. (win:title() or "untitled"))
+        local frame = c:frame()
+        local centerX = frame.x + frame.w / 2
+        local centerY = frame.y + frame.h / 2
+
+        -- Re-fetch window by ID to get current excluded state
+        local currentWin = hs.window.get(winId)
+        local currentApp = currentWin and safeGetApplication(currentWin)
+        local currentlyExcluded = currentApp and not isAppIncluded(currentApp, currentWin)
+
+        if msg == "mouseEnter" then
+            -- Show highlight on hover (same style as other buttons)
+            local hoverColor = currentlyExcluded
+                and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.3 }
+                or { red = 0.5, green = 0.5, blue = 0.5, alpha = 0.3 }
+            c:elementAttribute(1, "fillColor", hoverColor)
+            local tooltipText = currentlyExcluded and "Include in Tiling" or "Exclude from Tiling"
+            showButtonTooltip(tooltipText, centerX, centerY)
+        elseif msg == "mouseExit" then
+            c:elementAttribute(1, "fillColor", { alpha = 0.01 })
+            hideButtonTooltip()
+        elseif msg == "mouseDown" then
+            -- Press feedback - brighter highlight
+            local pressColor = currentlyExcluded
+                and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.5 }
+                or { red = 0.5, green = 0.5, blue = 0.5, alpha = 0.5 }
+            c:elementAttribute(1, "fillColor", pressColor)
+        elseif msg == "mouseUp" then
+            hideButtonTooltip()
+
+            if not currentWin then return end
+
+            -- Toggle app-level exclusion (same as double 3-finger tap)
+            local clickedApp = safeGetApplication(currentWin)
+            if not clickedApp then return end
+
+            local bundleID = clickedApp:bundleID()
+            local appName = clickedApp:name()
+            local wasExcluded = (bundleID and listedApps[bundleID]) or (appName and listedApps[appName])
+
+            if wasExcluded then
+                -- Remove from exclusion list (include in tiling)
+                if bundleID then listedApps[bundleID] = nil end
+                if appName then listedApps[appName] = nil end
+                log("Included app in tiling: " .. (appName or bundleID or "unknown"))
             else
-                pinnedWindows[winId] = true
-                log("Pinned window: " .. (win:title() or "untitled"))
+                -- Add to exclusion list (exclude from tiling)
+                if bundleID then
+                    listedApps[bundleID] = true
+                elseif appName then
+                    listedApps[appName] = true
+                end
+                log("Excluded app from tiling: " .. (appName or bundleID or "unknown"))
             end
-            -- Update this overlay's appearance immediately using the callback's canvas reference
-            updatePinOverlayAppearance(c, pinnedWindows[winId])
+
+            saveList()
+            -- Hide outline BEFORE retiling to avoid duplicate
+            stopOutlineRefresh()
+            if activeWindowOutline then activeWindowOutline:hide() end
             -- Retile windows
             updateWindowOrder()
             tileWindows()
+            -- Update all button overlays (appearance will be updated for all windows of this app)
+            updateButtonOverlaysWithRetry()
+            -- Update outline color AFTER tiling to ensure correct state
+            timer.doAfter(0.1, function()
+                local focusedWin = window.focusedWindow()
+                if focusedWin then
+                    drawActiveWindowOutline(focusedWin)
+                end
+            end)
+        end
+    end)
+
+    overlay:show()
+    return overlay
+end
+
+createCloseOverlay = function(win)
+    if not win then return nil end
+    local winId = win:id()
+    if not winId then return nil end
+
+    local rect = getCloseButtonRect(win)
+    if not rect then return nil end
+
+    -- Make overlay slightly larger for easier clicking
+    local padding = 4
+    local overlayFrame = {
+        x = rect.x - padding,
+        y = rect.y - padding,
+        w = rect.w + padding * 2,
+        h = rect.h + padding * 2
+    }
+
+    local overlay = canvas.new(overlayFrame)
+    overlay:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = { alpha = 0.01 }, -- Nearly invisible but clickable
+        roundedRectRadii = { xRadius = 5, yRadius = 5 },
+    })
+    overlay:level(canvas.windowLevels.floating)
+    overlay:clickActivating(false)
+    overlay:canvasMouseEvents(true, true, true, true)
+
+    overlay:mouseCallback(function(c, msg, id, x, y)
+        local frame = c:frame()
+        local centerX = frame.x + frame.w / 2
+        local centerY = frame.y + frame.h / 2
+
+        if msg == "mouseEnter" then
+            c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.2, blue = 0.2, alpha = 0.3 })
+            showButtonTooltip("Close", centerX, centerY)
+        elseif msg == "mouseExit" then
+            c:elementAttribute(1, "fillColor", { alpha = 0.01 })
+            hideButtonTooltip()
+        elseif msg == "mouseDown" then
+            c:elementAttribute(1, "fillColor", { red = 1.0, green = 0.3, blue = 0.3, alpha = 0.5 })
+        elseif msg == "mouseUp" then
+            hideButtonTooltip()
+
+            local currentWin = hs.window.get(winId)
+            if not currentWin then return end
+
+            -- Close the window - handleWindowEvent will update everything
+            currentWin:close()
         end
     end)
 
@@ -1440,28 +2463,65 @@ updateButtonOverlays = function()
 
         -- Check if this is a standard window (for pin overlay)
         local isStandard = win:isStandard() and app
-        if isStandard then
+        -- Check if window is collapsed (too small for pin button)
+        local sz = win:size()
+        local isCollapsed = sz and sz.h <= cfg.collapsedWindowHeight
+
+        if isStandard and not isCollapsed then
             allStandardWinIds[winId] = true
 
             -- Update pin overlay for all standard windows
-            local pinFrame = getPinButtonFrame(win)
-            if pinFrame then
+            local pinRect = getPinButtonFrame(win)
+            if pinRect then
+                -- App is "excluded" if in exclusion list (app-level only)
+                local isExcluded = app and not isAppIncluded(app, win)
+                local padding = 4
+                local pinFrame = {
+                    x = pinRect.x - padding,
+                    y = pinRect.y - padding,
+                    w = pinRect.w + padding * 2,
+                    h = pinRect.h + padding * 2
+                }
                 if simulatedFullscreen.pinOverlays[winId] then
                     simulatedFullscreen.pinOverlays[winId]:frame(pinFrame)
-                    -- Update appearance in case pin state changed
-                    updatePinOverlayAppearance(simulatedFullscreen.pinOverlays[winId], pinnedWindows[winId])
+                    -- Update appearance based on whether window is excluded from tiling
+                    updatePinOverlayAppearance(simulatedFullscreen.pinOverlays[winId], isExcluded)
                 else
-                    simulatedFullscreen.pinOverlays[winId] = createPinOverlay(win)
+                    local newOverlay = createPinOverlay(win)
+                    if newOverlay then
+                        simulatedFullscreen.pinOverlays[winId] = newOverlay
+                        updatePinOverlayAppearance(newOverlay, isExcluded)
+                    end
                 end
             end
         end
 
-        -- Only process zoom/minimize overlays for windows included in tiling
+        -- Only process zoom/minimize/close overlays for windows included in tiling
         if app and isAppIncluded(app, win) then
             activeWinIds[winId] = true
 
+            local closeRect = getCloseButtonRect(win)
             local zoomRect = getZoomButtonRect(win)
             local minimizeRect = getMinimizeButtonRect(win)
+
+            -- Update existing close overlay position, or create new one
+            if closeRect then
+                local padding = 4
+                local newFrame = {
+                    x = closeRect.x - padding,
+                    y = closeRect.y - padding,
+                    w = closeRect.w + padding * 2,
+                    h = closeRect.h + padding * 2
+                }
+                if simulatedFullscreen.closeOverlays[winId] then
+                    simulatedFullscreen.closeOverlays[winId]:frame(newFrame)
+                else
+                    local newOverlay = createCloseOverlay(win)
+                    if newOverlay then
+                        simulatedFullscreen.closeOverlays[winId] = newOverlay
+                    end
+                end
+            end
 
             -- Update existing zoom overlay position, or create new one
             if zoomRect then
@@ -1475,7 +2535,10 @@ updateButtonOverlays = function()
                 if simulatedFullscreen.zoomOverlays[winId] then
                     simulatedFullscreen.zoomOverlays[winId]:frame(newFrame)
                 else
-                    simulatedFullscreen.zoomOverlays[winId] = createZoomOverlay(win)
+                    local newOverlay = createZoomOverlay(win)
+                    if newOverlay then
+                        simulatedFullscreen.zoomOverlays[winId] = newOverlay
+                    end
                 end
             end
 
@@ -1491,7 +2554,10 @@ updateButtonOverlays = function()
                 if simulatedFullscreen.minimizeOverlays[winId] then
                     simulatedFullscreen.minimizeOverlays[winId]:frame(newFrame)
                 else
-                    simulatedFullscreen.minimizeOverlays[winId] = createMinimizeOverlay(win)
+                    local newOverlay = createMinimizeOverlay(win)
+                    if newOverlay then
+                        simulatedFullscreen.minimizeOverlays[winId] = newOverlay
+                    end
                 end
             end
         end
@@ -1500,6 +2566,12 @@ updateButtonOverlays = function()
     end
 
     -- Clean up overlays for windows that no longer exist
+    for winId, overlay in pairs(simulatedFullscreen.closeOverlays) do
+        if not activeWinIds[winId] then
+            overlay:delete()
+            simulatedFullscreen.closeOverlays[winId] = nil
+        end
+    end
     for winId, overlay in pairs(simulatedFullscreen.zoomOverlays) do
         if not activeWinIds[winId] then
             overlay:delete()
@@ -1516,8 +2588,6 @@ updateButtonOverlays = function()
         if not allStandardWinIds[winId] then
             overlay:delete()
             simulatedFullscreen.pinOverlays[winId] = nil
-            -- Also clean up pinnedWindows for closed windows
-            pinnedWindows[winId] = nil
         end
     end
 end
@@ -1543,8 +2613,9 @@ updateButtonOverlaysWithRetry = function()
 end
 
 
--- Periodic overlay refresh to keep them in sync (handles edge cases)
-local overlayRefreshTimer = timer.doEvery(0.5, function()
+-- Periodic overlay refresh to keep them in sync (handles edge cases like autohiding sidebars)
+-- Store in simulatedFullscreen to prevent garbage collection
+simulatedFullscreen.overlayRefreshTimer = timer.doEvery(0.5, function()
     if not simulatedFullscreen.active and not windowSnapshots.isCreating then
         updateButtonOverlays()
     end
@@ -1580,6 +2651,23 @@ local function handleWindowFocused(win)
     if windowSnapshots.isCreating then return end
 
     if win and win:isVisible() and not win:isFullScreen() and not isSystem(win) then
+        -- Track focus history
+        local winId = win:id()
+        if winId then
+            -- Remove this window from history if it exists
+            for i = #focusHistory, 1, -1 do
+                if focusHistory[i] == winId then
+                    table.remove(focusHistory, i)
+                end
+            end
+            -- Add to front
+            table.insert(focusHistory, 1, winId)
+            -- Trim to max size
+            while #focusHistory > focusHistoryMax do
+                table.remove(focusHistory)
+            end
+        end
+
         -- Only trigger tiling if not already tiling (prevent cascade from setFrame focus shifts)
         if tilingCount == 0 and isAppIncluded(safeGetApplication(win), win) then
             tileWindows()
@@ -1648,6 +2736,9 @@ local function toggleFocusedWindowInList()
     saveList()
     updateWindowOrder()
     tileWindows()
+    -- Update outline color for focused window
+    drawActiveWindowOutline(focusedWindow)
+    updateButtonOverlaysWithRetry()
 end
 
 local function moveMouseWithWindow(oldFrame, newFrame)
@@ -1865,7 +2956,7 @@ local function moveWindowToAdjacentScreen(direction)
     end)
 end
 
--- ######## Drag-to-reposition handling ########
+-- Drag-to-reposition handling
 local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
     local dropFrame = droppedWin:frame()
     local dropCenterX = dropFrame.x + dropFrame.w / 2
@@ -1892,6 +2983,14 @@ local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
     return insertIndex
 end
 
+-- Check if any animations are currently running
+local function hasActiveAnimations()
+    for _ in pairs(activeAnimations) do
+        return true
+    end
+    return false
+end
+
 local function handleWindowMoved(win)
     if not win then return end
 
@@ -1899,6 +2998,10 @@ local function handleWindowMoved(win)
     if simulatedFullscreen.active then return end
     if windowSnapshots.isCreating then return end
     if tilingCount > 0 then return end
+
+    -- Skip if THIS window is currently being animated (but allow others)
+    local winId = win:id()
+    if winId and activeAnimations[winId] then return end
 
     local app = safeGetApplication(win)
     if not isAppIncluded(app, win) then return end
@@ -1915,7 +3018,7 @@ local function handleWindowMoved(win)
     if not winScreen then return end
 
     local currentSpace = getCurrentSpace()
-    local screenFrame = winScreen:frame()
+    local screenFrame = getAdjustedScreenFrame(winScreen) -- Use adjusted frame to match tiling
     local screenId = winScreen:id()
     local horizontal = (screenFrame.w > screenFrame.h)
 
@@ -1952,7 +3055,8 @@ local function handleWindowMoved(win)
 
     -- Also detect cross-axis resize (vertical in landscape, horizontal in portrait)
     -- These should trigger immediate retile to snap back to proper size
-    local collapsedAreaHeight = (#getCollapsedWindows(screenWindows) > 0) and (cfg.collapsedWindowHeight + cfg.tileGap) or 0
+    local collapsedAreaHeight = (#getCollapsedWindows(screenWindows) > 0) and (cfg.collapsedWindowHeight + cfg.tileGap) or
+        0
     local expectedCrossSize = horizontal
         and (screenFrame.h - collapsedAreaHeight)
         or screenFrame.w
@@ -2287,9 +3391,6 @@ local function checkTTTapsRecognition()
     end
 end
 
--- ############################
--- ######## Bindings ##########
--- ############################
 local function bindHotkeys()
     -- List toggle (use "," for layout safety instead of "<")
     hotkey.bind(cfg.mods, ",", function()
@@ -2313,6 +3414,7 @@ local function bindHotkeys()
     hotkey.bind(cfg.mods, "0", function()
         windowWeights = {}
         tileWindows()
+        updateButtonOverlaysWithRetry()
     end)
 
     -- Toggle simulated fullscreen
@@ -2333,6 +3435,93 @@ local function bindHotkeys()
         updateWindowOrder()
         tileWindows()
         updateButtonOverlaysWithRetry()
+    end)
+
+    -- Split ratio adjustment (+/- like Hypr)
+    hotkey.bind(cfg.mods, "=", function()
+        local win = window.focusedWindow()
+        if not win then return end
+        local currentWeight = getWindowWeight(win)
+        setWindowWeight(win, currentWeight + 0.1)
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        log("Increased weight to " .. string.format("%.1f", getWindowWeight(win)))
+    end)
+
+    hotkey.bind(cfg.mods, "-", function()
+        local win = window.focusedWindow()
+        if not win then return end
+        local currentWeight = getWindowWeight(win)
+        setWindowWeight(win, currentWeight - 0.1)
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        log("Decreased weight to " .. string.format("%.1f", getWindowWeight(win)))
+    end)
+
+    -- Master ratio adjustment (in master layout)
+    hotkey.bind(cfg.mods, "]", function()
+        cfg.masterRatio = math.min(cfg.masterRatio + 0.05, 0.9)
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        log("Master ratio: " .. string.format("%.0f%%", cfg.masterRatio * 100))
+    end)
+
+    hotkey.bind(cfg.mods, "[", function()
+        cfg.masterRatio = math.max(cfg.masterRatio - 0.05, 0.1)
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        log("Master ratio: " .. string.format("%.0f%%", cfg.masterRatio * 100))
+    end)
+
+    -- Cycle layout modes
+    hotkey.bind(cfg.mods, "L", function()
+        local modes = { "weighted", "dwindle", "master" }
+        local currentIndex = 1
+        for i, mode in ipairs(modes) do
+            if mode == cfg.layoutMode then
+                currentIndex = i
+                break
+            end
+        end
+        local nextIndex = (currentIndex % #modes) + 1
+        cfg.layoutMode = modes[nextIndex]
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        log("Layout mode: " .. cfg.layoutMode)
+    end)
+
+    -- Toggle pseudotiling for focused window
+    hotkey.bind(cfg.mods, "P", function()
+        local win = window.focusedWindow()
+        if not win then return end
+        local winId = win:id()
+        if not winId then return end
+
+        if pseudoWindows[winId] then
+            -- Remove from pseudo
+            pseudoWindows[winId] = nil
+            log("Disabled pseudotiling for " .. (win:title() or "untitled"))
+        else
+            -- Add to pseudo with current size as preferred
+            local frame = win:frame()
+            pseudoWindows[winId] = {
+                preferredW = frame.w,
+                preferredH = frame.h,
+            }
+            log("Enabled pseudotiling for " .. (win:title() or "untitled"))
+        end
+        tileWindows()
+        updateButtonOverlaysWithRetry()
+        drawActiveWindowOutline(win) -- Update outline color
+    end)
+
+    -- Toggle animations
+    hotkey.bind(cfg.mods, "A", function()
+        cfg.enableAnimations = not cfg.enableAnimations
+        if not cfg.enableAnimations then
+            cancelAllAnimations()
+        end
+        log("Animations: " .. (cfg.enableAnimations and "enabled" or "disabled"))
     end)
 
     if cfg.enableTTTaps then
@@ -2405,6 +3594,12 @@ window.filter.default:subscribe(window.filter.windowMinimized, function(win)
 end)
 
 spaces.watcher.new(function(_)
+    -- Hide outline immediately on space switch to prevent lingering
+    if activeWindowOutline then
+        activeWindowOutline:hide()
+    end
+    stopOutlineRefresh()
+    -- Then handle the window event which will redraw outline for new space
     handleWindowEvent()
 end):start()
 
@@ -2439,7 +3634,8 @@ local function preventGC()
     local stuckThreshold = 5 -- seconds
 
     if tilingCount > 0 and (now - tilingStartTime) > stuckThreshold then
-        log("Watchdog: tilingCount stuck at " .. tilingCount .. " for " .. math.floor(now - tilingStartTime) .. "s, resetting")
+        log("Watchdog: tilingCount stuck at " ..
+            tilingCount .. " for " .. math.floor(now - tilingStartTime) .. "s, resetting")
         tilingCount = 0
     end
 
@@ -2468,8 +3664,9 @@ bindHotkeys()
 updateZoomOverlays()
 
 log("WindowScape initialized" ..
-    (cfg.enableTTTaps and " with TTTaps recognition" or " without TTTaps recognition") ..
-    " and simulated fullscreen")
+    " [layout:" .. cfg.layoutMode .. "]" ..
+    (cfg.enableAnimations and " [animations]" or "") ..
+    (cfg.enableTTTaps and " [TTTaps]" or ""))
 
 -- Public helper to restart the gesture recognizer manually
 function restartWindowScapeTTTaps()
@@ -2477,4 +3674,64 @@ function restartWindowScapeTTTaps()
         stopTTTapsRecognition()
         startTTTapsRecognition()
     end
+end
+
+-- Public helper to cycle layout mode
+function cycleWindowScapeLayout()
+    local modes = { "weighted", "dwindle", "master" }
+    local currentIndex = 1
+    for i, mode in ipairs(modes) do
+        if mode == cfg.layoutMode then
+            currentIndex = i
+            break
+        end
+    end
+    local nextIndex = (currentIndex % #modes) + 1
+    cfg.layoutMode = modes[nextIndex]
+    tileWindows()
+    return cfg.layoutMode
+end
+
+-- FrameMaster Integration
+-- Global API for FrameMaster to use WindowScape's custom minimize/fullscreen
+
+-- Toggle simulated fullscreen for the focused window
+-- Returns: message string describing what happened
+function windowScapeToggleFullscreen()
+    local win = window.focusedWindow()
+    if not win then return "No window" end
+
+    if simulatedFullscreen.active and simulatedFullscreen.window and
+        simulatedFullscreen.window:id() == win:id() then
+        exitSimulatedFullscreen()
+        return "Exited Fullscreen for " .. (win:title() or "Window")
+    else
+        enterSimulatedFullscreen(win)
+        return "Entered Fullscreen for " .. (win:title() or "Window")
+    end
+end
+
+-- Check if a window is in simulated fullscreen
+function windowScapeIsFullscreen(win)
+    if not win then return false end
+    return simulatedFullscreen.active and simulatedFullscreen.window and
+        simulatedFullscreen.window:id() == win:id()
+end
+
+-- Create a snapshot (minimize) for the focused window
+-- Returns: message string describing what happened
+function windowScapeMinimize()
+    local win = window.focusedWindow()
+    if not win then return "No window" end
+
+    local title = win:title() or "Window"
+    createSnapshot(win)
+    return "Minimized " .. title
+end
+
+-- Check if a window is minimized via snapshots
+function windowScapeIsMinimized(win)
+    if not win then return false end
+    local winId = win:id()
+    return winId and windowSnapshots.windows[winId] ~= nil
 end
