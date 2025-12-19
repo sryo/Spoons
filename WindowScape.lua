@@ -487,9 +487,26 @@ local function getSnapshotSize()
     return { w = snapshotColumnWidth - snapshotPadding * 2, h = 80 }
 end
 
--- Get the reserved area for snapshots (returns nil if no snapshots)
+-- Get the reserved area for snapshots (returns nil if no snapshots on this screen)
 local function getSnapshotReservedArea(scr)
     if #windowSnapshots.order == 0 then return nil end
+
+    -- Check if any snapshots belong to this screen and calculate max height
+    local scrId = scr:id()
+    local maxSnapshotHeight = 0
+    local hasSnapshotsOnScreen = false
+    for _, winId in ipairs(windowSnapshots.order) do
+        local data = windowSnapshots.windows[winId]
+        if data and data.screenId == scrId then
+            hasSnapshotsOnScreen = true
+            local snapSize = data.snapSize or getSnapshotSize()
+            if snapSize.h > maxSnapshotHeight then
+                maxSnapshotHeight = snapSize.h
+            end
+        end
+    end
+
+    if not hasSnapshotsOnScreen then return nil end
 
     local frame = scr:frame()
     local isLandscape = frame.w > frame.h
@@ -503,8 +520,8 @@ local function getSnapshotReservedArea(scr)
             h = frame.h
         }
     else
-        -- Reserve row at bottom (use a reasonable height)
-        local rowHeight = 100
+        -- Reserve row at bottom based on actual snapshot height
+        local rowHeight = maxSnapshotHeight + snapshotPadding * 2
         return {
             x = frame.x,
             y = frame.y + frame.h - rowHeight,
@@ -1348,32 +1365,48 @@ local function hideButtonTooltip()
 end
 
 local function updateSnapshotLayout()
-    local scr = screen.mainScreen()
-    local frame = scr:frame()
-    local isLandscape = frame.w > frame.h
-
     if #windowSnapshots.order == 0 then return end
 
-    local currentY = frame.y + snapshotPadding
-    local currentX = frame.x + snapshotPadding
-
-    for i, winId in ipairs(windowSnapshots.order) do
+    -- Group snapshots by screen
+    local snapshotsByScreen = {}
+    for _, winId in ipairs(windowSnapshots.order) do
         local data = windowSnapshots.windows[winId]
-        if data and data.canvas then
-            local snapSize = data.snapSize or getSnapshotSize()
-            local x, y
-            if isLandscape then
-                -- Stack vertically on right edge
-                x = frame.x + frame.w - snapshotColumnWidth + snapshotPadding
-                y = currentY
-                currentY = currentY + snapSize.h + snapshotGap
-            else
-                -- Stack horizontally at bottom
-                x = currentX
-                y = frame.y + frame.h - snapSize.h - snapshotPadding
-                currentX = currentX + snapSize.w + snapshotGap
+        if data and data.canvas and data.screenId then
+            if not snapshotsByScreen[data.screenId] then
+                snapshotsByScreen[data.screenId] = {}
             end
-            data.canvas:topLeft({ x = x, y = y })
+            table.insert(snapshotsByScreen[data.screenId], { winId = winId, data = data })
+        end
+    end
+
+    -- Layout snapshots for each screen
+    for _, scr in ipairs(screen.allScreens()) do
+        local scrId = scr:id()
+        local screenSnapshots = snapshotsByScreen[scrId]
+        if screenSnapshots and #screenSnapshots > 0 then
+            local frame = scr:frame()
+            local isLandscape = frame.w > frame.h
+
+            local currentY = frame.y + snapshotPadding
+            local currentX = frame.x + snapshotPadding
+
+            for _, item in ipairs(screenSnapshots) do
+                local data = item.data
+                local snapSize = data.snapSize or getSnapshotSize()
+                local x, y
+                if isLandscape then
+                    -- Stack vertically on right edge
+                    x = frame.x + frame.w - snapshotColumnWidth + snapshotPadding
+                    y = currentY
+                    currentY = currentY + snapSize.h + snapshotGap
+                else
+                    -- Stack horizontally at bottom
+                    x = currentX
+                    y = frame.y + frame.h - snapSize.h - snapshotPadding
+                    currentX = currentX + snapSize.w + snapshotGap
+                end
+                data.canvas:topLeft({ x = x, y = y })
+            end
         end
     end
 end
@@ -1429,6 +1462,9 @@ local function restoreFromSnapshot(winId)
     local win = data.win
     if not win or not safeGetApplication(win) then
         -- Window no longer exists, just clean up
+        if data.dragTap then
+            data.dragTap:stop()
+        end
         if data.canvas then
             data.canvas:delete()
         end
@@ -1448,6 +1484,9 @@ local function restoreFromSnapshot(winId)
         -- Fallback: just restore without animation
         win:setFrame(geometry.rect(targetFrame), 0)
         win:focus()
+        if data.dragTap then
+            data.dragTap:stop()
+        end
         if data.canvas then
             data.canvas:delete()
         end
@@ -1502,6 +1541,9 @@ local function restoreFromSnapshot(winId)
             win:setFrame(geometry.rect(targetFrame), 0)
             win:focus()
 
+            if data.dragTap then
+                data.dragTap:stop()
+            end
             if data.canvas then
                 data.canvas:delete()
             end
@@ -1531,8 +1573,9 @@ local function createSnapshot(win)
     windowSnapshots.isCreatingStart = timer.secondsSinceEpoch()
 
     local winFrame = win:frame()
-    local scr = screen.mainScreen()
+    local scr = win:screen() or screen.mainScreen() -- Use window's screen, fallback to main
     local scrFrame = scr:frame()
+    local scrId = scr:id()
 
     -- Take snapshot before hiding - this can be slow
     local snapshot = win:snapshot()
@@ -1550,6 +1593,7 @@ local function createSnapshot(win)
         canvas = nil, -- Will be set after animation
         originalFrame = winFrame,
         snapSize = snapSize,
+        screenId = scrId, -- Store which screen this snapshot belongs to
     }
     table.insert(windowSnapshots.order, winId)
 
@@ -1576,26 +1620,30 @@ local function createSnapshot(win)
     end
     local isLandscape = scrFrame.w > scrFrame.h
 
-    -- Calculate target position by summing existing snapshot heights
+    -- Calculate target position by summing existing snapshot heights/widths on the SAME screen
     local targetX, targetY
     if isLandscape then
         targetX = scrFrame.x + scrFrame.w - snapshotColumnWidth + snapshotPadding
         targetY = scrFrame.y + snapshotPadding
-        -- Add heights of existing snapshots
+        -- Add heights of existing snapshots on the same screen (excluding current one)
         for _, existingWinId in ipairs(windowSnapshots.order) do
-            local data = windowSnapshots.windows[existingWinId]
-            if data and data.snapSize then
-                targetY = targetY + data.snapSize.h + snapshotGap
+            if existingWinId ~= winId then
+                local data = windowSnapshots.windows[existingWinId]
+                if data and data.snapSize and data.screenId == scrId then
+                    targetY = targetY + data.snapSize.h + snapshotGap
+                end
             end
         end
     else
         targetY = scrFrame.y + scrFrame.h - snapSize.h - snapshotPadding
         targetX = scrFrame.x + snapshotPadding
-        -- Add widths of existing snapshots
+        -- Add widths of existing snapshots on the same screen (excluding current one)
         for _, existingWinId in ipairs(windowSnapshots.order) do
-            local data = windowSnapshots.windows[existingWinId]
-            if data and data.snapSize then
-                targetX = targetX + data.snapSize.w + snapshotGap
+            if existingWinId ~= winId then
+                local data = windowSnapshots.windows[existingWinId]
+                if data and data.snapSize and data.screenId == scrId then
+                    targetX = targetX + data.snapSize.w + snapshotGap
+                end
             end
         end
     end
@@ -1727,30 +1775,40 @@ local function createSnapshot(win)
                 end)
             end
 
+            -- Drag state for this snapshot
+            local isDragging = false
+            local dragStartMousePos = nil
+            local dragStartCanvasFrame = nil
+            local dragThreshold = 5 -- Pixels to move before considering it a drag
+
             snapshotCanvas:mouseCallback(function(c, msg, id, x, y)
                 if msg == "mouseEnter" then
-                    -- Show tooltip on hover
-                    local snapFrame = c:frame()
-                    showSnapshotTooltip(winId, snapFrame)
-                    -- Zoom in animation
-                    if not isZoomed then
-                        isZoomed = true
-                        local data = windowSnapshots.windows[winId]
-                        if data then
-                            -- Store base position before zooming
-                            local currentFrame = c:frame()
-                            data.baseX = currentFrame.x
-                            data.baseY = currentFrame.y
-                            animateZoom(c, 1.0, zoomScale, 0.1)
+                    -- Show tooltip on hover (only if not dragging)
+                    if not isDragging then
+                        local snapFrame = c:frame()
+                        showSnapshotTooltip(winId, snapFrame)
+                        -- Zoom in animation
+                        if not isZoomed then
+                            isZoomed = true
+                            local data = windowSnapshots.windows[winId]
+                            if data then
+                                -- Store base position before zooming
+                                local currentFrame = c:frame()
+                                data.baseX = currentFrame.x
+                                data.baseY = currentFrame.y
+                                animateZoom(c, 1.0, zoomScale, 0.1)
+                            end
                         end
                     end
                 elseif msg == "mouseExit" then
-                    -- Hide tooltip when leaving
-                    hideSnapshotTooltip()
-                    -- Zoom out animation
-                    if isZoomed then
-                        isZoomed = false
-                        animateZoom(c, zoomScale, 1.0, 0.1)
+                    -- Hide tooltip when leaving (only if not dragging)
+                    if not isDragging then
+                        hideSnapshotTooltip()
+                        -- Zoom out animation
+                        if isZoomed then
+                            isZoomed = false
+                            animateZoom(c, zoomScale, 1.0, 0.1)
+                        end
                     end
                 elseif msg == "mouseDown" then
                     -- Check for right-click
@@ -1759,39 +1817,148 @@ local function createSnapshot(win)
                         showSnapshotContextMenu(winId, windowSnapshots.windows[winId])
                         return
                     end
+                    -- Start potential drag
+                    dragStartMousePos = mouse.absolutePosition()
+                    dragStartCanvasFrame = c:frame()
+                    isDragging = false -- Will become true once we exceed threshold
                 elseif msg == "mouseUp" then
+                    local wasDragging = isDragging
+                    local mousePos = mouse.absolutePosition()
+
+                    -- Reset drag state
+                    isDragging = false
+                    dragStartMousePos = nil
+                    dragStartCanvasFrame = nil
+
                     -- Hide tooltip on click
                     hideSnapshotTooltip()
-                    -- Only handle left-click
-                    local buttons = mouse.getButtons()
-                    if buttons.right then return end
 
-                    -- Check if clicked on close button (top-left corner)
-                    if x < 20 and y < 20 then
-                        -- Close the window
-                        if win and safeGetApplication(win) then
-                            win:close()
+                    if wasDragging then
+                        -- Drag ended - check which screen the snapshot is now on
+                        local canvasFrame = c:frame()
+                        local centerX = canvasFrame.x + canvasFrame.w / 2
+                        local centerY = canvasFrame.y + canvasFrame.h / 2
+
+                        -- Find which screen contains the center of the snapshot
+                        local targetScreen = nil
+                        for _, scr in ipairs(screen.allScreens()) do
+                            local scrFrame = scr:frame()
+                            if centerX >= scrFrame.x and centerX < scrFrame.x + scrFrame.w and
+                               centerY >= scrFrame.y and centerY < scrFrame.y + scrFrame.h then
+                                targetScreen = scr
+                                break
+                            end
                         end
-                        if windowSnapshots.windows[winId] then
-                            windowSnapshots.windows[winId].canvas:delete()
-                            windowSnapshots.windows[winId] = nil
-                            removeFromSnapshotOrder(winId)
-                            updateSnapshotLayout()
-                            updateWindowOrder()
-                            tileWindows()
+
+                        -- Update screenId if dropped on a different screen
+                        local data = windowSnapshots.windows[winId]
+                        if data and targetScreen then
+                            local newScreenId = targetScreen:id()
+                            if data.screenId ~= newScreenId then
+                                data.screenId = newScreenId
+                                -- Also update the original frame to restore to the new screen
+                                local newScreenFrame = targetScreen:frame()
+                                data.originalFrame = {
+                                    x = newScreenFrame.x + (newScreenFrame.w - data.originalFrame.w) / 2,
+                                    y = newScreenFrame.y + (newScreenFrame.h - data.originalFrame.h) / 2,
+                                    w = data.originalFrame.w,
+                                    h = data.originalFrame.h
+                                }
+                            end
                         end
+
+                        -- Re-layout all snapshots and retile windows
+                        updateSnapshotLayout()
+                        tileWindows()
                     else
-                        -- Restore the window
-                        restoreFromSnapshot(winId)
+                        -- It was a click, not a drag
+                        local buttons = mouse.getButtons()
+                        if buttons.right then return end
+
+                        -- Check if clicked on close button (top-left corner)
+                        if x < 20 and y < 20 then
+                            -- Close the window
+                            if win and safeGetApplication(win) then
+                                win:close()
+                            end
+                            if windowSnapshots.windows[winId] then
+                                if windowSnapshots.windows[winId].dragTap then
+                                    windowSnapshots.windows[winId].dragTap:stop()
+                                end
+                                if windowSnapshots.windows[winId].canvas then
+                                    windowSnapshots.windows[winId].canvas:delete()
+                                end
+                                windowSnapshots.windows[winId] = nil
+                                removeFromSnapshotOrder(winId)
+                                updateSnapshotLayout()
+                                updateWindowOrder()
+                                tileWindows()
+                            end
+                        else
+                            -- Restore the window
+                            restoreFromSnapshot(winId)
+                        end
                     end
                 end
             end)
 
+            -- Separate drag tracking using eventtap (since canvas doesn't get mouseDragged reliably)
+            local dragTap = nil
+            dragTap = eventtap.new({ eventtap.event.types.leftMouseDragged }, function(e)
+                if not dragStartMousePos or not dragStartCanvasFrame then return false end
+
+                local currentPos = mouse.absolutePosition()
+                local dx = currentPos.x - dragStartMousePos.x
+                local dy = currentPos.y - dragStartMousePos.y
+
+                -- Check if we've exceeded drag threshold
+                if not isDragging and (math.abs(dx) > dragThreshold or math.abs(dy) > dragThreshold) then
+                    isDragging = true
+                    -- Cancel zoom animation when drag starts
+                    if isZoomed then
+                        isZoomed = false
+                        if zoomAnimTimer then
+                            zoomAnimTimer:stop()
+                            zoomAnimTimer = nil
+                        end
+                        -- Reset to normal size
+                        local data = windowSnapshots.windows[winId]
+                        if data then
+                            snapshotCanvas:frame({
+                                x = dragStartCanvasFrame.x,
+                                y = dragStartCanvasFrame.y,
+                                w = data.snapSize.w,
+                                h = data.snapSize.h
+                            })
+                            snapshotCanvas:transformation(hs.canvas.matrix.identity())
+                        end
+                    end
+                    hideSnapshotTooltip()
+                end
+
+                if isDragging then
+                    -- Move the canvas with the mouse
+                    local data = windowSnapshots.windows[winId]
+                    if data then
+                        snapshotCanvas:topLeft({
+                            x = dragStartCanvasFrame.x + dx,
+                            y = dragStartCanvasFrame.y + dy
+                        })
+                    end
+                end
+
+                return false -- Don't consume the event
+            end)
+
+            -- Start the drag tap when canvas is created
+            dragTap:start()
+
             snapshotCanvas:show()
 
-            -- Update the placeholder with the actual canvas (entry already exists)
+            -- Update the placeholder with the actual canvas and store the drag tap
             if windowSnapshots.windows[winId] then
                 windowSnapshots.windows[winId].canvas = snapshotCanvas
+                windowSnapshots.windows[winId].dragTap = dragTap
             end
 
             windowSnapshots.isCreating = false
@@ -1811,6 +1978,9 @@ end
 
 local function clearAllSnapshots()
     for winId, data in pairs(windowSnapshots.windows) do
+        if data.dragTap then
+            data.dragTap:stop()
+        end
         if data.canvas then
             data.canvas:delete()
         end
@@ -1833,6 +2003,9 @@ local function closeAllSnapshots()
     for winId, data in pairs(windowSnapshots.windows) do
         if data.win and safeGetApplication(data.win) then
             data.win:close()
+        end
+        if data.dragTap then
+            data.dragTap:stop()
         end
         if data.canvas then
             data.canvas:delete()
@@ -1861,7 +2034,12 @@ showSnapshotContextMenu = function(winId, data)
                     data.win:close()
                 end
                 if windowSnapshots.windows[winId] then
-                    windowSnapshots.windows[winId].canvas:delete()
+                    if windowSnapshots.windows[winId].dragTap then
+                        windowSnapshots.windows[winId].dragTap:stop()
+                    end
+                    if windowSnapshots.windows[winId].canvas then
+                        windowSnapshots.windows[winId].canvas:delete()
+                    end
                     windowSnapshots.windows[winId] = nil
                     removeFromSnapshotOrder(winId)
                     updateSnapshotLayout()

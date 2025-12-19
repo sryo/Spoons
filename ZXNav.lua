@@ -62,7 +62,7 @@ local produceModifier = true
 local keyBar
 local showBarTimer
 local safetyTimer        -- auto-release if held too long
-local SAFETY_TIMEOUT = 3 -- seconds
+local SAFETY_TIMEOUT = 8 -- seconds
 
 -- Track ALL held mapped keys
 -- Key: action key name, Value: {mods = {}, key = "keyname"}
