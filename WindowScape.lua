@@ -3,7 +3,7 @@
 
 local spacesOk, spaces = pcall(require, "hs.spaces")
 if not spacesOk then
-    -- Create stub module and inject into package cache so other modules use it too
+    -- Stub for missing hs.spaces
     spaces = {
         focusedSpace = function() return 1 end,
         windowSpaces = function(win) return { 1 } end,
@@ -45,7 +45,7 @@ local cfg                 = {
     -- false = apps in list are INCLUDED for tiling (allow list)
     exclusionMode         = true,
     -- Debounce for bursty window events
-    eventDebounceSeconds  = 0.075,
+    eventDebounceSeconds  = 0.2, -- Increased to allow tab switch events to settle
     -- Animation settings
     enableAnimations      = true,
     animationDuration     = 0.15, -- seconds
@@ -55,7 +55,7 @@ local cfg                 = {
     -- Master layout settings
     masterRatio           = 0.55,   -- Master window takes 55% of space
     masterPosition        = "left", -- "left", "right", "top", "bottom"
-    -- Debug logging
+    -- Debug logging (toggle with Ctrl+Cmd+D)
     debugLogging          = false,
 }
 
@@ -78,10 +78,15 @@ local listPath            = hs.configdir .. "/WindowScape_apps.json"
 local windowOrderBySpace  = {}
 local windowWeights       = {} -- windowId -> weight (default 1.0)
 local pseudoWindows       = {} -- windowId -> { preferredW, preferredH } (windows that maintain aspect ratio)
+local windowLastScreen    = {} -- windowId -> screenId (tracks which screen each window was last on)
 
 -- Focus history for "focus last" behavior
 local focusHistory        = {} -- array of winIds, most recent first
 local focusHistoryMax     = 10 -- keep last N focused windows
+
+-- Track window IDs and frames to detect actual window creation/destruction vs tab switches
+local lastKnownWindowIds  = {} -- Set of window IDs from last tile
+local lastKnownWindowFrames = {} -- winId -> {app, frame} for detecting tab switches
 
 -- Animation state
 local activeAnimations    = {} -- winId -> { timer, startFrame, targetFrame, startTime }
@@ -305,13 +310,10 @@ end
 loadList()
 
 local function isAppIncluded(app, win)
-    -- Returns true if the window should be tiled
     if not (app and win) then return false end
     if not win:isStandard() then return false end
 
     local winId = win:id()
-
-    -- Exclude windows that are hidden via snapshots (alpha=0)
     if winId and windowSnapshots.windows[winId] then return false end
 
     local bundleID = app:bundleID()
@@ -388,7 +390,6 @@ local function getCollapsedWindows(wins)
     return collapsed
 end
 
--- Get weight for a window (default 1.0)
 local function getWindowWeight(win)
     if not win then return 1.0 end
     local winId = win:id()
@@ -396,7 +397,6 @@ local function getWindowWeight(win)
     return windowWeights[winId] or 1.0
 end
 
--- Set weight for a window
 local function setWindowWeight(win, weight)
     if not win then return end
     local winId = win:id()
@@ -427,6 +427,12 @@ local function pruneStaleWeights()
     for winId in pairs(pseudoWindows) do
         if not validIds[winId] then
             pseudoWindows[winId] = nil
+        end
+    end
+    -- Prune window screen tracking
+    for winId in pairs(windowLastScreen) do
+        if not validIds[winId] then
+            windowLastScreen[winId] = nil
         end
     end
 end
@@ -788,6 +794,11 @@ local function tileWindowsInternal()
                 local s = win:screen()
                 if s and s:id() == screenId then
                     table.insert(screenWindows, win)
+                    -- Track which screen this window is on
+                    local winId = win:id()
+                    if winId then
+                        windowLastScreen[winId] = screenId
+                    end
                 end
             end
         end
@@ -890,7 +901,6 @@ local function framesEqual(f1, f2)
     return f1.x == f2.x and f1.y == f2.y and f1.w == f2.w and f1.h == f2.h
 end
 
--- Get the appropriate outline color based on window state
 local function getOutlineColorForWindow(win)
     if not win then return cfg.outlineColor end
     local winId = win:id()
@@ -986,6 +996,7 @@ local function updateOutlineFrame(frame, win)
     local targetColor = getOutlineColorForWindow(win)
 
     if not activeWindowOutline then
+        log("CREATE outline at " .. adjustedFrame.x .. "," .. adjustedFrame.y)
         activeWindowOutline = drawing.rectangle(geometry.rect(adjustedFrame))
         currentOutlineColor = targetColor
         activeWindowOutline:setStrokeColor(currentOutlineColor)
@@ -994,10 +1005,14 @@ local function updateOutlineFrame(frame, win)
         activeWindowOutline:setRoundedRectRadii(cfg.outlineThickness / 2, cfg.outlineThickness / 2)
         activeWindowOutline:setLevel(drawing.windowLevels.floating)
     else
-        if not framesEqual(adjustedFrame, lastOutlineFrame) then
+        local framesMatch = framesEqual(adjustedFrame, lastOutlineFrame)
+        if not framesMatch then
+            local currentFrame = activeWindowOutline:frame()
+            log("MOVING outline from " .. math.floor(currentFrame.x) .. "," .. math.floor(currentFrame.y) ..
+                " to " .. math.floor(adjustedFrame.x) .. "," .. math.floor(adjustedFrame.y))
+            activeWindowOutline:hide()
             activeWindowOutline:setFrame(geometry.rect(adjustedFrame))
         end
-        -- Animate color change
         animateOutlineColor(targetColor)
     end
 
@@ -1050,11 +1065,13 @@ local function startOutlineRefresh(win)
 end
 
 local function drawActiveWindowOutline(win)
+    log("drawOutline: " .. (win and win:title() or "nil") .. " id:" .. tostring(win and win:id()))
     if win and win:isVisible() and not win:isFullScreen() and not isSystem(win) then
         local frame = win:frame()
         if not frame then return end
 
         trackedFocusedWinId = win:id()
+        log("outline frame: " .. frame.x .. "," .. frame.y .. " " .. frame.w .. "x" .. frame.h)
         updateOutlineFrame(frame, win)
         startOutlineRefresh(win)
     else
@@ -1129,7 +1146,6 @@ end
 
 -- Snapshot Tooltip
 
-local snapshotTooltipMaxLength = 40
 local snapshotTooltipCanvas = nil
 local snapshotTooltipFadeTimer = nil
 local snapshotTooltipHideTimer = nil
@@ -1164,10 +1180,8 @@ local function initSnapshotTooltip()
 end
 
 local function showSnapshotTooltip(winId, snapFrame)
-    print("[WindowScape] showSnapshotTooltip called for winId: " .. tostring(winId))
     local data = windowSnapshots.windows[winId]
     if not data or not data.win then
-        print("[WindowScape] No data or win for tooltip")
         return
     end
 
@@ -1844,7 +1858,7 @@ local function createSnapshot(win)
                         for _, scr in ipairs(screen.allScreens()) do
                             local scrFrame = scr:frame()
                             if centerX >= scrFrame.x and centerX < scrFrame.x + scrFrame.w and
-                               centerY >= scrFrame.y and centerY < scrFrame.y + scrFrame.h then
+                                centerY >= scrFrame.y and centerY < scrFrame.y + scrFrame.h then
                                 targetScreen = scr
                                 break
                             end
@@ -2122,24 +2136,19 @@ local function exitSimulatedFullscreen()
         simulatedFullscreen.savedWeights = {}
     end
 
-    -- Show hidden windows by restoring their frames
     for _, data in ipairs(simulatedFullscreen.hiddenWindows) do
         if data.win and safeGetApplication(data.win) and data.frame then
             data.win:setFrame(geometry.rect(data.frame), 0)
         end
     end
     simulatedFullscreen.hiddenWindows = {}
-
-    -- Clear the fullscreen window reference
     simulatedFullscreen.window = nil
 
-    -- Clear overlays
     clearCloseOverlays()
     clearZoomOverlays()
     clearMinimizeOverlays()
     clearPinOverlays()
 
-    -- Re-tile and show outline
     updateWindowOrder()
     tileWindows()
 
@@ -2148,7 +2157,6 @@ local function exitSimulatedFullscreen()
         drawActiveWindowOutline(focused)
     end
 
-    -- Recreate button overlays for all visible windows
     updateButtonOverlaysWithRetry()
 end
 
@@ -2629,6 +2637,8 @@ updateButtonOverlays = function()
     local currentSpace = getCurrentSpace()
     local activeWinIds = {}      -- Windows included in tiling (for zoom/minimize overlays)
     local allStandardWinIds = {} -- All standard windows (for pin overlays)
+    local focusedWin = window.focusedWindow()
+    local focusedWinId = focusedWin and focusedWin:id()
 
     for _, win in ipairs(window.visibleWindows()) do
         local okSpaces = spaces.windowSpaces(win)
@@ -2645,10 +2655,11 @@ updateButtonOverlays = function()
         local sz = win:size()
         local isCollapsed = sz and sz.h <= cfg.collapsedWindowHeight
 
-        if isStandard and not isCollapsed then
+        -- Only show pin overlay on focused window
+        if isStandard and not isCollapsed and winId == focusedWinId then
             allStandardWinIds[winId] = true
 
-            -- Update pin overlay for all standard windows
+            -- Update pin overlay for focused window only
             local pinRect = getPinButtonFrame(win)
             if pinRect then
                 -- App is "excluded" if in exclusion list (app-level only)
@@ -2804,7 +2815,6 @@ local function updateZoomOverlays()
     updateButtonOverlays()
 end
 
--- Check if fullscreen window lost focus - exit fullscreen if so
 local function checkFullscreenFocus()
     if not simulatedFullscreen.active then return end
 
@@ -2820,7 +2830,36 @@ local function checkFullscreenFocus()
     end
 end
 
+local focusDebounceTimer = nil
+local lastKnownFocusedId = nil
+
+-- Backup focus polling - catches focus changes that don't fire windowFocused events
+local focusPollTimer = nil
+
+local function focusPollCallback()
+    local win = window.focusedWindow()
+    if not win then return end
+    local winId = win:id()
+    if winId and winId ~= lastKnownFocusedId then
+        lastKnownFocusedId = winId
+        if win:isVisible() and not win:isFullScreen() and not isSystem(win) then
+            drawActiveWindowOutline(win)
+        end
+    end
+end
+
+local function startFocusPollTimer()
+    if focusPollTimer then
+        focusPollTimer:stop()
+    end
+    focusPollTimer = timer.doEvery(0.1, focusPollCallback)
+    -- Store global reference to prevent garbage collection
+    _G.WindowScapeFocusPollTimer = focusPollTimer
+    _G.WindowScapeFocusPollCallback = focusPollCallback
+end
+
 local function handleWindowFocused(win)
+    log("windowFocused: " .. (win and win:title() or "nil") .. " id:" .. tostring(win and win:id()))
     -- Check if we should exit simulated fullscreen due to focus change
     checkFullscreenFocus()
 
@@ -2828,41 +2867,44 @@ local function handleWindowFocused(win)
     if simulatedFullscreen.active then return end
     if windowSnapshots.isCreating then return end
 
-    if win and win:isVisible() and not win:isFullScreen() and not isSystem(win) then
-        -- Track focus history
-        local winId = win:id()
-        if winId then
-            -- Remove this window from history if it exists
-            for i = #focusHistory, 1, -1 do
-                if focusHistory[i] == winId then
-                    table.remove(focusHistory, i)
+    -- Debounce rapid focus changes (Terminal fires multiple events quickly)
+    if focusDebounceTimer then
+        focusDebounceTimer:stop()
+    end
+
+    focusDebounceTimer = timer.doAfter(0.05, function()
+        focusDebounceTimer = nil
+        -- Get the ACTUAL focused window now, after settling
+        local actualWin = window.focusedWindow()
+        if not actualWin then return end
+        lastKnownFocusedId = actualWin:id()  -- Update so poll doesn't double-trigger
+
+        if actualWin:isVisible() and not actualWin:isFullScreen() and not isSystem(actualWin) then
+            -- Track focus history
+            local winId = actualWin:id()
+            if winId then
+                -- Remove this window from history if it exists
+                for i = #focusHistory, 1, -1 do
+                    if focusHistory[i] == winId then
+                        table.remove(focusHistory, i)
+                    end
+                end
+                -- Add to front
+                table.insert(focusHistory, 1, winId)
+                -- Trim to max size
+                while #focusHistory > focusHistoryMax do
+                    table.remove(focusHistory)
                 end
             end
-            -- Add to front
-            table.insert(focusHistory, 1, winId)
-            -- Trim to max size
-            while #focusHistory > focusHistoryMax do
-                table.remove(focusHistory)
-            end
-        end
 
-        -- Only trigger tiling if not already tiling (prevent cascade from setFrame focus shifts)
-        if tilingCount == 0 and isAppIncluded(safeGetApplication(win), win) then
-            tileWindows()
-            -- Restore focus if setFrame caused it to shift to another window
-            local currentFocus = window.focusedWindow()
-            if currentFocus and currentFocus:id() ~= win:id() then
-                win:focus()
+            drawActiveWindowOutline(actualWin)
+            updateButtonOverlaysWithRetry()
+        else
+            if activeWindowOutline then
+                activeWindowOutline:hide()
             end
         end
-        drawActiveWindowOutline(win)
-        -- Update overlays when focus changes (with retry for AX element availability)
-        updateButtonOverlaysWithRetry()
-    else
-        if activeWindowOutline then
-            activeWindowOutline:hide()
-        end
-    end
+    end)
 end
 
 local function handleWindowEvent()
@@ -2870,6 +2912,99 @@ local function handleWindowEvent()
     if simulatedFullscreen.active then return end
     if windowSnapshots.isCreating then return end
     if tilingCount > 0 then return end
+
+    -- Check if the set of tiled windows actually changed
+    -- This filters out tab switches which fire windowCreated but don't change the window set
+    local currentSpace = getCurrentSpace()
+    local currentWindowIds = {}
+    local currentWindowData = {} -- winId -> {app, frame}
+
+    for _, win in ipairs(window.visibleWindows()) do
+        local okSpaces = spaces.windowSpaces(win)
+        local app = safeGetApplication(win)
+        local winId = win:id()
+        if winId and okSpaces and hs.fnutils.contains(okSpaces, currentSpace) and
+           not win:isFullScreen() and isAppIncluded(app, win) then
+            currentWindowIds[winId] = true
+            local frame = win:frame()
+            local appId = app and (app:bundleID() or app:name()) or "unknown"
+            currentWindowData[winId] = { app = appId, frame = frame }
+        end
+    end
+
+    -- Find new and removed windows
+    local newWindows = {}
+    local removedWindows = {}
+
+    for winId in pairs(currentWindowIds) do
+        if not lastKnownWindowIds[winId] then
+            table.insert(newWindows, winId)
+        end
+    end
+
+    for winId in pairs(lastKnownWindowIds) do
+        if not currentWindowIds[winId] then
+            table.insert(removedWindows, winId)
+        end
+    end
+
+    -- Check if new windows are just tab switches
+    -- Method 1: Same app window added and removed (regardless of position)
+    -- Method 2: New window overlaps with existing window from same app
+    local isTabSwitch = false
+
+    -- Method 1: If adding AND removing windows from the same app, it's a tab switch
+    if #newWindows > 0 and #removedWindows > 0 then
+        for _, newId in ipairs(newWindows) do
+            local newData = currentWindowData[newId]
+            if newData then
+                for _, oldId in ipairs(removedWindows) do
+                    local oldData = lastKnownWindowFrames[oldId]
+                    if oldData and oldData.app == newData.app then
+                        -- Same app adding and removing - definitely a tab switch
+                        isTabSwitch = true
+                        break
+                    end
+                end
+            end
+            if isTabSwitch then break end
+        end
+    end
+
+    -- Method 2: Check if new window overlaps with existing window from same app (stale old tab)
+    if not isTabSwitch and #newWindows > 0 then
+        for _, newId in ipairs(newWindows) do
+            local newData = currentWindowData[newId]
+            if newData then
+                for existingId, existingData in pairs(currentWindowData) do
+                    if existingId ~= newId and existingData.app == newData.app then
+                        -- Same app, different window - check if frames overlap significantly
+                        local frameDiff = math.abs(newData.frame.x - existingData.frame.x) +
+                                         math.abs(newData.frame.y - existingData.frame.y) +
+                                         math.abs(newData.frame.w - existingData.frame.w) +
+                                         math.abs(newData.frame.h - existingData.frame.h)
+                        if frameDiff < 500 then
+                            isTabSwitch = true
+                            break
+                        end
+                    end
+                end
+            end
+            if isTabSwitch then break end
+        end
+    end
+
+    -- Update tracking
+    lastKnownWindowIds = currentWindowIds
+    lastKnownWindowFrames = currentWindowData
+
+    if isTabSwitch then
+        return
+    end
+
+    if #newWindows == 0 and #removedWindows == 0 then
+        return
+    end
 
     local focusedWindow = window.focusedWindow()
     updateWindowOrder()
@@ -3161,24 +3296,31 @@ local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
     return insertIndex
 end
 
--- Check if any animations are currently running
-local function hasActiveAnimations()
-    for _ in pairs(activeAnimations) do
-        return true
-    end
-    return false
-end
 
 local function handleWindowMoved(win)
     if not win then return end
+    local winId = win:id()
 
-    -- Skip during fullscreen, snapshot creation, or our own tiling to prevent loops
+    -- Skip during fullscreen or snapshot creation
     if simulatedFullscreen.active then return end
     if windowSnapshots.isCreating then return end
+
+    -- Skip newly created windows - they're handled by handleWindowEvent
+    -- This prevents tab switches from triggering extra retiles via windowMoved
+    if winId and not lastKnownWindowIds[winId] then
+        return
+    end
+
+    -- Always update outline for the focused window, even during tiling
+    local focusedWin = window.focusedWindow()
+    if focusedWin and focusedWin:id() == winId then
+        drawActiveWindowOutline(focusedWin)
+    end
+
+    -- Skip tiling logic during our own tiling to prevent loops
     if tilingCount > 0 then return end
 
     -- Skip if THIS window is currently being animated (but allow others)
-    local winId = win:id()
     if winId and activeAnimations[winId] then return end
 
     local app = safeGetApplication(win)
@@ -3199,6 +3341,20 @@ local function handleWindowMoved(win)
     local screenFrame = getAdjustedScreenFrame(winScreen) -- Use adjusted frame to match tiling
     local screenId = winScreen:id()
     local horizontal = (screenFrame.w > screenFrame.h)
+
+    -- Check if window moved to a different screen
+    local previousScreenId = windowLastScreen[winId]
+    if previousScreenId and previousScreenId ~= screenId then
+        -- Window changed screens - trigger full retile immediately
+        if pendingReposition then
+            pendingReposition:stop()
+            pendingReposition = nil
+        end
+        windowLastScreen[winId] = screenId -- Update tracking
+        updateWindowOrder()
+        tileWindows()
+        return
+    end
 
     -- Get all non-collapsed windows for this screen
     local currentOrder = windowOrderBySpace[currentSpace] or {}
@@ -3421,7 +3577,6 @@ local initialFingerCount         = 0
 local gestureStartTime           = 0
 local lastActionTime             = 0
 local gestureStartThreshold      = 0.15 -- Time to let all initial fingers settle before detecting +1
-local lastTouchCount             = 0
 local initialTouchIdentities     = {}   -- Store touch identities instead of positions
 
 -- Double-tap detection
@@ -3471,7 +3626,6 @@ local function handleTTTaps(event)
         end
         actionPerformedThisGesture = false
         fingersAddedDuringSettling = false
-        lastTouchCount = 0
         return false
     end
 
@@ -3540,7 +3694,6 @@ local function handleTTTaps(event)
         end
     end
 
-    lastTouchCount = touchCount
     return false -- Don't consume event, let other taps receive it
 end
 
@@ -3702,12 +3855,30 @@ local function bindHotkeys()
         log("Animations: " .. (cfg.enableAnimations and "enabled" or "disabled"))
     end)
 
+    -- Toggle debug logging (Ctrl+Cmd+D)
+    hotkey.bind(cfg.mods, "D", function()
+        cfg.debugLogging = not cfg.debugLogging
+        print("[WindowScape] Debug logging: " .. (cfg.debugLogging and "ON" or "OFF"))
+    end)
+
+    -- Show what Hammerspoon thinks is focused (Ctrl+Cmd+F)
+    hotkey.bind(cfg.mods, "F", function()
+        local win = window.focusedWindow()
+        if win then
+            local frame = win:frame()
+            print("[WindowScape] HS thinks focused: " .. (win:title() or "nil") .. " id:" .. tostring(win:id()) .. " at " .. frame.x .. "," .. frame.y)
+        else
+            print("[WindowScape] HS thinks no window is focused")
+        end
+        print("[WindowScape] lastKnownFocusedId: " .. tostring(lastKnownFocusedId))
+    end)
+
     if cfg.enableTTTaps then
         startTTTapsRecognition()
     end
 end
 
-local function handleWindowDestroyed(_)
+local function handleWindowDestroyed(win)
     pruneStaleWeights() -- Clean up weights for the destroyed window
     updateWindowOrder()
     tileWindows()
@@ -3720,7 +3891,7 @@ local function handleWindowDestroyed(_)
 end
 
 local eventDebounce = nil
-local function debouncedHandleWindowEvent()
+local function debouncedHandleWindowEvent(win, appName, eventName)
     if eventDebounce then
         eventDebounce:stop()
     end
@@ -3736,7 +3907,8 @@ window.filter.default:subscribe({
     window.filter.windowUnhidden,
     window.filter.windowMinimized,
     window.filter.windowUnminimized,
-    window.filter.windowsChanged
+    -- Note: windowsChanged removed - it fires on title changes (e.g., terminal tab switches)
+    -- which caused unnecessary retiling. The specific events above cover actual window changes.
 }, debouncedHandleWindowEvent)
 
 -- Separate handler for windowMoved to support drag-to-reposition
@@ -3827,6 +3999,12 @@ local function preventGC()
         log("TTTaps was disabled, restarting...")
         startTTTapsRecognition()
     end
+
+    -- Reference focusPollTimer to prevent garbage collection
+    if focusPollTimer and not focusPollTimer:running() then
+        log("Focus poll timer stopped, restarting...")
+        startFocusPollTimer()
+    end
 end
 
 hs.timer.doEvery(10, preventGC) -- Check every 10 seconds for stuck flags and GC'd eventtaps
@@ -3834,6 +4012,22 @@ hs.timer.doEvery(10, preventGC) -- Check every 10 seconds for stuck flags and GC
 local initialFocusedWindow = window.focusedWindow()
 if initialFocusedWindow then
     drawActiveWindowOutline(initialFocusedWindow)
+    lastKnownFocusedId = initialFocusedWindow:id()
+end
+
+-- Start the focus poll timer (defined at module scope to prevent GC)
+startFocusPollTimer()
+
+-- Initialize the known window set before first tile
+local currentSpace = getCurrentSpace()
+for _, win in ipairs(window.visibleWindows()) do
+    local okSpaces = spaces.windowSpaces(win)
+    local app = safeGetApplication(win)
+    local winId = win:id()
+    if winId and okSpaces and hs.fnutils.contains(okSpaces, currentSpace) and
+       not win:isFullScreen() and isAppIncluded(app, win) then
+        lastKnownWindowIds[winId] = true
+    end
 end
 
 updateWindowOrder()
