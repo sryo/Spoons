@@ -2907,11 +2907,33 @@ local function handleWindowFocused(win)
     end)
 end
 
+local pendingWindowEvent = nil -- Timer for retrying dropped events
+
 local function handleWindowEvent()
-    -- Skip if in simulated fullscreen, during snapshot creation, or already tiling
-    if simulatedFullscreen.active then return end
-    if windowSnapshots.isCreating then return end
-    if tilingCount > 0 then return end
+    log("handleWindowEvent called - tilingCount=" .. tilingCount)
+    -- Skip if in simulated fullscreen or during snapshot creation
+    if simulatedFullscreen.active then
+        log("handleWindowEvent: skipped (simulatedFullscreen.active)")
+        return
+    end
+    if windowSnapshots.isCreating then
+        log("handleWindowEvent: skipped (windowSnapshots.isCreating)")
+        return
+    end
+    -- If currently tiling, defer this event instead of dropping it
+    if tilingCount > 0 then
+        log("handleWindowEvent: deferred (tilingCount=" .. tilingCount .. ")")
+        if pendingWindowEvent then
+            pendingWindowEvent:stop()
+        end
+        -- Retry after animation should be complete
+        local retryDelay = cfg.enableAnimations and (cfg.animationDuration + 0.15) or 0.2
+        pendingWindowEvent = timer.doAfter(retryDelay, function()
+            pendingWindowEvent = nil
+            handleWindowEvent()
+        end)
+        return
+    end
 
     -- Check if the set of tiled windows actually changed
     -- This filters out tab switches which fire windowCreated but don't change the window set
@@ -2971,19 +2993,23 @@ local function handleWindowEvent()
         end
     end
 
-    -- Method 2: Check if new window overlaps with existing window from same app (stale old tab)
-    if not isTabSwitch and #newWindows > 0 then
+    -- Method 2: Check if new window has nearly identical frame to existing window from same app
+    -- This catches stale tab remnants that sometimes linger with the same position/size
+    -- ONLY apply this if we also have removed windows (pure additions should tile normally)
+    -- Use a very strict threshold (< 10) to avoid false positives with cascaded windows
+    if not isTabSwitch and #newWindows > 0 and #removedWindows > 0 then
         for _, newId in ipairs(newWindows) do
             local newData = currentWindowData[newId]
             if newData then
                 for existingId, existingData in pairs(currentWindowData) do
                     if existingId ~= newId and existingData.app == newData.app then
-                        -- Same app, different window - check if frames overlap significantly
+                        -- Same app, different window - check if frames are nearly identical
+                        -- Real tab switches have almost exactly the same frame
                         local frameDiff = math.abs(newData.frame.x - existingData.frame.x) +
                                          math.abs(newData.frame.y - existingData.frame.y) +
                                          math.abs(newData.frame.w - existingData.frame.w) +
                                          math.abs(newData.frame.h - existingData.frame.h)
-                        if frameDiff < 500 then
+                        if frameDiff < 10 then
                             isTabSwitch = true
                             break
                         end
@@ -2998,14 +3024,19 @@ local function handleWindowEvent()
     lastKnownWindowIds = currentWindowIds
     lastKnownWindowFrames = currentWindowData
 
+    log("handleWindowEvent: newWindows=" .. #newWindows .. ", removedWindows=" .. #removedWindows .. ", isTabSwitch=" .. tostring(isTabSwitch))
+
     if isTabSwitch then
+        log("handleWindowEvent: skipped (detected as tab switch)")
         return
     end
 
     if #newWindows == 0 and #removedWindows == 0 then
+        log("handleWindowEvent: skipped (no window changes)")
         return
     end
 
+    log("handleWindowEvent: proceeding to tile")
     local focusedWindow = window.focusedWindow()
     updateWindowOrder()
     tileWindows()
