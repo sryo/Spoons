@@ -2970,46 +2970,22 @@ local function handleWindowEvent()
         end
     end
 
-    -- Check if new windows are just tab switches
-    -- Method 1: Same app window added and removed (regardless of position)
-    -- Method 2: New window overlaps with existing window from same app
+    -- Check if new windows are just tab switches (same app add+remove with similar frame)
     local isTabSwitch = false
 
-    -- Method 1: If adding AND removing windows from the same app, it's a tab switch
     if #newWindows > 0 and #removedWindows > 0 then
         for _, newId in ipairs(newWindows) do
             local newData = currentWindowData[newId]
-            if newData then
+            if newData and newData.frame then
                 for _, oldId in ipairs(removedWindows) do
                     local oldData = lastKnownWindowFrames[oldId]
-                    if oldData and oldData.app == newData.app then
-                        -- Same app adding and removing - definitely a tab switch
-                        isTabSwitch = true
-                        break
-                    end
-                end
-            end
-            if isTabSwitch then break end
-        end
-    end
-
-    -- Method 2: Check if new window has nearly identical frame to existing window from same app
-    -- This catches stale tab remnants that sometimes linger with the same position/size
-    -- ONLY apply this if we also have removed windows (pure additions should tile normally)
-    -- Use a very strict threshold (< 10) to avoid false positives with cascaded windows
-    if not isTabSwitch and #newWindows > 0 and #removedWindows > 0 then
-        for _, newId in ipairs(newWindows) do
-            local newData = currentWindowData[newId]
-            if newData then
-                for existingId, existingData in pairs(currentWindowData) do
-                    if existingId ~= newId and existingData.app == newData.app then
-                        -- Same app, different window - check if frames are nearly identical
-                        -- Real tab switches have almost exactly the same frame
-                        local frameDiff = math.abs(newData.frame.x - existingData.frame.x) +
-                                         math.abs(newData.frame.y - existingData.frame.y) +
-                                         math.abs(newData.frame.w - existingData.frame.w) +
-                                         math.abs(newData.frame.h - existingData.frame.h)
-                        if frameDiff < 10 then
+                    if oldData and oldData.app == newData.app and oldData.frame then
+                        -- Same app adding and removing - check if frames are similar (actual tab switch)
+                        local frameDiff = math.abs(newData.frame.x - oldData.frame.x) +
+                                         math.abs(newData.frame.y - oldData.frame.y) +
+                                         math.abs(newData.frame.w - oldData.frame.w) +
+                                         math.abs(newData.frame.h - oldData.frame.h)
+                        if frameDiff < 50 then
                             isTabSwitch = true
                             break
                         end
