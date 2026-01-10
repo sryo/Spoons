@@ -3,11 +3,33 @@
 local SideSwipe = {}
 
 SideSwipe.config = {
-    edgeWidth = 0.02,
+    edgeWidth = 0.002,
     edgePadding = 0.08,
     showHud = true,
     hudDuration = 1,
-    debug = false
+    debug = false,
+    edges = {
+        left = "brightness",
+        right = "volume",
+        top = nil,
+        bottom = nil
+    }
+}
+
+local actions = {
+    volume = {
+        fn = function(value)
+            local device = hs.audiodevice.defaultOutputDevice()
+            if device then device:setVolume(value) end
+        end,
+        symbol = "♪"
+    },
+    brightness = {
+        fn = function(value)
+            hs.brightness.set(math.floor(value))
+        end,
+        symbol = "☀"
+    }
 }
 
 local function debugPrint(message)
@@ -18,14 +40,18 @@ end
 
 local canvasSize = 80
 local ringSize = 66
-local screenSize = hs.screen.mainScreen():frame()
 
-local hud = hs.canvas.new({
-    x = (screenSize.w - canvasSize) / 2,
-    y = screenSize.h - canvasSize - 40,
-    w = canvasSize,
-    h = canvasSize
-})
+local function getHudFrame()
+    local screenSize = hs.screen.mainScreen():frame()
+    return {
+        x = (screenSize.w - canvasSize) / 2,
+        y = screenSize.h - canvasSize - 40,
+        w = canvasSize,
+        h = canvasSize
+    }
+end
+
+local hud = hs.canvas.new(getHudFrame())
 
 hud[1] = {
     type = "circle",
@@ -76,27 +102,12 @@ local function showHud(symbol, value)
     end)
 end
 
-local function setVolume(value)
-    local device = hs.audiodevice.defaultOutputDevice()
-    if not device then return end
-
-    device:setVolume(value)
-    debugPrint("Volume: " .. value)
-    showHud("♪", value)
-end
-
-local function setBrightness(value)
-    hs.brightness.set(math.floor(value))
-    debugPrint("Brightness: " .. value)
-    showHud("☀", value)
-end
-
-local function getEdge(x)
-    if x <= SideSwipe.config.edgeWidth then
-        return "left"
-    elseif x >= 1 - SideSwipe.config.edgeWidth then
-        return "right"
-    end
+local function getEdge(x, y)
+    local w = SideSwipe.config.edgeWidth
+    if x <= w then return "left" end
+    if x >= 1 - w then return "right" end
+    if y <= w then return "top" end
+    if y >= 1 - w then return "bottom" end
     return nil
 end
 
@@ -111,22 +122,27 @@ local function handleTouches(touches)
             currentIds[id] = true
 
             if touch.touching then
-                local edge = getEdge(touch.normalizedPosition.x)
+                local x, y = touch.normalizedPosition.x, touch.normalizedPosition.y
+                local edge = getEdge(x, y)
 
                 -- Ignore touches that didn't start in edge zone
                 if validTouches[id] == nil then
                     validTouches[id] = edge or false
                 end
-                if validTouches[id] then
-                    local pad = SideSwipe.config.edgePadding
-                    local y = touch.normalizedPosition.y
-                    local value = math.max(0, math.min(100, (y - pad) / (1 - 2 * pad) * 100))
-                    if validTouches[id] == "left" then
-                        setVolume(value)
-                    else
-                        setBrightness(value)
+
+                local activeEdge = validTouches[id]
+                if activeEdge then
+                    local actionName = SideSwipe.config.edges[activeEdge]
+                    local action = actionName and actions[actionName]
+                    if action then
+                        local pad = SideSwipe.config.edgePadding
+                        local pos = (activeEdge == "left" or activeEdge == "right") and y or x
+                        local value = math.max(0, math.min(100, (pos - pad) / (1 - 2 * pad) * 100))
+                        action.fn(value)
+                        debugPrint(actionName .. ": " .. value)
+                        showHud(action.symbol, value)
+                        return
                     end
-                    return
                 end
             end
         end
@@ -140,6 +156,12 @@ local function handleTouches(touches)
 end
 
 local gestureEventtap = nil
+local screenWatcher = nil
+
+local function repositionHud()
+    hud:frame(getHudFrame())
+    debugPrint("HUD repositioned")
+end
 
 function SideSwipe.start()
     gestureEventtap = hs.eventtap.new({ hs.eventtap.event.types.gesture }, function(e)
@@ -148,6 +170,8 @@ function SideSwipe.start()
         return false
     end)
     gestureEventtap:start()
+    screenWatcher = hs.screen.watcher.new(repositionHud)
+    screenWatcher:start()
     debugPrint("SideSwipe started")
 end
 
@@ -155,6 +179,10 @@ function SideSwipe.stop()
     if gestureEventtap then
         gestureEventtap:stop()
         gestureEventtap = nil
+    end
+    if screenWatcher then
+        screenWatcher:stop()
+        screenWatcher = nil
     end
     hud:hide()
     debugPrint("SideSwipe stopped")
