@@ -26,6 +26,13 @@ local actions = {
     },
     brightness = {
         fn = function(value)
+            for _, screen in ipairs(hs.screen.allScreens()) do
+                local name = screen:name() or ""
+                if name:find("Built%-in") or name:find("Color LCD") or name:find("Internal") then
+                    screen:setBrightness(value / 100)
+                    return
+                end
+            end
             hs.brightness.set(math.floor(value))
         end,
         symbol = "☀"
