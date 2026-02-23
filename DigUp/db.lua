@@ -211,16 +211,6 @@ function db.init()
         print("[DigUp] FTS5 trigram not available, fuzzy search will use char-drop fallback")
     end
 
-    -- Register Levenshtein as SQL function for re-ranking
-    local ok_func = pcall(function()
-        conn:create_function("edit_dist", 2, function(ctx, a, b)
-            ctx:result_number(levenshtein(tostring(a or ""), tostring(b or "")))
-        end)
-    end)
-    if not ok_func then
-        print("[DigUp] Could not register edit_dist SQL function")
-    end
-
     return true
 end
 
@@ -544,48 +534,6 @@ function db.search(query, limit)
         results = mergeIntoEvents(raw)
         if #results > 0 then
             results = scoreAndRank(results, query)
-        end
-    end
-
-    -- Tier 3: char-drop fallback (last resort, 1 word >= 4 chars)
-    if #results == 0 then
-        local words = {}
-        for w in query:gmatch("%S+") do words[#words + 1] = w end
-
-        if #words == 1 and #words[1] >= 4 then
-            local word = words[1]
-            local seenVariants = {}
-            local fallbackRaw = {}
-            for i = 1, #word do
-                local variant = word:sub(1, i - 1) .. word:sub(i + 1)
-                if not seenVariants[variant] then
-                    seenVariants[variant] = true
-                    local vResults = runSearch(variant .. "*", limit)
-                    for _, r in ipairs(vResults) do
-                        fallbackRaw[#fallbackRaw + 1] = r
-                        if #fallbackRaw >= limit * 3 then break end
-                    end
-                end
-                if #fallbackRaw >= limit * 3 then break end
-            end
-
-            -- Deduplicate by frameId (same frame can match multiple variants)
-            local seenFrames = {}
-            local unique = {}
-            for _, r in ipairs(fallbackRaw) do
-                if not seenFrames[r.frameId] then
-                    seenFrames[r.frameId] = true
-                    unique[#unique + 1] = r
-                end
-            end
-
-            -- Sort by timestamp DESC before merging
-            table.sort(unique, function(a, b) return (a.timestamp or 0) > (b.timestamp or 0) end)
-
-            results = mergeIntoEvents(unique)
-            if #results > 0 then
-                results = scoreAndRank(results, query)
-            end
         end
     end
 
