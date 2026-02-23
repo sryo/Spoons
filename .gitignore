@@ -1,0 +1,18 @@
+# Personal data (screenshots, database, compiled binary)
+DigUp/data/
+
+# Editor settings
+.vscode/
+.zed/
+
+# Claude Code
+.claude/
+
+# Python
+.venv/
+
+# macOS
+.DS_Store
+
+# User-specific config
+WindowScape_apps.json
