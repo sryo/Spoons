@@ -167,25 +167,9 @@ function M.cleanup()
     end
 end
 
--- Re-export UI functions so existing callers don't change.
-M.clearAllOverlays              = function() ui.clearAllOverlays() end
-M.clearZoomOverlays             = function() ui.clearZoomOverlays() end
-M.clearMinimizeOverlays         = function() ui.clearMinimizeOverlays() end
-M.clearPinOverlays              = function() ui.clearPinOverlays() end
-M.clearCloseOverlays            = function() ui.clearCloseOverlays() end
-M.createZoomOverlay             = function(win) return ui.createZoomOverlay(win) end
-M.createMinimizeOverlay         = function(win) return ui.createMinimizeOverlay(win) end
-M.createPinOverlay              = function(win) return ui.createPinOverlay(win) end
-M.createCloseOverlay            = function(win) return ui.createCloseOverlay(win) end
-M.showButtonTooltip             = function(text, x, y) ui.showButtonTooltip(text, x, y) end
-M.hideButtonTooltip             = function() ui.hideButtonTooltip() end
-M.getZoomButtonRect             = function(win) return ui.getZoomButtonRect(win) end
-M.getMinimizeButtonRect         = function(win) return ui.getMinimizeButtonRect(win) end
-M.getCloseButtonRect            = function(win) return ui.getCloseButtonRect(win) end
-M.getPinButtonFrame             = function(win) return ui.getPinButtonFrame(win) end
-M.updatePinOverlayAppearance    = function(overlay, isPinned) ui.updatePinOverlayAppearance(overlay, isPinned) end
-M.updateButtonOverlays          = function() ui.updateButtonOverlays() end
-M.updateButtonOverlaysDebounced = function() ui.updateButtonOverlaysDebounced() end
-M.updateButtonOverlaysWithRetry = function() ui.updateButtonOverlaysWithRetry() end
+-- Any access on M that isn't defined locally falls through to ui — covers
+-- clear/create/show/hide button helpers, getButtonRect helpers, and the
+-- updateButtonOverlays / updateButtonOverlaysWithRetry / Debounced functions.
+setmetatable(M, { __index = ui })
 
 return M

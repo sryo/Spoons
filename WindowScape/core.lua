@@ -38,7 +38,6 @@ M.listedApps = {}
 -- Window state
 M.windowOrderBySpace    = {}
 M.windowWeights         = {} -- winId -> weight (default 1.0)
-M.pseudoWindows         = {} -- winId -> { preferredW, preferredH }
 M.windowLastScreen      = {} -- winId -> screenId
 M.focusHistory          = {} -- array of winIds, most recent first
 M.focusHistoryMax       = 10

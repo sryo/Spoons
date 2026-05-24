@@ -1,6 +1,5 @@
 -- Fullscreen UI: button overlays (zoom, minimize, pin, close), their tooltip,
 -- and the periodic / debounced / retry-on-AX update loops.
--- Extracted from WindowScape/fullscreen.lua.
 
 local canvas      = require("hs.canvas")
 local timer       = require("hs.timer")
@@ -12,6 +11,8 @@ local M = {}
 
 local cfg, callbacks
 
+local OVERLAY_PADDING = 4
+
 -- Overlay state — keyed by winId.
 M.zoomOverlays     = {}
 M.minimizeOverlays = {}
@@ -22,23 +23,33 @@ local buttonTooltipCanvas = nil
 local buttonTooltipTimer  = nil
 local overlayUpdateTimer  = nil
 
-local function log(msg)
-    if callbacks.log then callbacks.log(msg) end
+local function padRect(rect)
+    return {
+        x = rect.x - OVERLAY_PADDING,
+        y = rect.y - OVERLAY_PADDING,
+        w = rect.w + OVERLAY_PADDING * 2,
+        h = rect.h + OVERLAY_PADDING * 2,
+    }
 end
 
--- AX-driven button rect. Skips buttons that resolve outside the window frame
--- (e.g. inside Arc's autohiding sidebar).
-local function getButtonRect(win, axAttributeName)
-    if not win then return nil end
+local function clearOverlaySet(set)
+    for k, overlay in pairs(set) do
+        if overlay then overlay:delete() end
+        set[k] = nil
+    end
+end
+
+-- Resolve the AX rect for the named button on an already-resolved AX window.
+-- Skips buttons that resolve outside the window frame (e.g. Arc's autohiding sidebar).
+local function getButtonRectFor(axWin, win, axAttributeName)
+    if not axWin then return nil end
     local ok, result = pcall(function()
-        local axWin = axuielement.windowElement(win)
-        if not axWin then return nil end
         local button = axWin:attributeValue(axAttributeName)
         if not button then return nil end
         local pos = button:attributeValue("AXPosition")
         local size = button:attributeValue("AXSize")
         if not (pos and size) then return nil end
-        local winFrame = win:frame()
+        local winFrame = win and win:frame()
         if winFrame then
             local cx = pos.x + size.w / 2
             local cy = pos.y + size.h / 2
@@ -52,26 +63,19 @@ local function getButtonRect(win, axAttributeName)
     return ok and result or nil
 end
 
+local function getButtonRect(win, axAttributeName)
+    if not win then return nil end
+    return getButtonRectFor(axuielement.windowElement(win), win, axAttributeName)
+end
+
 function M.getZoomButtonRect(win)     return getButtonRect(win, "AXZoomButton")     end
 function M.getMinimizeButtonRect(win) return getButtonRect(win, "AXMinimizeButton") end
 function M.getCloseButtonRect(win)    return getButtonRect(win, "AXCloseButton")    end
 
-function M.clearZoomOverlays()
-    for _, overlay in pairs(M.zoomOverlays) do if overlay then overlay:delete() end end
-    M.zoomOverlays = {}
-end
-function M.clearMinimizeOverlays()
-    for _, overlay in pairs(M.minimizeOverlays) do if overlay then overlay:delete() end end
-    M.minimizeOverlays = {}
-end
-function M.clearPinOverlays()
-    for _, overlay in pairs(M.pinOverlays) do if overlay then overlay:delete() end end
-    M.pinOverlays = {}
-end
-function M.clearCloseOverlays()
-    for _, overlay in pairs(M.closeOverlays) do if overlay then overlay:delete() end end
-    M.closeOverlays = {}
-end
+function M.clearZoomOverlays()     clearOverlaySet(M.zoomOverlays)     end
+function M.clearMinimizeOverlays() clearOverlaySet(M.minimizeOverlays) end
+function M.clearPinOverlays()      clearOverlaySet(M.pinOverlays)      end
+function M.clearCloseOverlays()    clearOverlaySet(M.closeOverlays)    end
 function M.clearAllOverlays()
     M.clearZoomOverlays()
     M.clearMinimizeOverlays()
@@ -124,11 +128,7 @@ function M.createZoomOverlay(win)
     local rect = M.getZoomButtonRect(win)
     if not rect then return nil end
 
-    local padding = 4
-    local overlay = canvas.new({
-        x = rect.x - padding, y = rect.y - padding,
-        w = rect.w + padding * 2, h = rect.h + padding * 2,
-    })
+    local overlay = canvas.new(padRect(rect))
     overlay:appendElements({
         type = "rectangle",
         action = "fill",
@@ -175,11 +175,7 @@ function M.createMinimizeOverlay(win)
     local rect = M.getMinimizeButtonRect(win)
     if not rect then return nil end
 
-    local padding = 4
-    local overlay = canvas.new({
-        x = rect.x - padding, y = rect.y - padding,
-        w = rect.w + padding * 2, h = rect.h + padding * 2,
-    })
+    local overlay = canvas.new(padRect(rect))
     overlay:appendElements({
         type = "rectangle",
         action = "fill",
@@ -251,6 +247,8 @@ function M.getPinButtonFrame(win)
     }
 end
 
+-- Pin button: click toggles the window's app in/out of the tiling exclusion list.
+-- Color: orange when the app is currently excluded, gray when included.
 function M.createPinOverlay(win)
     if not win then return nil end
     local winId = win:id()
@@ -259,13 +257,10 @@ function M.createPinOverlay(win)
     local frame = M.getPinButtonFrame(win)
     if not frame then return nil end
 
-    local padding = 4
-    local isPinned = callbacks.isPseudoWindow and callbacks.isPseudoWindow(winId) or false
+    local app = callbacks.safeGetApplication and callbacks.safeGetApplication(win)
+    local isExcluded = app and callbacks.isAppIncluded and not callbacks.isAppIncluded(app, win)
 
-    local overlay = canvas.new({
-        x = frame.x - padding, y = frame.y - padding,
-        w = frame.w + padding * 2, h = frame.h + padding * 2,
-    })
+    local overlay = canvas.new(padRect(frame))
     overlay:appendElements({
         type = "rectangle",
         action = "fill",
@@ -275,9 +270,9 @@ function M.createPinOverlay(win)
     overlay:appendElements({
         type = "circle",
         action = "fill",
-        center = { x = frame.w / 2 + padding, y = frame.h / 2 + padding },
+        center = { x = frame.w / 2 + OVERLAY_PADDING, y = frame.h / 2 + OVERLAY_PADDING },
         radius = frame.w / 2 - 1,
-        fillColor = isPinned
+        fillColor = isExcluded
             and { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.9 }
             or { red = 0.3, green = 0.3, blue = 0.3, alpha = 0.6 },
     })
@@ -292,8 +287,9 @@ function M.createPinOverlay(win)
 
         if msg == "mouseEnter" then
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.2 })
-            local currentPinned = callbacks.isPseudoWindow and callbacks.isPseudoWindow(winId) or false
-            M.showButtonTooltip(currentPinned and "Unpin" or "Pin", centerX, centerY)
+            local currentApp = callbacks.safeGetApplication and callbacks.safeGetApplication(win)
+            local currentlyExcluded = currentApp and callbacks.isAppIncluded and not callbacks.isAppIncluded(currentApp, win)
+            M.showButtonTooltip(currentlyExcluded and "Include" or "Exclude", centerX, centerY)
         elseif msg == "mouseExit" then
             c:elementAttribute(1, "fillColor", { alpha = 0.01 })
             M.hideButtonTooltip()
@@ -301,10 +297,8 @@ function M.createPinOverlay(win)
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.4 })
         elseif msg == "mouseUp" then
             M.hideButtonTooltip()
-            if callbacks.togglePseudoWindow then callbacks.togglePseudoWindow(winId) end
-            local newPinned = callbacks.isPseudoWindow and callbacks.isPseudoWindow(winId) or false
-            M.updatePinOverlayAppearance(c, newPinned)
-            if callbacks.tileWindows then callbacks.tileWindows() end
+            if callbacks.toggleAppExclusion then callbacks.toggleAppExclusion(winId) end
+            -- toggleAppExclusion already retiles and updates outlines; refresh overlays.
             if callbacks.updateButtonOverlays then
                 timer.doAfter(0.1, callbacks.updateButtonOverlays)
             end
@@ -323,11 +317,7 @@ function M.createCloseOverlay(win)
     local rect = M.getCloseButtonRect(win)
     if not rect then return nil end
 
-    local padding = 4
-    local overlay = canvas.new({
-        x = rect.x - padding, y = rect.y - padding,
-        w = rect.w + padding * 2, h = rect.h + padding * 2,
-    })
+    local overlay = canvas.new(padRect(rect))
     overlay:appendElements({
         type = "rectangle",
         action = "fill",
@@ -386,6 +376,7 @@ function M.updateButtonOverlays()
         local isStandard = win:isStandard() and app
         local sz = win:size()
         local isCollapsed = sz and sz.h <= cfg.collapsedWindowHeight
+        local axWin -- resolved lazily; one AX rebuild per window, max.
 
         if isStandard and not isCollapsed and winId == focusedWinId then
             allStandardWinIds[winId] = true
@@ -393,11 +384,7 @@ function M.updateButtonOverlays()
             local pinRect = M.getPinButtonFrame(win)
             if pinRect then
                 local isExcluded = app and callbacks.isAppIncluded and not callbacks.isAppIncluded(app, win)
-                local padding = 4
-                local pinFrame = {
-                    x = pinRect.x - padding, y = pinRect.y - padding,
-                    w = pinRect.w + padding * 2, h = pinRect.h + padding * 2,
-                }
+                local pinFrame = padRect(pinRect)
                 if M.pinOverlays[winId] then
                     M.pinOverlays[winId]:frame(pinFrame)
                     M.updatePinOverlayAppearance(M.pinOverlays[winId], isExcluded)
@@ -413,19 +400,15 @@ function M.updateButtonOverlays()
 
         if app and callbacks.isAppIncluded and callbacks.isAppIncluded(app, win) then
             activeWinIds[winId] = true
+            axWin = axWin or axuielement.windowElement(win)
 
-            local closeRect    = M.getCloseButtonRect(win)
-            local zoomRect     = M.getZoomButtonRect(win)
-            local minimizeRect = M.getMinimizeButtonRect(win)
+            local closeRect    = getButtonRectFor(axWin, win, "AXCloseButton")
+            local zoomRect     = getButtonRectFor(axWin, win, "AXZoomButton")
+            local minimizeRect = getButtonRectFor(axWin, win, "AXMinimizeButton")
 
             if closeRect then
-                local padding = 4
-                local newFrame = {
-                    x = closeRect.x - padding, y = closeRect.y - padding,
-                    w = closeRect.w + padding * 2, h = closeRect.h + padding * 2,
-                }
                 if M.closeOverlays[winId] then
-                    M.closeOverlays[winId]:frame(newFrame)
+                    M.closeOverlays[winId]:frame(padRect(closeRect))
                 else
                     local newOverlay = M.createCloseOverlay(win)
                     if newOverlay then M.closeOverlays[winId] = newOverlay end
@@ -436,13 +419,8 @@ function M.updateButtonOverlays()
             end
 
             if zoomRect then
-                local padding = 4
-                local newFrame = {
-                    x = zoomRect.x - padding, y = zoomRect.y - padding,
-                    w = zoomRect.w + padding * 2, h = zoomRect.h + padding * 2,
-                }
                 if M.zoomOverlays[winId] then
-                    M.zoomOverlays[winId]:frame(newFrame)
+                    M.zoomOverlays[winId]:frame(padRect(zoomRect))
                 else
                     local newOverlay = M.createZoomOverlay(win)
                     if newOverlay then M.zoomOverlays[winId] = newOverlay end
@@ -453,13 +431,8 @@ function M.updateButtonOverlays()
             end
 
             if minimizeRect then
-                local padding = 4
-                local newFrame = {
-                    x = minimizeRect.x - padding, y = minimizeRect.y - padding,
-                    w = minimizeRect.w + padding * 2, h = minimizeRect.h + padding * 2,
-                }
                 if M.minimizeOverlays[winId] then
-                    M.minimizeOverlays[winId]:frame(newFrame)
+                    M.minimizeOverlays[winId]:frame(padRect(minimizeRect))
                 else
                     local newOverlay = M.createMinimizeOverlay(win)
                     if newOverlay then M.minimizeOverlays[winId] = newOverlay end

@@ -43,12 +43,10 @@ end
 
 -- Focus the previously focused window, skipping minimized / hidden ones.
 function M.focusPreviousWindow(excludeWinId)
-    local snapshotsState = core.snapshotsState
     for _, winId in ipairs(core.focusHistory) do
         if winId ~= excludeWinId then
             local win = window.get(winId)
-            local isMinimized = snapshotsState and snapshotsState.windows[winId]
-            if win and win:isVisible() and not isMinimized then
+            if win and win:isVisible() and not snapshots.isMinimized(winId) then
                 win:focus()
                 return true
             end
@@ -592,7 +590,7 @@ local function setupWindowFilterSubscriptions()
             local winId = win:id()
             if not winId then return end
 
-            if not core.snapshotsState.windows[winId] then
+            if not snapshots.isMinimized(winId) then
                 core.log("Recovering accidentally minimized window: " .. (win:title() or "untitled"))
                 timer.doAfter(0.1, function()
                     if win and win:isMinimized() then

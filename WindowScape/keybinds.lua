@@ -7,7 +7,7 @@ local window = require("hs.window")
 local M = {}
 
 local cfg
-local core, tiler, fullscreen, outline, operations, animation, gestures
+local core, tiler, fullscreen, outline, operations, gestures
 
 local drawActiveWindowOutline
 
@@ -18,14 +18,13 @@ function M.init(config, deps)
     fullscreen = deps.fullscreen
     outline    = deps.outline
     operations = deps.operations
-    animation  = deps.animation
     gestures   = deps.gestures
 
     drawActiveWindowOutline = outline.draw
 end
 
-local function toggleFocusedWindowInList()
-    local focused = window.focusedWindow()
+local function toggleFocusedWindowInList(win)
+    local focused = win or window.focusedWindow()
     if not focused then return end
     if focused:isFullScreen() then return end
 
@@ -53,18 +52,6 @@ local function toggleFocusedWindowInList()
     fullscreen.updateButtonOverlaysWithRetry()
 end
 M.toggleFocusedWindowInList = toggleFocusedWindowInList
-
-function M.cycleLayout()
-    local modes = { "weighted", "dwindle", "master" }
-    local currentIndex = 1
-    for i, mode in ipairs(modes) do
-        if mode == cfg.layoutMode then currentIndex = i; break end
-    end
-    local nextIndex = (currentIndex % #modes) + 1
-    cfg.layoutMode = modes[nextIndex]
-    tiler.tileWindows()
-    return cfg.layoutMode
-end
 
 function M.bind()
     hotkey.bind(cfg.mods, ",", toggleFocusedWindowInList)
@@ -120,53 +107,9 @@ function M.bind()
         core.log("Decreased weight to " .. string.format("%.1f", tiler.getWindowWeight(win)))
     end)
 
-    hotkey.bind(cfg.mods, "]", function()
-        cfg.masterRatio = math.min(cfg.masterRatio + 0.05, 0.9)
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-        core.log("Master ratio: " .. string.format("%.0f%%", cfg.masterRatio * 100))
-    end)
-
-    hotkey.bind(cfg.mods, "[", function()
-        cfg.masterRatio = math.max(cfg.masterRatio - 0.05, 0.1)
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-        core.log("Master ratio: " .. string.format("%.0f%%", cfg.masterRatio * 100))
-    end)
-
-    hotkey.bind(cfg.mods, "L", function()
-        M.cycleLayout()
-        fullscreen.updateButtonOverlaysWithRetry()
-        core.log("Layout mode: " .. cfg.layoutMode)
-    end)
-
-    -- Toggle pseudotiling for focused window
-    hotkey.bind(cfg.mods, "P", function()
-        local win = window.focusedWindow()
-        if not win then return end
-        local winId = win:id()
-        if not winId then return end
-
-        if core.pseudoWindows[winId] then
-            core.pseudoWindows[winId] = nil
-            core.log("Disabled pseudotiling for " .. (win:title() or "untitled"))
-        else
-            local frame = win:frame()
-            core.pseudoWindows[winId] = { preferredW = frame.w, preferredH = frame.h }
-            core.log("Enabled pseudotiling for " .. (win:title() or "untitled"))
-        end
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-        drawActiveWindowOutline(win)
-    end)
-
-    hotkey.bind(cfg.mods, "A", function()
-        cfg.enableAnimations = not cfg.enableAnimations
-        if not cfg.enableAnimations then
-            animation.cancelAllAnimations()
-        end
-        core.log("Animations: " .. (cfg.enableAnimations and "enabled" or "disabled"))
-    end)
+    -- Ctrl+Cmd+P: toggle focused window's app in/out of the exclusion list
+    -- (synonym for Ctrl+Cmd+",").
+    hotkey.bind(cfg.mods, "P", toggleFocusedWindowInList)
 
     hotkey.bind(cfg.mods, "D", function()
         cfg.debugLogging = not cfg.debugLogging

@@ -3,7 +3,6 @@
 local cfg = {
     outlineColor          = { red = .1, green = .3, blue = .9, alpha = 0.8 },
     outlineColorPinned    = { red = .9, green = .6, blue = .1, alpha = 0.8 },
-    outlineColorPseudo    = { red = .6, green = .1, blue = .9, alpha = 0.8 },
     outlineThickness      = 16,  -- active window border thickness
     tileGap               = 0,   -- pixels between tiled windows
     collapsedWindowHeight = 12,  -- windows this height or less stack at bottom
@@ -17,9 +16,6 @@ local cfg = {
     enableAnimations      = true,
     animationDuration     = 0.15, -- seconds
     animationFPS          = 60,
-    layoutMode            = "weighted", -- "weighted", "dwindle", "master"
-    masterRatio           = 0.55,   -- master window takes this fraction of space
-    masterPosition        = "left", -- "left", "right", "top", "bottom"
     debugLogging          = true,  -- toggle with Ctrl+Cmd+D
 }
 

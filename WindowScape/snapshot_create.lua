@@ -1,7 +1,6 @@
 -- Snapshot creation: animates a window into the thumbnail sidebar and wires
 -- the resulting canvas's mouse callbacks (hover tooltip, drag-to-reposition,
 -- click-to-restore, right-click context menu, top-left X to close).
--- Extracted from WindowScape.lua:741-1145.
 
 local canvas   = require("hs.canvas")
 local geometry = require("hs.geometry")

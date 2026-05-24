@@ -13,8 +13,8 @@ local animation
 local snapshots
 local fullscreen
 
--- Cached layout fns (assigned in init)
-local tileDwindle, tileMaster, tileWeighted, distributeEven
+-- Cached layout fn (assigned in init)
+local tileWeighted
 
 function M.init(config, deps)
     cfg        = config
@@ -24,16 +24,12 @@ function M.init(config, deps)
     snapshots  = deps.snapshots
     fullscreen = deps.fullscreen
 
-    tileDwindle    = layouts.tileDwindle
-    tileMaster     = layouts.tileMaster
-    tileWeighted   = layouts.tileWeighted
-    distributeEven = layouts.distributeEven
+    tileWeighted = layouts.tileWeighted
 
-    -- Layouts module needs callbacks back into tiler for weights and pseudotiling.
+    -- Layouts module needs callbacks back into tiler for weights.
     layouts.init(cfg, {
-        getWindowWeight   = M.getWindowWeight,
-        applyPseudoTiling = M.applyPseudoTiling,
-        animatedSetFrame  = animation.animatedSetFrame,
+        getWindowWeight  = M.getWindowWeight,
+        animatedSetFrame = animation.animatedSetFrame,
     })
 end
 
@@ -62,7 +58,7 @@ function M.setWindowWeight(win, weight)
     core.windowWeights[winId] = math.max(0.1, weight)
 end
 
--- Drop weight/history/pseudo/screen entries for windows that no longer exist.
+-- Drop weight/history/screen entries for windows that no longer exist.
 function M.pruneStaleWeights()
     local validIds = {}
     for _, win in ipairs(window.allWindows()) do
@@ -77,31 +73,9 @@ function M.pruneStaleWeights()
             table.remove(core.focusHistory, i)
         end
     end
-    for winId in pairs(core.pseudoWindows) do
-        if not validIds[winId] then core.pseudoWindows[winId] = nil end
-    end
     for winId in pairs(core.windowLastScreen) do
         if not validIds[winId] then core.windowLastScreen[winId] = nil end
     end
-end
-
--- Pseudotiling: center window in its tile slot if it has a preferred size.
-function M.applyPseudoTiling(win, tileFrame)
-    local winId = win:id()
-    if not winId or not core.pseudoWindows[winId] then
-        return tileFrame
-    end
-
-    local pref = core.pseudoWindows[winId]
-    local prefW = math.min(pref.preferredW, tileFrame.w)
-    local prefH = math.min(pref.preferredH, tileFrame.h)
-
-    return {
-        x = tileFrame.x + (tileFrame.w - prefW) / 2,
-        y = tileFrame.y + (tileFrame.h - prefH) / 2,
-        w = prefW,
-        h = prefH,
-    }
 end
 
 local function tileWindowsInternal()
@@ -142,72 +116,7 @@ local function tileWindowsInternal()
         end
 
         local horizontal = (screenFrame.w > screenFrame.h)
-
-        -- Match tileWeighted formula: (h + g) * n - g  (no trailing gap)
-        local collapsedAreaHeight = 0
-        if #collapsedWins > 0 then
-            if horizontal then
-                collapsedAreaHeight = cfg.collapsedWindowHeight + cfg.tileGap
-            else
-                collapsedAreaHeight = (cfg.collapsedWindowHeight + cfg.tileGap) * #collapsedWins - cfg.tileGap
-            end
-        end
-
-        if cfg.layoutMode == "dwindle" then
-            local mainFrame = {
-                x = screenFrame.x,
-                y = screenFrame.y,
-                w = screenFrame.w,
-                h = screenFrame.h - collapsedAreaHeight,
-            }
-            tileDwindle(mainFrame, nonCollapsedWins, horizontal)
-            if #collapsedWins > 0 then
-                if horizontal then
-                    local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, #collapsedWins)
-                    local collapsedX = screenFrame.x
-                    local collapsedY = screenFrame.y + screenFrame.h - cfg.collapsedWindowHeight
-                    for i, win in ipairs(collapsedWins) do
-                        local w = baseW + ((i == #collapsedWins) and remW or 0)
-                        animation.animatedSetFrame(win, { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight })
-                        collapsedX = collapsedX + w + cfg.tileGap
-                    end
-                else
-                    local collapsedY = screenFrame.y + screenFrame.h - collapsedAreaHeight
-                    for _, win in ipairs(collapsedWins) do
-                        animation.animatedSetFrame(win, { x = screenFrame.x, y = collapsedY, w = screenFrame.w, h = cfg.collapsedWindowHeight })
-                        collapsedY = collapsedY + cfg.collapsedWindowHeight + cfg.tileGap
-                    end
-                end
-            end
-        elseif cfg.layoutMode == "master" then
-            local mainFrame = {
-                x = screenFrame.x,
-                y = screenFrame.y,
-                w = screenFrame.w,
-                h = screenFrame.h - collapsedAreaHeight,
-            }
-            tileMaster(mainFrame, nonCollapsedWins, horizontal)
-            if #collapsedWins > 0 then
-                if horizontal then
-                    local baseW, remW = distributeEven(screenFrame.w, cfg.tileGap, #collapsedWins)
-                    local collapsedX = screenFrame.x
-                    local collapsedY = screenFrame.y + screenFrame.h - cfg.collapsedWindowHeight
-                    for i, win in ipairs(collapsedWins) do
-                        local w = baseW + ((i == #collapsedWins) and remW or 0)
-                        animation.animatedSetFrame(win, { x = collapsedX, y = collapsedY, w = w, h = cfg.collapsedWindowHeight })
-                        collapsedX = collapsedX + w + cfg.tileGap
-                    end
-                else
-                    local collapsedY = screenFrame.y + screenFrame.h - collapsedAreaHeight
-                    for _, win in ipairs(collapsedWins) do
-                        animation.animatedSetFrame(win, { x = screenFrame.x, y = collapsedY, w = screenFrame.w, h = cfg.collapsedWindowHeight })
-                        collapsedY = collapsedY + cfg.collapsedWindowHeight + cfg.tileGap
-                    end
-                end
-            end
-        else
-            tileWeighted(screenFrame, nonCollapsedWins, collapsedWins, horizontal)
-        end
+        tileWeighted(screenFrame, nonCollapsedWins, collapsedWins, horizontal)
 
         ::continue::
     end
