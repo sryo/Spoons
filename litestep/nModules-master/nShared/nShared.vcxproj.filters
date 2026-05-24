@@ -1,0 +1,208 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Brushes">
+      <UniqueIdentifier>{31715971-4ffc-42dc-8d01-df45be900325}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Drawables">
+      <UniqueIdentifier>{12944f3b-db83-4b62-8719-0347689a275c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Color">
+      <UniqueIdentifier>{1215375f-9cf4-4851-9d31-14963dd51785}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Window">
+      <UniqueIdentifier>{e1aed713-6245-41eb-8fc8-4d5fbced6f3f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="States">
+      <UniqueIdentifier>{aa8b19b7-102e-4ff5-aacb-612001488eb4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Balloon.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="Tooltip.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowThumbnail.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="Easing.h" />
+    <ClInclude Include="ErrorHandler.h" />
+    <ClInclude Include="EventHandler.hpp" />
+    <ClInclude Include="Factories.h" />
+    <ClInclude Include="IBrushOwner.hpp" />
+    <ClInclude Include="IPainter.hpp" />
+    <ClInclude Include="LayoutSettings.hpp" />
+    <ClInclude Include="LiteStep.h" />
+    <ClInclude Include="LSModule.hpp" />
+    <ClInclude Include="MessageHandler.hpp" />
+    <ClInclude Include="MonitorInfo.hpp" />
+    <ClInclude Include="Overlay.hpp" />
+    <ClInclude Include="Settings.hpp" />
+    <ClInclude Include="Version.h" />
+    <ClInclude Include="Brush.hpp">
+      <Filter>Brushes</Filter>
+    </ClInclude>
+    <ClInclude Include="Color.h">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="IColorVal.hpp">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="LiteralColorVal.hpp">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="DWMColorVal.hpp">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="UnaryColorVal.hpp">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="BinaryColorVal.hpp">
+      <Filter>Color</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowSettings.hpp">
+      <Filter>Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Window.hpp">
+      <Filter>Window</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowBangs.h">
+      <Filter>Window</Filter>
+    </ClInclude>
+    <ClInclude Include="ChildDrawable.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="IDrawable.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="Drawable.hpp">
+      <Filter>Drawables</Filter>
+    </ClInclude>
+    <ClInclude Include="State.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="StateBangs.h">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="BrushSettings.hpp">
+      <Filter>Brushes</Filter>
+    </ClInclude>
+    <ClInclude Include="BrushBangs.h">
+      <Filter>Brushes</Filter>
+    </ClInclude>
+    <ClInclude Include="StateRender.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="IStateRender.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="IStateWindowData.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="StateWindowData.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="BuildOptions.h" />
+    <ClInclude Include="StateTextRender.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="StrokeSettings.hpp">
+      <Filter>States</Filter>
+    </ClInclude>
+    <ClInclude Include="ResultCodes.h" />
+    <ClInclude Include="Distance.hpp" />
+    <ClInclude Include="Rect.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Easing.cpp" />
+    <ClCompile Include="ErrorHandler.cpp" />
+    <ClCompile Include="EventHandler.cpp" />
+    <ClCompile Include="Factories.cpp" />
+    <ClCompile Include="LayoutSettings.cpp" />
+    <ClCompile Include="LiteStep.cpp" />
+    <ClCompile Include="LSModule.cpp" />
+    <ClCompile Include="MessageHandler.cpp" />
+    <ClCompile Include="MonitorInfo.cpp" />
+    <ClCompile Include="Overlay.cpp" />
+    <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="WindowThumbnail.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="Balloon.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="Tooltip.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="Brush.cpp">
+      <Filter>Brushes</Filter>
+    </ClCompile>
+    <ClCompile Include="Color.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="BinaryColorVal.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="DWMColorVal.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="LiteralColorVal.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="UnaryColorVal.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorParser.cpp">
+      <Filter>Color</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowUnknown.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowSettings.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Window.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowBangs.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowDropTarget.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="IDrawable.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="ChildDrawable.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="Drawable.cpp">
+      <Filter>Drawables</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowUpdateLock.cpp">
+      <Filter>Window</Filter>
+    </ClCompile>
+    <ClCompile Include="State.cpp">
+      <Filter>States</Filter>
+    </ClCompile>
+    <ClCompile Include="StateBangs.cpp">
+      <Filter>States</Filter>
+    </ClCompile>
+    <ClCompile Include="StateSettings.cpp">
+      <Filter>States</Filter>
+    </ClCompile>
+    <ClCompile Include="BrushBangs.cpp">
+      <Filter>Brushes</Filter>
+    </ClCompile>
+    <ClCompile Include="BrushSettings.cpp">
+      <Filter>Brushes</Filter>
+    </ClCompile>
+    <ClCompile Include="StateTextRender.cpp">
+      <Filter>States</Filter>
+    </ClCompile>
+    <ClCompile Include="Distance.cpp" />
+    <ClCompile Include="Rect.cpp" />
+  </ItemGroup>
+</Project>

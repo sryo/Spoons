@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="Version.h" />
+    <ClInclude Include="SelectionRectangle.hpp" />
+    <ClInclude Include="TileSettings.hpp" />
+    <ClInclude Include="Tile.hpp" />
+    <ClInclude Include="TileGroup.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SelectionRectangle.cpp" />
+    <ClCompile Include="nIcon.cpp" />
+    <ClCompile Include="TileSettings.cpp" />
+    <ClCompile Include="Tile.cpp" />
+    <ClCompile Include="TileGroup.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include=".\nIcon.rc" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,189 @@
+; =============================================================================
+; LiteStep Theme Configuration for Hammerspoon
+; Example theme.rc demonstrating the supported syntax
+; =============================================================================
+
+; Variables
+ThemeDir ~/.hammerspoon/litestep/
+AccentColor #3498db
+BackgroundColor #2c3e50
+TextColor #ecf0f1
+HoverColor #34495e
+PressedColor #1abc9c
+
+; =============================================================================
+; Default Groups (inheritance)
+; =============================================================================
+
+DefaultLabel {
+    Color $BackgroundColor$
+    FontColor $TextColor$
+    Font "SF Pro Display"
+    FontSize 12
+    CornerRadiusX 4
+    CornerRadiusY 4
+    TextAlign Center
+    TextVerticalAlign Middle
+    TextOffsetLeft 8
+    TextOffsetRight 8
+    TextOffsetTop 4
+    TextOffsetBottom 4
+
+    HoverColor $HoverColor$
+    HoverFontColor #ffffff
+
+    PressedColor $PressedColor$
+    PressedFontColor #ffffff
+}
+
+DefaultTaskButton {
+    Color #34495e
+    FontColor $TextColor$
+    Font "SF Pro Display"
+    FontSize 11
+    CornerRadiusX 3
+    CornerRadiusY 3
+    TextAlign Left
+    TextOffsetLeft 36
+    TextOffsetTop 6
+
+    HoverColor #4a6278
+    HoverFontColor #ffffff
+
+    PressedColor $AccentColor$
+    PressedFontColor #ffffff
+}
+
+; =============================================================================
+; Taskbar
+; =============================================================================
+
+Taskbar {
+    Group DefaultLabel
+
+    X 0
+    Y 100% - 48
+    Width 100%
+    Height 48
+
+    Color #1a252f
+    AlwaysOnTop true
+    CornerRadiusX 0
+    CornerRadiusY 0
+
+    ButtonWidth 180
+    ButtonHeight 40
+    ButtonSpacing 4
+
+    ButtonGroup DefaultTaskButton
+    ButtonX 4
+    ButtonY 4
+}
+
+; =============================================================================
+; Labels
+; =============================================================================
+
+ClockLabel {
+    Group DefaultLabel
+
+    X 100% - 120
+    Y 100% - 44
+    Width 110
+    Height 36
+
+    Text "12:00 PM"
+    FontSize 14
+    AlwaysOnTop true
+    Color transparent
+}
+
+DateLabel {
+    Group DefaultLabel
+
+    X 100% - 240
+    Y 100% - 44
+    Width 110
+    Height 36
+
+    Text "Dec 11"
+    FontSize 14
+    AlwaysOnTop true
+    Color transparent
+}
+
+; Status bar label
+StatusLabel {
+    Group DefaultLabel
+
+    X 10
+    Y 100% - 44
+    Width 200
+    Height 36
+
+    Text "Ready"
+    TextAlign Left
+    Color transparent
+    AlwaysOnTop true
+}
+
+; =============================================================================
+; Desktop Widgets
+; =============================================================================
+
+SystemMonitor {
+    Group DefaultLabel
+
+    X 100% - 220
+    Y 10
+    Width 200
+    Height 100
+
+    Color #80000000
+    CornerRadiusX 8
+    CornerRadiusY 8
+    Text "System Monitor"
+    FontSize 14
+    TextAlign Center
+    TextVerticalAlign Top
+    TextOffsetTop 8
+    AlwaysOnTop false
+}
+
+; =============================================================================
+; Popup Menu Styles
+; =============================================================================
+
+PopupMenu {
+    Color #2c3e50
+    FontColor #ecf0f1
+    Font "SF Pro Display"
+    FontSize 12
+    CornerRadiusX 6
+    CornerRadiusY 6
+    OutlineWidth 1
+    OutlineColor #34495e
+
+    HoverColor $AccentColor$
+    HoverFontColor #ffffff
+
+    SeparatorColor #34495e
+}
+
+; =============================================================================
+; Module Loading (for future expansion)
+; =============================================================================
+
+*LoadModule nCore
+*LoadModule nLabel ClockLabel
+*LoadModule nLabel DateLabel
+*LoadModule nLabel StatusLabel
+*LoadModule nTaskbar Taskbar
+
+; =============================================================================
+; Bang Commands (actions)
+; =============================================================================
+
+*ClockLabelOnClick !Execute ["open", "-a", "Calendar"]
+*DateLabelOnClick !Execute ["open", "-a", "Calendar"]
+*StatusLabelOnClick !Popup SystemMenu

@@ -1,0 +1,2 @@
+thanks:
+moshi, modular9/burstnibbler, smurth, sowmiles, jasper hauser, david wantanabe and tnl for inspiration, andymon for the xmodules, southinanh and maestr0 for support, tnl for the working lua script, cerbie for more lua work.

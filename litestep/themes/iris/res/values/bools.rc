@@ -1,0 +1,5 @@
+IF ResolutionY<769
+UIMultiplier	1
+ELSE
+UIMultiplier	2
+ENDIF

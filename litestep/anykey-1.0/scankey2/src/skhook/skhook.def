@@ -1,0 +1,6 @@
+; skhook.def : Declares the module parameters for the DLL.
+
+LIBRARY      skhook
+
+SECTIONS
+	.shared READ WRITE SHARED

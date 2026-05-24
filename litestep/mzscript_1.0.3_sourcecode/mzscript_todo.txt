@@ -1,0 +1,77 @@
+*>oh, and I noticed an unwanted side-effect.... where before it'd save a
+>var like: "$styledir$test\"
+>now it expands to "c:\litestep\theme\themename\style\test\"
+
+*>Also, it fscked up my layout of my varfiles, not just changing the
+>vars, but deleting the tabs and empty lines in between.
+
+*>*Script gotoif [CONDITION] labelname
+>That readme line lacks to mention the else jump.
+
+*>how about adding a timestamp to the log file?
+
+>work on the stack overflow problem
+
+*>fix the non|step memory access fault error
+
+*>add elseif
+
+*>var:line is always missing the end quote.?!?!?
+
+
+
+
+
+*-allow multicharacter seperators
+*-change args variable to tokenize
+*-modify saving to use what was already there and not just " all the time
+*-fix my tokenizer to use [] also, or just use something better in saveworker
+*-think about altering mzvarfiles to allow multitoken readins
+
+For var:line idea
+{
+*-add var:line and allow get and set and set it on read in from file- it holds everything after the variable name
+*-change saving to save var:line - if first char not space/tab add the space
+*-change !varshow and !vardump to show var:line
+*-add var:line:1 which is tokenized with gettoken and allow get and set
+}
+
+*-fix _GetElementPos (realized that it has the 1:2:3:"4:5" tokenized to 1:2:3:4:5 cant find error)
+*-allow m_bTokenSep for any var
+*-add var:line:1 which is tokenized with gettoken and allow get and set
+
+*-%{?[ifstatement] [replaceiftrue] [replaceiffalse]}
+	EX.
+	%{?[%{xres} <= 1024] [%{bigsize}] [%{smallsize}]}	
+	
+*-WORK ON GET SET AND REMOVE TO GET THE REST OF THE LINE AND TOKEN STUFF WORKING+
+
+*-check if first or last var is loaded in ls then change !loadvarfile appropriately
+		it currently will not refresh variables
+		-first is loaded. man im screwed.
+		Solution: have a bool value for each variable that holds whether or not to refresh it
+		, then in the mzbang reset all these bools, then in loadvarfile method if it finds the variable,
+		 only change it if this bool is false. bCurrent
+
+*-FIX STUFF. varshow crashes because some of the line stuff is broken like when a quoted value is saved 
+	into the line and then line:count is asked for. I think the fault is somewhere in _GetElementPos, 
+	and maybe even _GetElement.
+	Solution: turns out getToken didn't check if szToken was defined, and if it wasn't could cause a crash.
+	
+?-add var:line:*1,var:line:1* or similar - this is the "/'/[] before/after the token
+	0 - no *
+	1- var:1*
+	2- var:line:1*
+	!varset var:1*	quote
+					squote
+					bracket
+	%{var:1*} returns one of the three
+	!varremove var:1* removes them if they are there
+	
+	all this does nothing if var:sep != token
+
+?-to fix the recursion problem (or at least limit it), try splitting up all the functions so that the 
+	size of Variables class is limited. make a backup first though, because i dont wanna screw 
+	up all the code i already have. **first try setting some as static.
+	
+?-Store post comments in a seperate variable when read in? This way they are not messed with?

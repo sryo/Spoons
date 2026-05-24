@@ -1,0 +1,30 @@
+*Script bang !AutoRun
+*Script exec !VarSet TaskCount 0
+*Script exec wscript $ThemeDir$lister.vbs "$QuickLaunchPath$"
+*Script exec !If ["%{FirstRun}" = "1"] [!FirstRun]
+*Script ~bang
+
+*Script bang !FirstRun
+*Script exec !VarSet FirstRun 0
+*Script exec !VarSave FirstRun
+*Script exec !Recycle
+*Script ~bang
+
+*Script bang !OrbCenter
+*Script exec !VarSet OrbX %#%{MouseX}-OrbWidth/2%#
+*Script exec !VarSave OrbX
+*Script exec !VarSet OrbY %#%{MouseY}-OrbHeight/2%#
+*Script exec !VarSave OrbY
+*Script exec !nMove Orb %{OrbX} %{OrbY} 100 sine
+*Script exec !nMove nTasks %#%{OrbX}+OrbWidth+nTasksColumnSpacing%# %#%{OrbY}+OrbHeight/2-nTasksHeight/2%# 100 sine
+*Script ~bang
+
+*Script bang !TasksAdd
+*Script exec !VarAdd TasksCount 1
+*Script exec !nSize nTasks %#(UIButtonSize+nTasksColumnSpacing)*%{TasksCount}%# %#nTasksHeight%#
+*Script ~bang
+
+*Script bang !TasksDel
+*Script exec !VarAdd TasksCount -1
+*Script exec !nSize nTasks %#(UIButtonSize+nTasksColumnSpacing)*%{TasksCount}%# %#nTasksHeight%#
+*Script ~bang

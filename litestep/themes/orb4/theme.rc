@@ -1,0 +1,265 @@
+OTSMajorVersion			2
+OTSMinorVersion			0
+
+ThemeName 			"orb4 (20080106)"
+ThemeAuthor 			"sryo"
+
+*NetLoadModule			jdesk-0.73
+*NetLoadModule			xtaskbar-1.5.2
+*NetLoadModule			lsxcommand-1.9.4
+*NetLoadModule			xlabel-3.6.2
+*NetLoadModule			xtray-1.1.1
+*NetLoadModule			xpopup-1.3.1
+*NetLoadModule			timer-0.5
+*NetLoadModule			lsfonts-0.1
+*NetLoadModule			lslua-0.5 load lslua.dll
+*NetLoadModule			xtextedit-0.5
+
+*LuaFile			"$ConfigDir$script.lua"
+
+LSImageFolder			"$ThemeDir$images\"
+MiscDir				"$ThemeDir$misc\"
+ConfigDir			"$ThemeDir$config\"
+
+include				"$ConfigDir$themevars.rc"
+
+
+; === FONTS ===
+
+*LoadFont		"$MiscDir$04b_25__.ttf"
+*LoadFont		"$MiscDir$cure.fon"
+
+
+; === ORB SETUP ===
+
+OrbMainCurrentX
+OrbMainCurrentY
+PopupHelpCurrentWidth $PopupHelpMinWidth$
+PopupHelpCurrentY
+
+OrbAlphaFade			true
+OrbCustomAlphaFade		30 0
+OrbMoveable			true
+OrbMoveModifierKey		.none
+OrbMoveButton			left
+OrbFireOnMoveDuringMove		false
+OrbSnapTo			4	desktop
+OrbOnMiddleClickUp		!FocusCommand
+OrbOnRightClickUp		!ParseEvars !PopupHelp	%#OrbMainCurrentX+OrbMainWidth/2+PopupHelpCurrentWidth/2%# %#OrbMainCurrentY+OrbMainHeight-19%# topright
+OrbOnMove			!ParseEvars !Execute [!xTextSaveEvar @$ConfigDir$themevars.rc@ @OrbMainX@ @%#OrbMainCurrentX%#@][!xTextSaveEvar @$ConfigDir$themevars.rc@ @OrbMainY@ @%#OrbMainCurrentY%#@]
+OrbOnLeftClickDown		!Execute [!xTrayResize $xTrayWidth$ 24 10 10][!xTrayHide]
+OrbOnRightClickDown		!Execute [!xTrayResize $xTrayWidth$ 24 10 10][!xTrayHide]
+OrbMainOnLeave			!TimerStart trayhide
+OrbOnEnter			!ParseEvars !Execute [!xTrayMove %#OrbMainCurrentX+OrbMainWidth/2-xTrayWidth/2%# %#OrbMainCurrentY+OrbMainHeight-19%#][!xTrayAlwaysOnTop true][!xTrayShow][!xTrayResize $xTrayWidth$ %#xTrayCurrentIconCount*xTrayIconSize+10+10%# 10 10]
+
+*Label				OrbMain
+*OrbMainDockedTo		OrbRing
+*OrbMainDockedTo		OrbShadow
+*OrbMainModuleHook		!xTaskbarLSBoxHook xTaskbar
+*OrbMainModuleHook		!CommandBoxHook
+
+OrbDotTransparencyMode		true
+OrbDotX				$ResolutionY$
+OrbDotY				3
+OrbDotWidth			6
+OrbDotHeight			7
+OrbDotImage			orb_dot.png
+OrbDotHueIntensity		100
+OrbDotHueColor			2eb9d2
+OrbDotTopBorder			$OrbDotHeight$
+OrbDotText			"[time('n')]"
+OrbDotOnTextChange		!ParseEvars !MinuteUpdate %[labeltext]%
+OrbDotOnMove			!LabelShow OrbRing
+NetLoadModuleOnLoad		!ParseEvars !MinuteUpdate %$OrbDotText$%
+
+OrbMainWidth			56
+OrbMainHeight			56
+OrbMainAlphaTransparency	130
+OrbMainFont			"04b_25" ;"Swis721 Cn BT D-Type" ;
+OrbMainFontShadow		true
+OrbMainNewLineSpace		-1
+OrbMainFontShadowX		0
+OrbMainFontShadowY		1
+OrbMainBorders			5 5 0 7
+OrbMainImage			orb_main.png
+OrbMainAddToGroup		Orb
+OrbMainOnLeftClickUp		!ParseEvars !Popup	%#OrbMainCurrentX+OrbMainWidth/2+PopupCurrentWidth/2%# %#OrbMainCurrentY+OrbMainHeight-19%# topright
+
+*Label				OrbRing
+*OrbRingModuleHook		!LabelLsBoxHook OrbDot
+*OrbRingDockedTo		OrbMain
+*OrbRingDockedTo		OrbShadow
+OrbRingX			$OrbMainX$
+OrbRingY			$OrbMainY$
+OrbRingWidth			$OrbMainWidth$
+OrbRingHeight			$OrbMainHeight$
+OrbRingImage			orb_ring.png
+OrbRingAddToGroup		Orb
+
+*OrbRingOverlayLabel		$OrbRingWidth/2-4$	$OrbRingHeight-19$	9	16	Tray #	0
+TrayText			"6"
+TrayFont			$xPopupArrowFont$
+TrayFontHeight			$xPopupEntryFontHeight$
+TrayFontColor			$xPopupEntryFontColor$
+
+*Label				OrbShadow
+*OrbShadowDockedTo		OrbMain
+*OrbShadowDockedTo		OrbRing
+OrbShadowX			$OrbRingX$
+OrbShadowY			$OrbRingY$
+OrbShadowWidth			$OrbMainWidth$
+OrbShadowHeight			$OrbMainHeight$
+OrbShadowAlphaMap		true
+OrbShadowImage			orb_shadow.png
+OrbShadowAddToGroup		Orb
+OrbShadowGhosted		true
+
+
+xTrayCurrentIconCount
+xTrayX				0
+xTrayY				0
+xTrayWidth			28
+xTrayIconSize			16
+xTrayAlphaMap			true
+xTrayBorders			6 6 10 10
+xTrayImage			tray_bg.png
+xTrayImageLeftEdge		22
+xTrayImageRightEdge		22
+xTrayImageTopEdge		12
+xTrayImageBottomEdge		12
+xTrayAlwaysOnTop		true
+xTrayStartHidden		true
+xTrayHideIfEmpty		true
+xTrayOnLeave			!TimerStart trayhide
+xTrayOnEnter			!Execute [!TimerKill trayhide][!TimerStart trayhidekill]
+xTrayLayout			.vertical
+xTrayDirection			.bottom
+;xTrayAutoSize			true
+
+*Timer			trayhide 	# 2s !Execute [!xTrayResize $xTrayWidth$ 24 10 10][!xTrayHide]
+*Timer			trayhidekill	# 500ms !TimerKill trayhide
+
+xTaskbarLoadInBox		true
+xTaskbarX			0
+xTaskbarY			0
+xTaskbarHeight			$OrbMainHeight$
+xTaskbarBorders			12 12
+xTaskbarUseSolidColors		true
+xTaskbarSolidColors		$OrbMainSolidColors$
+xTaskbarStartHidden		true
+xTaskbarHideIfEmpty		true
+xTaskbarButtonMaxWidth		16
+xTaskbarButtonMinWidth		16
+xTaskbarButtonMaxCount		2
+xTaskbarShowText		false
+xTaskbarDisplay			"flashing"
+xTaskbarOnMiddleClickButton	.close
+
+
+CommandHiddenOnStart		true
+CommandWaitForBox		true
+CommandNotMoveable		true
+CommandTabFileComplete		true
+CommandNoTrailingZeros		true
+CommandSelectAllOnFocus		true
+CommandTextFontFace		$OrbMainFont$
+CommandTextSize			14
+CommandTextColor		$OrbMainFontColor$
+CommandTextAlign		center
+CommandWidth			$OrbMainWidth$
+CommandHeight			$OrbMainHeight$
+CommandX			0
+CommandY			0
+CommandBGColor			$OrbMainSolidColors$
+CommandBorderColor		$OrbMainSolidColors$
+CommandTopBorderSize		18
+CommandLeftBorderSize		12
+CommandRightBorderSize		$CommandLeftBorderSize$
+CommandBottomBorderSize		$CommandTopBorderSize$
+CommandTransparentEditBox	true
+CommandHideOnEsc		true
+CommandHideOnUnfocus		true
+
+
+xPopupCompatibilityMode		true
+xPopupAlphaMap			true
+xPopupLeftBorder		9
+xPopupRightBorder		9
+xPopupTopBorder			12
+xPopupBottomBorder		11
+xPopupImage			popup_bg.png
+xPopupImageLeftEdge		26
+xPopupImageRightEdge		26
+xPopupImageTopEdge		12
+xPopupImageBottomEdge		12
+xPopupHueIntensity		$OrbDotHueIntensity$
+xPopupHueColor			$OrbDotHueColor$
+xPopupEntryFont			"cure"
+xPopupEntryFontHeight		9
+xPopupEntryShowIcon		false
+xPopupEntryHeight		$xPopupEntryFontHeight+5$
+xPopupEntryFontLeftBorder	7
+xPopupEntryFontRightBorder	$xPopupArrowFontHeight+xPopupEntryFontLeftBorder$
+xPopupFolderHeight		$xPopupEntryHeight$
+xPopupShowCaption		.none
+xPopupOnCaptionMiddleClick	.togglepin
+xPopupOverlapX			-$xPopupLeftBorder*2$
+xPopupEntryFontColor		6b6b6b
+xPopupUseActiveEntrySolidColors	true
+xPopupActiveEntrySolidColors	$xPopupEntryFontColor$
+xPopupActiveEntryFontColor	ffffff
+xPopupUseTextArrow		true
+xPopupArrowText			"4"
+xPopupArrowFontSmoothing	false
+xPopupArrowFont			webdings
+xPopupArrowFontHeight		$xPopupEntryFontHeight*0.7$
+xPopupArrowFontAlign		right
+xPopupArrowFontRightBorder	$xPopupEntryFontLeftBorder/2$
+xPopupArrowFontColor		$xPopupEntryFontColor$
+xPopupActiveArrowFontColor	$xPopupActiveEntryFontColor$
+xPopupUseSeparatorSolidColors	true
+xPopupSeparatorSolidColors	$xPopupEntryFontColor$
+xPopupSeparatorHeight		1
+xPopupAlphaFade			true
+xPopupCustomAlphaFade		30 0
+xPopupFolderOpenDelay		100
+xPopupAutoSeparator		true
+xPopupOnDrop			"SHORTCUT"
+
+PopupHelpAlphaMap			true
+PopupHelpLeftBorder			9
+PopupHelpRightBorder			9
+PopupHelpTopBorder			19
+PopupHelpBottomBorder			11
+PopupHelpImage				popup_help.png
+PopupHelpImageLeftEdge			9
+PopupHelpImageRightEdge			9
+PopupHelpImageTopEdge			24
+PopupHelpImageBottomEdge		12
+PopupHelpMinWidth			143
+PopupHelpMaxWidth			$PopupHelpMinWidth$
+PopupHelpEntryFont			"cure"
+PopupHelpEntryFontHeight		9
+PopupHelpEntryShowIcon			false
+PopupHelpEntryHeight			$PopupHelpEntryFontHeight+5$
+PopupHelpEntryFontLeftBorder		7
+PopupHelpEntryFontRightBorder		$PopupHelpArrowFontHeight+PopupHelpEntryFontLeftBorder$
+PopupHelpFolderHeight			$PopupHelpEntryHeight$
+PopupHelpShowCaption			.none
+PopupHelpOnCaptionMiddleClick		.togglepin
+PopupHelpOverlapX			-$PopupHelpLeftBorder*2$
+PopupHelpEntryFontColor			ffffff
+PopupHelpUseTextArrow			true
+PopupHelpArrowText			"4"
+PopupHelpArrowFontSmoothing		false
+PopupHelpArrowFont			webdings
+PopupHelpArrowFontHeight		$PopupHelpEntryFontHeight*0.7$
+PopupHelpArrowFontAlign			right
+PopupHelpArrowFontRightBorder		$PopupHelpEntryFontLeftBorder/2$
+PopupHelpArrowFontColor			$PopupHelpEntryFontColor$
+PopupHelpUseSeparatorSolidColors	true
+PopupHelpSeparatorSolidColors		$xPopupEntryFontColor$
+PopupHelpSeparatorHeight		1
+PopupHelpAlphaFade			true
+PopupHelpCustomAlphaFade		30 0
+PopupHelpFolderOpenDelay		100

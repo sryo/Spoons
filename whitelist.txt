@@ -1,0 +1,10 @@
+com.utmapp.UTM
+com.colliderli.iina
+com.apple.systempreferences
+com.apple.ScreenContinuity
+com.memoryvault.MemoryVault
+com.apple.installer
+com.adobe.Photoshop
+org.m0k.transmission
+com.spotify.client
+com.apple.calculator

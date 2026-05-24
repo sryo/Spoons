@@ -1,0 +1,48 @@
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+                                    mzscript
+                                   TODO/ideas
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+
+-- SCRIPTS ---------------------------------------------------------------------
+ 
+ - <LP_lurking> A way of aborting a hung script would be neat as well -
+                !mzScriptkillScript, perhaps. *shrug*
+   <LP_lurking> Or perhaps a timeout to assume something's gone wrong.
+
+ - <LP_lurking> *Script exec goto(if) rather than *Script goto(if)
+
+ - *Script assert; *Script debug
+
+
+-- VARIABLES -------------------------------------------------------------------
+
+ - Support both %[] and %{} at the same time.
+
+ - <tnl> "Inline math" (see cond. statements)
+
+ - !loadvarfile to refresh certain variables
+
+ - "walk" through a string
+
+
+-- CONDITIONAL STATEMENTS ------------------------------------------------------
+
+ - <LeafyPhil> What I was looking for was support for conditional AND/OR
+               statements for variables, e.g.
+                 !IfEval (("%{myvar1}" = "1")&&("%{myvar2}"="2")) {!dothis}
+
+ - <tnl> "Inline math" (see variables)
+
+
+-- MODULE INTERACTION ----------------------------------------------------------
+
+
+-- MISCELLANEOUS ---------------------------------------------------------------
+
+ - Advanced !ScriptDump dumping variables AND scripts and any other status
+   information that could be relevant for debugging scripts or mzscript itself.
+
+ - Improve the use of exceptions - the current exceptions were added after parts
+   of the code were already written w/o any exceptions at all, hence the
+   inconsistencies.

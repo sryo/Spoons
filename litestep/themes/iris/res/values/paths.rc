@@ -1,0 +1,31 @@
+IrisVars1OnLeftClick "C:\Program Files\foobar2000\foobar2000.exe"
+IrisVars1Tooltip "$IrisVars1OnLeftClick$"
+IrisVars1IconIcon "$IrisVars1OnLeftClick$"
+
+IrisVars2OnLeftClick "C:\Program Files\BurnAware Free\BurnAware.exe"
+IrisVars2Tooltip "$IrisVars2OnLeftClick$"
+IrisVars2IconIcon "$IrisVars2OnLeftClick$"
+
+IrisVars3OnLeftClick "C:\Windows\notepad.exe"
+IrisVars3Tooltip "$IrisVars3OnLeftClick$"
+IrisVars3IconIcon "$IrisVars3OnLeftClick$"
+
+IrisVars4OnLeftClick "C:\Program Files\Ratajik Software\StationRipper\StationRipper.exe"
+IrisVars4Tooltip  "$IrisVars4OnLeftClick$"
+IrisVars4IconIcon "$IrisVars4OnLeftClick$"
+
+IrisVars5OnLeftClick "C:\Users\Mateo\AppData\Local\Yandex\YandexBrowser\Application\browser.exe"
+IrisVars5Tooltip "$IrisVars5OnLeftClick$"
+IrisVars5IconIcon "$IrisVars5OnLeftClick$"
+
+IrisVars6OnLeftClick "C:\Users\Mateo\Downloads\Adobe Photoshop CS6.13.0 Portable\PhotoshopPortable\PhotoshopCS6Portable.exe"
+IrisVars6Tooltip "$IrisVars6OnLeftClick$"
+IrisVars6IconIcon "$IrisVars6OnLeftClick$"
+
+IrisVars7OnLeftClick "C:\Program Files\Microsoft Office\Office14\INFOPATH.EXE"
+IrisVars7Tooltip "$IrisVars7OnLeftClick$"
+IrisVars7IconIcon "$IrisVars7OnLeftClick$"
+
+IrisVars8OnLeftClick "C:\Program Files\Internet Explorer\iexplore.exe"
+IrisVars8Tooltip "$IrisVars8OnLeftClick$"
+IrisVars8IconIcon "$IrisVars8OnLeftClick$"

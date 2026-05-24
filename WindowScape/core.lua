@@ -1,0 +1,197 @@
+-- WindowScape core: state ownership, persistence, and shared utilities.
+-- All other modules read mutable state through this module (e.g. core.windowOrderBySpace)
+-- so that reassigning a whole table (e.g. core.windowWeights = {}) reaches every reader.
+
+local spacesOk, spaces = pcall(require, "hs.spaces")
+if not spacesOk then
+    spaces = {
+        focusedSpace = function() return 1 end,
+        windowSpaces = function(_) return { 1 } end,
+        allSpaces = function() return { ["Main"] = { 1 } } end,
+        activeSpaceOnScreen = function(_) return 1 end,
+        watcher = { new = function(_) return { start = function() end } end },
+        activeSpaces = function() return { 1 } end,
+        spaceType = function(_) return "user" end,
+        spacesForScreen = function(_) return { 1 } end,
+        moveWindowToSpace = function(_, _) end,
+        gotoSpace = function(_) end,
+    }
+    package.loaded["hs.spaces"] = spaces
+    print("[WindowScape] hs.spaces unavailable (Dock disabled?), using single-space mode")
+end
+
+local window = require("hs.window")
+local screen = require("hs.screen")
+local json   = require("hs.json")
+
+local M = {}
+
+M.spaces = spaces
+
+-- Configuration is assigned by init()
+M.cfg = nil
+
+-- Persistence
+M.listPath = hs.configdir .. "/WindowScape_apps.json"
+M.listedApps = {}
+
+-- Window state
+M.windowOrderBySpace    = {}
+M.windowWeights         = {} -- winId -> weight (default 1.0)
+M.pseudoWindows         = {} -- winId -> { preferredW, preferredH }
+M.windowLastScreen      = {} -- winId -> screenId
+M.focusHistory          = {} -- array of winIds, most recent first
+M.focusHistoryMax       = 10
+M.lastKnownWindowIds    = {}
+M.lastKnownWindowFrames = {}
+
+-- Tile-loop tracking (read by events.lua, written by tiler.lua)
+M.tilingCount      = 0
+M.tilingStartTime  = 0
+M.pendingReposition = nil -- timer
+M.tilingDelayTimer  = nil -- timer
+
+-- Cross-module state pointers (populated after dependent modules init)
+M.snapshotsState  = nil
+M.fullscreenState = nil
+
+function M.log(message)
+    if M.cfg and M.cfg.debugLogging then
+        print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
+    end
+end
+
+-- Safe wrapper for win:application() — avoids "Unable to fetch NSRunningApplication"
+-- when the window's process has terminated but the window userdata still exists.
+function M.safeGetApplication(win)
+    if not win then return nil end
+    local ok, app = pcall(function() return win:application() end)
+    if ok and app then return app end
+    return nil
+end
+
+function M.getCurrentSpace()
+    return spaces.focusedSpace()
+end
+
+function M.pruneStaleSpaces()
+    local allSpaces = spaces.allSpaces()
+    if not allSpaces then return end
+
+    local valid = {}
+    for _, screenSpaces in pairs(allSpaces) do
+        for _, spaceId in ipairs(screenSpaces) do
+            valid[spaceId] = true
+        end
+    end
+
+    for spaceId in pairs(M.windowOrderBySpace) do
+        if not valid[spaceId] then
+            M.windowOrderBySpace[spaceId] = nil
+            M.log("Pruned stale space: " .. tostring(spaceId))
+        end
+    end
+end
+
+-- Atomic write: write to .tmp then rename, so a failed write doesn't lose the list.
+function M.saveList()
+    local tmpPath = M.listPath .. ".tmp"
+    local ok, err = json.write(M.listedApps, tmpPath, true, true)
+    if not ok then
+        M.log("Failed to write temp app list: " .. tostring(err))
+        return
+    end
+    local renamed, renameErr = os.rename(tmpPath, M.listPath)
+    if not renamed then
+        M.log("Failed to rename temp app list: " .. tostring(renameErr))
+        os.remove(tmpPath)
+    end
+end
+
+function M.loadList()
+    M.listedApps = json.read(M.listPath) or {}
+    if next(M.listedApps) == nil then
+        M.listedApps["org.hammerspoon.Hammerspoon"] = true
+        M.saveList()
+    end
+end
+
+function M.isAppIncluded(app, win)
+    if not (app and win) then return false end
+    if not win:isStandard() then return false end
+
+    local winId = win:id()
+    if winId and M.snapshotsState and M.snapshotsState.windows[winId] then
+        return false
+    end
+
+    local bundleID = app:bundleID()
+    local appName  = app:name()
+    local listed   = (bundleID and M.listedApps[bundleID]) or (appName and M.listedApps[appName])
+
+    if M.cfg.exclusionMode then
+        return not listed
+    else
+        return listed == true
+    end
+end
+
+function M.isSystem(win)
+    return win and (win:role() == "AXScrollArea" or win:subrole() == "AXSystemDialog")
+end
+
+-- Rebuild windowOrderBySpace for each screen's active space, preserving prior ordering.
+function M.updateWindowOrder()
+    local allScreens = screen.allScreens()
+    local allWindows = window.visibleWindows()
+
+    for _, scr in ipairs(allScreens) do
+        local screenId = scr:id()
+        local screenSpace = spaces.activeSpaceOnScreen(scr) or M.getCurrentSpace()
+
+        local screenWindows = {}
+        local screenWindowSet = {}
+
+        for _, win in ipairs(allWindows) do
+            local okSpaces = spaces.windowSpaces(win)
+            local app = M.safeGetApplication(win)
+            local winScreen = win:screen()
+            local winId = win:id()
+            if winId and okSpaces and winScreen and winScreen:id() == screenId and
+               not win:isFullScreen() and M.isAppIncluded(app, win) then
+                if hs.fnutils.contains(okSpaces, screenSpace) then
+                    table.insert(screenWindows, win)
+                    screenWindowSet[winId] = win
+                end
+            end
+        end
+
+        local prevOrder = M.windowOrderBySpace[screenSpace] or {}
+        local newOrder = {}
+        local newOrderSet = {}
+
+        for _, win in ipairs(prevOrder) do
+            local winId = win:id()
+            if winId and screenWindowSet[winId] then
+                table.insert(newOrder, win)
+                newOrderSet[winId] = true
+            end
+        end
+
+        for _, win in ipairs(screenWindows) do
+            local winId = win:id()
+            if winId and not newOrderSet[winId] then
+                table.insert(newOrder, win)
+                newOrderSet[winId] = true
+            end
+        end
+
+        M.windowOrderBySpace[screenSpace] = newOrder
+    end
+end
+
+function M.init(cfg)
+    M.cfg = cfg
+end
+
+return M

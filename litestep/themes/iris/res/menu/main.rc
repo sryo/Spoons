@@ -1,0 +1,25 @@
+*Popup "Iris" !New !Popup xPopupMain
+	*Popup !info "[time]"
+	*Popup !info "Weather"
+	*Popup !info "[battery] [powerSource('(Charging)', '(Unplugged)')]"
+							*Popup !Separator
+	*Popup "Settings" Folder
+		*Popup "My Computer"				!PopupMyComputer %%xPopupTasks%xPopupBig%%
+		*Popup "Recycle bin"				!execute ["$FileManager$" "$bitbucket$"]
+		*Popup "Control Panel"				!PopupControlPanel %%xPopupTasks%xPopupBig%%
+							*Popup !Separator
+		*Popup "Desktop Settings"			!execute [control.exe desk.cpl]
+		*Popup "Add/Remove programs"			!execute [control.exe appwiz.cpl]
+							*Popup !Separator
+		*Popup "Log Out"				!LogOff
+		*Popup "Power Off"				!ShutDown
+	*Popup ~Folder
+							*Popup Menubreak
+	*Popup "Tasks"					!PopupTasks %%xPopupTasks%xPopupBig%%
+;	*Popup "Journal"					!PopupRecentDocuments
+;	*Popup "Quicklaunch"					"!DynamicFolder:$QuickLaunch$*.lnk"
+	*Popup "Programs"					!DynamicFolder:"$Programs$|$CommonPrograms$" %%xPopupBig%%
+	*Popup "Run"						!IrisCommandFocus
+							*Popup !Separator
+	*Popup "Lock"						!SwitchUser
+*Popup ~New

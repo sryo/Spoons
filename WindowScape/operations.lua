@@ -1,0 +1,257 @@
+-- Window movement and focus operations
+
+local geometry = require("hs.geometry")
+local mouse    = require("hs.mouse")
+local screen   = require("hs.screen")
+local window   = require("hs.window")
+local timer    = require("hs.timer")
+
+local cfg, callbacks
+
+local function log(msg)
+    if callbacks.log then callbacks.log(msg) end
+end
+
+-- Move mouse to maintain relative position when window moves
+local function moveMouseWithWindow(oldFrame, newFrame)
+    if not (oldFrame and newFrame) then return end
+    local mousePos = mouse.absolutePosition()
+    if geometry.isPointInRect(mousePos, oldFrame) then
+        local relX = (mousePos.x - oldFrame.x) / oldFrame.w
+        local relY = (mousePos.y - oldFrame.y) / oldFrame.h
+        local newX = newFrame.x + (relX * newFrame.w)
+        local newY = newFrame.y + (relY * newFrame.h)
+        mouse.absolutePosition({ x = newX, y = newY })
+    end
+end
+
+-- Move focused window forward/backward in tiling order
+local function moveWindowInOrder(direction)
+    local currentSpace = callbacks.getCurrentSpace()
+    local focusedWindow = window.focusedWindow()
+    if not focusedWindow then
+        callbacks.updateWindowOrder()
+        return
+    end
+
+    local windowOrder = callbacks.getWindowOrder(currentSpace)
+    local focusedIndex
+    local nonCollapsedWindows = {}
+
+    for _, win in ipairs(windowOrder) do
+        local sz = win:size()
+        if sz and sz.h > cfg.collapsedWindowHeight then
+            table.insert(nonCollapsedWindows, win)
+        end
+    end
+
+    for i, win in ipairs(nonCollapsedWindows) do
+        if win:id() == focusedWindow:id() then
+            focusedIndex = i
+            break
+        end
+    end
+
+    if not focusedIndex then
+        callbacks.updateWindowOrder()
+        return
+    end
+
+    local newIndex
+    if direction == "forward" then
+        newIndex = (focusedIndex < #nonCollapsedWindows) and (focusedIndex + 1) or 1
+    else
+        newIndex = (focusedIndex > 1) and (focusedIndex - 1) or #nonCollapsedWindows
+    end
+
+    table.remove(nonCollapsedWindows, focusedIndex)
+    table.insert(nonCollapsedWindows, newIndex, focusedWindow)
+
+    local newOrder = {}
+    local ncIdx = 1
+    for _, win in ipairs(windowOrder) do
+        local sz = win:size()
+        if sz and sz.h <= cfg.collapsedWindowHeight then
+            table.insert(newOrder, win)
+        else
+            table.insert(newOrder, nonCollapsedWindows[ncIdx])
+            ncIdx = ncIdx + 1
+        end
+    end
+
+    local oldFrame = focusedWindow:frame()
+    callbacks.setWindowOrder(currentSpace, newOrder)
+    callbacks.tileWindows()
+    focusedWindow:focus()
+    local newFrame = focusedWindow:frame()
+    moveMouseWithWindow(oldFrame, newFrame)
+    callbacks.drawOutline(focusedWindow)
+end
+
+-- Focus next/previous window in tiling order
+local function focusAdjacentWindow(direction)
+    local currentSpace = callbacks.getCurrentSpace()
+    local focusedWindow = window.focusedWindow()
+    local windowOrder = callbacks.getWindowOrder(currentSpace)
+
+    local focusedScreen = focusedWindow and focusedWindow:screen()
+    local screenWindows = {}
+
+    for _, win in ipairs(windowOrder) do
+        local sz = win:size()
+        local winScreen = win:screen()
+        if sz and sz.h > cfg.collapsedWindowHeight then
+            if not focusedScreen or (winScreen and winScreen:id() == focusedScreen:id()) then
+                table.insert(screenWindows, win)
+            end
+        end
+    end
+
+    if #screenWindows == 0 then return end
+
+    local focusedIndex = 0
+    if focusedWindow then
+        for i, win in ipairs(screenWindows) do
+            if win:id() == focusedWindow:id() then
+                focusedIndex = i
+                break
+            end
+        end
+    end
+
+    local targetIndex
+    if direction == "forward" or direction == "next" then
+        targetIndex = (focusedIndex % #screenWindows) + 1
+    else
+        targetIndex = focusedIndex > 1 and (focusedIndex - 1) or #screenWindows
+    end
+
+    local targetWin = screenWindows[targetIndex]
+    if targetWin then
+        local newFrame = targetWin:frame()
+        targetWin:focus()
+        callbacks.drawOutline(targetWin)
+
+        if newFrame then
+            local centerX = newFrame.x + newFrame.w / 2
+            local centerY = newFrame.y + newFrame.h / 2
+            mouse.absolutePosition({ x = centerX, y = centerY })
+        end
+    end
+end
+
+-- Move window to adjacent screen
+local function moveWindowToAdjacentScreen(direction)
+    local focusedWindow = window.focusedWindow()
+    if not focusedWindow then
+        log("No focused window; cannot move to adjacent screen")
+        return
+    end
+
+    local oldFrame = focusedWindow:frame()
+    local currentScreen = focusedWindow:screen()
+    if not currentScreen then
+        log("No screen for focused window; cannot move to adjacent screen")
+        return
+    end
+
+    local allScreens = screen.allScreens()
+    if #allScreens < 2 then
+        log("Only one screen available; cannot move window")
+        return
+    end
+
+    local currentScreenIndex
+    for i, scr in ipairs(allScreens) do
+        if scr:id() == currentScreen:id() then
+            currentScreenIndex = i
+            break
+        end
+    end
+
+    if not currentScreenIndex then
+        log("Current screen not found in screen list")
+        return
+    end
+
+    local targetScreenIndex
+    if direction == "next" then
+        targetScreenIndex = (currentScreenIndex % #allScreens) + 1
+    else
+        targetScreenIndex = ((currentScreenIndex - 2 + #allScreens) % #allScreens) + 1
+    end
+
+    local targetScreen = allScreens[targetScreenIndex]
+    if not targetScreen then
+        log("Target screen not resolved; aborting move")
+        return
+    end
+
+    local targetFrame = targetScreen:frame()
+    local oldScreenFrame = currentScreen:frame()
+
+    local relX = (oldFrame.x - oldScreenFrame.x) / oldScreenFrame.w
+    local relY = (oldFrame.y - oldScreenFrame.y) / oldScreenFrame.h
+    local relW = oldFrame.w / oldScreenFrame.w
+    local relH = oldFrame.h / oldScreenFrame.h
+
+    local newFrame = {
+        x = targetFrame.x + (relX * targetFrame.w),
+        y = targetFrame.y + (relY * targetFrame.h),
+        w = relW * targetFrame.w,
+        h = relH * targetFrame.h
+    }
+
+    callbacks.hideOutline()
+    focusedWindow:setFrame(geometry.rect(newFrame), 0)
+
+    timer.doAfter(0.15, function()
+        focusedWindow:focus()
+        callbacks.updateWindowOrder()
+        callbacks.tileWindows()
+        local finalFrame = focusedWindow:frame()
+        moveMouseWithWindow(oldFrame, finalFrame)
+        callbacks.drawOutline(focusedWindow)
+    end)
+end
+
+-- Calculate where a dropped window should be inserted in tiling order
+local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
+    local dropFrame = droppedWin:frame()
+    local dropCenterX = dropFrame.x + dropFrame.w / 2
+    local dropCenterY = dropFrame.y + dropFrame.h / 2
+    local horizontal = (screenFrame.w > screenFrame.h)
+
+    local insertIndex = 1
+    for i, win in ipairs(screenWindows) do
+        local winFrame = win:frame()
+        local winCenterX = winFrame.x + winFrame.w / 2
+        local winCenterY = winFrame.y + winFrame.h / 2
+
+        if horizontal then
+            if dropCenterX > winCenterX then
+                insertIndex = i + 1
+            end
+        else
+            if dropCenterY > winCenterY then
+                insertIndex = i + 1
+            end
+        end
+    end
+
+    return insertIndex
+end
+
+local function init(config, cbs)
+    cfg = config
+    callbacks = cbs or {}
+end
+
+return {
+    init = init,
+    moveMouseWithWindow = moveMouseWithWindow,
+    moveWindowInOrder = moveWindowInOrder,
+    focusAdjacentWindow = focusAdjacentWindow,
+    moveWindowToAdjacentScreen = moveWindowToAdjacentScreen,
+    calculateDropPosition = calculateDropPosition,
+}

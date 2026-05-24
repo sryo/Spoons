@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="StringUtils.h" />
+    <ClInclude Include="Common.h" />
+    <ClInclude Include="EnumArray.hpp" />
+    <ClInclude Include="GUID.h" />
+    <ClInclude Include="PointerIterator.hpp" />
+    <ClInclude Include="Process.h" />
+    <ClInclude Include="StopWatch.hpp" />
+    <ClInclude Include="Macros.h" />
+    <ClInclude Include="Math.h" />
+    <ClInclude Include="Debugging.h" />
+    <ClInclude Include="Versioning.h" />
+    <ClInclude Include="UIDGenerator.hpp" />
+    <ClInclude Include="FileIterator.hpp" />
+    <ClInclude Include="Error.h" />
+    <ClInclude Include="Unordered1To1Map.hpp" />
+    <ClInclude Include="DoubleNullStringList.hpp" />
+    <ClInclude Include="CommonD2D.h" />
+    <ClInclude Include="ShellHelper.h" />
+    <ClInclude Include="AlgorithmExtension.h" />
+    <ClInclude Include="Hashing.h">
+      <Filter>Hashing</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="StringUtils.cpp" />
+    <ClCompile Include="GUID.cpp" />
+    <ClCompile Include="Process.cpp" />
+    <ClCompile Include="StopWatch.cpp" />
+    <ClCompile Include="Math.cpp" />
+    <ClCompile Include="Debugging.cpp" />
+    <ClCompile Include="Versioning.cpp" />
+    <ClCompile Include="FileIterator.cpp" />
+    <ClCompile Include="FileIteratorIterator.cpp" />
+    <ClCompile Include="Error.cpp" />
+    <ClCompile Include="DoubleNullStringList.cpp" />
+    <ClCompile Include="ShellHelper.cpp" />
+    <ClCompile Include="CRC64.cpp">
+      <Filter>Hashing</Filter>
+    </ClCompile>
+    <ClCompile Include="CRC32.cpp">
+      <Filter>Hashing</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Hashing">
+      <UniqueIdentifier>{9040150a-2adc-4844-a224-b66f50b5ec54}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
