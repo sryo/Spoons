@@ -104,7 +104,7 @@ local function autoloadBackends()
       local modname = "Muse.backends." .. name:sub(1, -5)
       local ok, result = pcall(require, modname)
       if not ok then
-        alert.show("Muse: failed to load " .. modname .. ": " .. tostring(result):sub(1, 80), 2)
+        print("Muse: failed to load " .. modname .. ": " .. tostring(result))
       elseif type(result) == "table" and result.name and not Muse.backends[result.name] then
         Muse.register(result)
       end
@@ -115,9 +115,7 @@ end
 local function reportBackendStatus()
   for name, b in pairs(Muse.backends) do
     local ok, why = b.available()
-    if not ok then
-      alert.show("Muse [" .. name .. "]: " .. (why or "unavailable"), 2)
-    end
+    print("Muse [" .. name .. "]: " .. (ok and "ready" or (why or "unavailable")))
   end
 end
 
@@ -126,7 +124,7 @@ local function chooseBackend()
   if primary then
     local ok, why = primary.available()
     if ok then return primary end
-    alert.show("Muse: " .. cfg.backend .. " unavailable (" .. (why or "?") .. ")", 1.5)
+    print("Muse: " .. cfg.backend .. " unavailable (" .. (why or "?") .. "), trying fallbacks")
   end
   for _, n in ipairs(cfg.fallbackOrder) do
     local b = Muse.backends[n]
