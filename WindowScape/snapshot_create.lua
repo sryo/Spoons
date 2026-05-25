@@ -14,7 +14,7 @@ local image    = require("hs.image")
 local M = {}
 
 local cfg, CONST
-local core, snapshots, snapshotUI, tiler, animation, fullscreen
+local core, snapshots, tiler, animation, fullscreen
 local callbacks
 
 function M.init(config, const, deps, cbs)
@@ -22,7 +22,6 @@ function M.init(config, const, deps, cbs)
     CONST      = const
     core       = deps.core
     snapshots  = deps.snapshots
-    snapshotUI = deps.snapshotUI
     tiler      = deps.tiler
     animation  = deps.animation
     fullscreen = deps.fullscreen
@@ -78,12 +77,10 @@ function M.createSnapshot(win)
     -- isCreating would normally block tileWindows(), so call the internal pass directly.
     core.updateWindowOrder()
     tiler.tileWindowsInternal()
-    if callbacks.focusPreviousWindow then
-        callbacks.focusPreviousWindow(winId)
-    end
+    callbacks.focusPreviousWindow(winId)
 
     local newFocused = window.focusedWindow()
-    if newFocused and newFocused:id() ~= winId and callbacks.drawOutline then
+    if newFocused and newFocused:id() ~= winId then
         callbacks.drawOutline(newFocused)
     end
 
@@ -240,7 +237,7 @@ function M.createSnapshot(win)
                 if msg == "mouseEnter" then
                     if not isDragging then
                         local snapFrame = c:frame()
-                        snapshotUI.show(winId, snapFrame)
+                        snapshots.showTooltip(winId, snapFrame)
                         if not isZoomed then
                             isZoomed = true
                             local data = windowSnapshots.windows[winId]
@@ -254,7 +251,7 @@ function M.createSnapshot(win)
                     end
                 elseif msg == "mouseExit" then
                     if not isDragging then
-                        snapshotUI.hide()
+                        snapshots.hideTooltip()
                         if isZoomed then
                             isZoomed = false
                             animateZoom(c, zoomScale, 1.0, 0.1)
@@ -275,7 +272,7 @@ function M.createSnapshot(win)
                     dragStartMousePos = nil
                     dragStartCanvasFrame = nil
 
-                    snapshotUI.hide()
+                    snapshots.hideTooltip()
 
                     if wasDragging then
                         local canvasFrame = c:frame()
@@ -322,11 +319,7 @@ function M.createSnapshot(win)
                             core.updateWindowOrder()
                             tiler.tileWindows()
                         else
-                            if callbacks.restoreFromSnapshot then
-                                callbacks.restoreFromSnapshot(winId)
-                            else
-                                snapshots.restoreFromSnapshot(winId)
-                            end
+                            snapshots.restoreFromSnapshot(winId)
                         end
                     end
                 end
@@ -359,7 +352,7 @@ function M.createSnapshot(win)
                             snapshotCanvas:transformation(hs.canvas.matrix.identity())
                         end
                     end
-                    snapshotUI.hide()
+                    snapshots.hideTooltip()
                 end
 
                 if isDragging then
@@ -387,12 +380,10 @@ function M.createSnapshot(win)
             windowSnapshots.isCreating = false
 
             snapshots.updateLayout()
-            if callbacks.updateButtonOverlaysWithRetry then
-                callbacks.updateButtonOverlaysWithRetry()
-            end
+            callbacks.updateButtonOverlaysWithRetry()
 
             local focused = window.focusedWindow()
-            if focused and callbacks.drawOutline then
+            if focused then
                 callbacks.drawOutline(focused)
             end
         end

@@ -26,7 +26,6 @@ local CONST = {
     SNAPSHOT_ZOOM_SCALE      = 1.1,    -- hover zoom multiplier for thumbnails
     SNAPSHOT_DRAG_THRESHOLD  = 5,      -- pixels before thumbnail drag starts
     SNAPSHOT_CLOSE_SIZE      = 20,     -- close button hit area in pixels
-    OVERLAY_PADDING          = 4,      -- padding around button overlays
 }
 
 return { cfg = cfg, CONST = CONST }

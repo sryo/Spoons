@@ -8,7 +8,7 @@
     ctrl+alt+cmd+D  toggle recording
 
   Files:
-    DigUp.lua                      loads everything (this file)
+    DigUp/init.lua                 loads everything (this file)
     DigUp/config.lua               settings
     DigUp/capture.lua              screenshot loop, thumbnails
     DigUp/ocr.lua                  async OCR via Swift CLI

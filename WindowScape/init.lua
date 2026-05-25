@@ -11,7 +11,6 @@ local core           = require("WindowScape.core")
 local animation      = require("WindowScape.animation")
 local outline        = require("WindowScape.outline")
 local snapshots      = require("WindowScape.snapshots")
-local snapshotUI     = require("WindowScape.snapshots.ui")
 local fullscreen     = require("WindowScape.fullscreen")
 local layouts        = require("WindowScape.layouts")
 local operations     = require("WindowScape.operations")
@@ -56,30 +55,16 @@ tiler.init(cfg, {
     fullscreen = fullscreen,
 })
 
-snapshotUI.init(cfg, {
-    safeGetApplication = core.safeGetApplication,
-    getSnapshotsState  = function() return core.snapshotsState end,
-})
-
-local function restoreFromSnapshot(winId)
-    if snapshotUI.currentWinId == winId then
-        snapshotUI.hide()
-    end
-    snapshots.restoreFromSnapshot(winId)
-end
-
 snapshotCreate.init(cfg, CONST, {
     core       = core,
     snapshots  = snapshots,
-    snapshotUI = snapshotUI,
     tiler      = tiler,
     animation  = animation,
     fullscreen = fullscreen,
 }, {
-    focusPreviousWindow         = function(excludeId) return events.focusPreviousWindow(excludeId) end,
+    focusPreviousWindow         = events.focusPreviousWindow,
     drawOutline                 = outline.draw,
     updateButtonOverlaysWithRetry = fullscreen.updateButtonOverlaysWithRetry,
-    restoreFromSnapshot         = restoreFromSnapshot,
 })
 
 operations.init(cfg, {
@@ -208,7 +193,6 @@ local function cleanup()
         core.snapshotsState.refreshTimer:stop()
     end
     events.stop()
-    snapshotUI.cleanup()
     animation.cancelAllAnimations()
     outline.cleanup()
     if cfg.enableTTTaps then gestures.stop() end

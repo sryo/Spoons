@@ -43,12 +43,9 @@ local function log(msg)
 end
 
 local function truncateMiddle(input, maxLength)
-    maxLength = maxLength or 40
-    if #input > maxLength then
-        local partLen = math.floor(maxLength / 2)
-        input = input:sub(1, partLen - 2) .. '...' .. input:sub(-partLen)
-    end
-    return input
+    if #input <= maxLength then return input end
+    local partLen = math.floor(maxLength / 2)
+    return input:sub(1, partLen - 2) .. "..." .. input:sub(-partLen)
 end
 
 local function getSnapshotSizeForWindow(winFrame)
@@ -238,8 +235,7 @@ local function showTooltip(winId, snapFrame)
 
     local lines = {}
     for line in message:gmatch("[^\n]+") do
-        if #line > 30 then line = line:sub(1, 27) .. "..." end
-        table.insert(lines, line)
+        table.insert(lines, truncateMiddle(line, 30))
     end
     local truncatedMessage = table.concat(lines, "\n")
 
@@ -329,6 +325,7 @@ end
 local restoreFromSnapshot, createSnapshot, showContextMenu
 
 restoreFromSnapshot = function(winId)
+    if tooltipCurrentWinId == winId then hideTooltip() end
     local data = snapshots.windows[winId]
     if not data then return end
 
@@ -349,9 +346,9 @@ restoreFromSnapshot = function(winId)
         cleanupResources(winId)
         updateLayout()
         timer.doAfter(0.2, function()
-            if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
-            if callbacks.tileWindows then callbacks.tileWindows() end
-            if callbacks.updateButtonOverlays then callbacks.updateButtonOverlays() end
+            callbacks.updateWindowOrder()
+            callbacks.tileWindows()
+            callbacks.updateButtonOverlays()
         end)
         return
     end
@@ -394,9 +391,9 @@ restoreFromSnapshot = function(winId)
             updateLayout()
 
             timer.doAfter(0.2, function()
-                if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
-                if callbacks.tileWindows then callbacks.tileWindows() end
-                if callbacks.updateButtonOverlays then callbacks.updateButtonOverlays() end
+                callbacks.updateWindowOrder()
+                callbacks.tileWindows()
+                callbacks.updateButtonOverlays()
             end)
         end
     end)
@@ -432,9 +429,9 @@ local function closeAll()
     snapshots.windows = {}
     snapshots.order = {}
     updateLayout()
-    if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
-    if callbacks.tileWindows then callbacks.tileWindows() end
-    if callbacks.updateButtonOverlays then callbacks.updateButtonOverlays() end
+    callbacks.updateWindowOrder()
+    callbacks.tileWindows()
+    callbacks.updateButtonOverlays()
 end
 
 showContextMenu = function(winId, data)
@@ -446,8 +443,8 @@ showContextMenu = function(winId, data)
             end
             cleanupResources(winId)
             updateLayout()
-            if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
-            if callbacks.tileWindows then callbacks.tileWindows() end
+            callbacks.updateWindowOrder()
+            callbacks.tileWindows()
         end },
         { title = "-" },
         { title = "Restore All", fn = function() restoreAll() end },
@@ -497,9 +494,7 @@ return {
     getState = getState,
     getSnapshotSizeForWindow = getSnapshotSizeForWindow,
     getSnapshotSize = getSnapshotSize,
-    getReservedArea = getReservedArea,
     getAdjustedScreenFrame = getAdjustedScreenFrame,
-    removeFromOrder = removeFromOrder,
     cleanupResources = cleanupResources,
     updateLayout = updateLayout,
     isMinimized = isMinimized,
@@ -507,8 +502,6 @@ return {
     hideTooltip = hideTooltip,
     restoreFromSnapshot = restoreFromSnapshot,
     clearAll = clearAll,
-    restoreAll = restoreAll,
-    closeAll = closeAll,
     showContextMenu = showContextMenu,
     PADDING = PADDING,
     GAP = GAP,

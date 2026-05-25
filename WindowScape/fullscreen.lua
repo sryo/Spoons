@@ -1,6 +1,6 @@
 -- Simulated fullscreen: hides other windows on the space, maximizes one window,
--- and overlays a small set of button affordances (delegated to fullscreen.ui).
--- The UI sub-module owns all overlay canvases; this file owns only the
+-- and overlays a small set of button affordances (delegated to fullscreen_ui).
+-- The UI module owns all overlay canvases; this file owns only the
 -- enter/exit lifecycle and the savedWeights/hiddenWindows state.
 
 local geometry = require("hs.geometry")
@@ -8,7 +8,7 @@ local timer    = require("hs.timer")
 local window   = require("hs.window")
 local fnutils  = require("hs.fnutils")
 
-local ui = require("WindowScape.fullscreen.ui")
+local ui = require("WindowScape.fullscreen_ui")
 
 local M = {}
 
@@ -32,9 +32,7 @@ function M.exit()
 
     state.active = false
 
-    if callbacks.restoreWeights and state.savedWeights then
-        callbacks.restoreWeights(state.savedWeights)
-    end
+    callbacks.restoreWeights(state.savedWeights)
     state.savedWeights = {}
 
     for _, data in ipairs(state.hiddenWindows) do
@@ -47,12 +45,10 @@ function M.exit()
 
     ui.clearAllOverlays()
 
-    if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
-    if callbacks.tileWindows then callbacks.tileWindows() end
-    if callbacks.drawOutline then
-        local focused = window.focusedWindow()
-        if focused then callbacks.drawOutline(focused) end
-    end
+    callbacks.updateWindowOrder()
+    callbacks.tileWindows()
+    local focused = window.focusedWindow()
+    if focused then callbacks.drawOutline(focused) end
     ui.updateButtonOverlays()
 end
 
@@ -69,15 +65,13 @@ function M.enter(win)
     if not winScreen then return end
     local screenFrame = winScreen:frame()
 
-    if callbacks.getWeights then
-        state.savedWeights = callbacks.getWeights()
-    end
+    state.savedWeights = callbacks.getWeights()
 
     state.active = true
     state.window = win
     state.hiddenWindows = {}
 
-    if callbacks.hideOutline then callbacks.hideOutline() end
+    callbacks.hideOutline()
 
     ui.clearAllOverlays()
 

@@ -41,6 +41,50 @@ function M.init(config, deps)
     drawActiveWindowOutline = outline.draw
 end
 
+-- Filter `order` to windows currently on `screenId`. When includeCollapsed is
+-- false, also skips windows whose size is at-or-below the collapsed threshold.
+local function getScreenWindows(order, screenId, includeCollapsed)
+    local out = {}
+    for _, w in ipairs(order) do
+        if w and not w:isFullScreen() then
+            local s = w:screen()
+            if s and s:id() == screenId then
+                if includeCollapsed then
+                    table.insert(out, w)
+                else
+                    local wsz = w:size()
+                    if wsz and wsz.h > cfg.collapsedWindowHeight then
+                        table.insert(out, w)
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- True if the new windows look like Chrome/Terminal tab-switches: same app,
+-- nearly identical frame (within 50px summed) as one of the removed windows.
+local function isTabSwitch(newWindows, removedWindows, currentWindowData)
+    if #newWindows == 0 or #removedWindows == 0 then return false end
+    for _, newId in ipairs(newWindows) do
+        local newData = currentWindowData[newId]
+        if newData and newData.frame then
+            for _, oldId in ipairs(removedWindows) do
+                local oldData = core.lastKnownWindowFrames[oldId]
+                if oldData and oldData.app == newData.app and oldData.frame then
+                    local frameDiff = math.abs(newData.frame.x - oldData.frame.x) +
+                                      math.abs(newData.frame.y - oldData.frame.y) +
+                                      math.abs(newData.frame.w - oldData.frame.w) +
+                                      math.abs(newData.frame.h - oldData.frame.h)
+                    if frameDiff < 50 then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Focus the previously focused window, skipping minimized / hidden ones.
 function M.focusPreviousWindow(excludeWinId)
     for _, winId in ipairs(core.focusHistory) do
@@ -92,7 +136,6 @@ end
 M.startFocusPollTimer = startFocusPollTimer
 
 local function handleWindowFocused(win)
-    core.log("windowFocused: " .. (win and win:title() or "nil") .. " id:" .. tostring(win and win:id()))
     checkFullscreenFocus()
 
     if core.fullscreenState and core.fullscreenState.active then return end
@@ -130,17 +173,9 @@ end
 M.handleWindowFocused = handleWindowFocused
 
 local function handleWindowEvent()
-    core.log("handleWindowEvent called - tilingCount=" .. core.tilingCount)
-    if core.fullscreenState and core.fullscreenState.active then
-        core.log("handleWindowEvent: skipped (simulatedFullscreen.active)")
-        return
-    end
-    if core.snapshotsState and core.snapshotsState.isCreating then
-        core.log("handleWindowEvent: skipped (windowSnapshots.isCreating)")
-        return
-    end
+    if core.fullscreenState and core.fullscreenState.active then return end
+    if core.snapshotsState and core.snapshotsState.isCreating then return end
     if core.tilingCount > 0 then
-        core.log("handleWindowEvent: deferred (tilingCount=" .. core.tilingCount .. ")")
         if pendingWindowEvent then pendingWindowEvent:stop() end
         local retryDelay = cfg.enableAnimations and (cfg.animationDuration + 0.15) or 0.2
         pendingWindowEvent = timer.doAfter(retryDelay, function()
@@ -184,48 +219,14 @@ local function handleWindowEvent()
         end
     end
 
-    -- Tab-switch detection: same app adds and removes a window with similar frame.
-    local isTabSwitch = false
-    if #newWindows > 0 and #removedWindows > 0 then
-        for _, newId in ipairs(newWindows) do
-            local newData = currentWindowData[newId]
-            if newData and newData.frame then
-                for _, oldId in ipairs(removedWindows) do
-                    local oldData = core.lastKnownWindowFrames[oldId]
-                    if oldData and oldData.app == newData.app and oldData.frame then
-                        local frameDiff = math.abs(newData.frame.x - oldData.frame.x) +
-                                          math.abs(newData.frame.y - oldData.frame.y) +
-                                          math.abs(newData.frame.w - oldData.frame.w) +
-                                          math.abs(newData.frame.h - oldData.frame.h)
-                        if frameDiff < 50 then
-                            isTabSwitch = true
-                            break
-                        end
-                    end
-                end
-            end
-            if isTabSwitch then break end
-        end
-    end
+    local tabSwitch = isTabSwitch(newWindows, removedWindows, currentWindowData)
 
     core.lastKnownWindowIds = currentWindowIds
     core.lastKnownWindowFrames = currentWindowData
 
-    core.log("handleWindowEvent: newWindows=" .. #newWindows ..
-             ", removedWindows=" .. #removedWindows ..
-             ", isTabSwitch=" .. tostring(isTabSwitch))
+    if tabSwitch then return end
+    if #newWindows == 0 and #removedWindows == 0 then return end
 
-    if isTabSwitch then
-        core.log("handleWindowEvent: skipped (detected as tab switch)")
-        return
-    end
-
-    if #newWindows == 0 and #removedWindows == 0 then
-        core.log("handleWindowEvent: skipped (no window changes)")
-        return
-    end
-
-    core.log("handleWindowEvent: proceeding to tile")
     local focusedWindow = window.focusedWindow()
     core.updateWindowOrder()
     tiler.tileWindows()
@@ -246,18 +247,12 @@ M.handleWindowEvent = handleWindowEvent
 local function handleWindowMoved(win)
     if not win then return end
     local winId = win:id()
-    local title = win:title() or "untitled"
-
-    core.log("handleWindowMoved: " .. title .. " (tilingCount=" .. core.tilingCount .. ")")
 
     if core.fullscreenState and core.fullscreenState.active then return end
     if core.snapshotsState and core.snapshotsState.isCreating then return end
 
     -- Newly created windows are handled by handleWindowEvent; skip here to avoid double-tiling.
-    if winId and not core.lastKnownWindowIds[winId] then
-        core.log("handleWindowMoved: skipped (not in lastKnownWindowIds)")
-        return
-    end
+    if winId and not core.lastKnownWindowIds[winId] then return end
 
     local focusedWin = window.focusedWindow()
     if focusedWin and focusedWin:id() == winId then
@@ -289,15 +284,8 @@ local function handleWindowMoved(win)
         return
     end
 
-    if core.tilingCount > 0 then
-        core.log("handleWindowMoved: skipped (tilingCount=" .. core.tilingCount .. ")")
-        return
-    end
-
-    if winId and animation.isAnimating(winId) then
-        core.log("handleWindowMoved: skipped (animating)")
-        return
-    end
+    if core.tilingCount > 0 then return end
+    if winId and animation.isAnimating(winId) then return end
 
     local app = core.safeGetApplication(win)
     if not core.isAppIncluded(app, win) then return end
@@ -320,17 +308,7 @@ local function handleWindowMoved(win)
     local horizontal = (screenFrame.w > screenFrame.h)
 
     local currentOrder = core.windowOrderBySpace[winSpace] or {}
-    local screenWindows = {}
-
-    for _, w in ipairs(currentOrder) do
-        if w and not w:isFullScreen() then
-            local s = w:screen()
-            local wsz = w:size()
-            if s and s:id() == screenId and wsz and wsz.h > cfg.collapsedWindowHeight then
-                table.insert(screenWindows, w)
-            end
-        end
-    end
+    local screenWindows = getScreenWindows(currentOrder, screenId, false)
 
     if #screenWindows == 0 then
         tiler.tileWindows()
@@ -348,15 +326,7 @@ local function handleWindowMoved(win)
         return
     end
 
-    local allScreenWindows = {}
-    for _, w in ipairs(currentOrder) do
-        if w and not w:isFullScreen() then
-            local s = w:screen()
-            if s and s:id() == screenId then
-                table.insert(allScreenWindows, w)
-            end
-        end
-    end
+    local allScreenWindows = getScreenWindows(currentOrder, screenId, true)
     local collapsedWins = tiler.getCollapsedWindows(allScreenWindows)
     local numCollapsed = #collapsedWins
 
@@ -396,11 +366,6 @@ local function handleWindowMoved(win)
 
     local sizeDiff = math.abs(actualSize - expectedSize)
     local wasResized = sizeDiff > 20
-
-    core.log(string.format(
-        "handleWindowMoved: %s, screenWins=%d, weight=%.2f, totalWeight=%.2f, avail=%.1f, expected=%.1f, actual=%.1f, diff=%.1f, wasResized=%s",
-        horizontal and "landscape" or "portrait", #screenWindows, tiler.getWindowWeight(win),
-        totalWeight, availableSpace, expectedSize, actualSize, sizeDiff, tostring(wasResized)))
 
     if wasResized then
         if #screenWindows < 2 then
@@ -477,16 +442,7 @@ local function handleWindowMoved(win)
         local scrFrame = scrn:frame()
         local scrId = scrn:id()
 
-        local scrnWindows = {}
-        for _, w in ipairs(order) do
-            if w and not w:isFullScreen() then
-                local s = w:screen()
-                local wsz = w:size()
-                if s and s:id() == scrId and wsz and wsz.h > cfg.collapsedWindowHeight then
-                    table.insert(scrnWindows, w)
-                end
-            end
-        end
+        local scrnWindows = getScreenWindows(order, scrId, false)
 
         local otherWindows = {}
         local movedWinInOrder = false

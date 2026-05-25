@@ -39,6 +39,22 @@ local function clearOverlaySet(set)
     end
 end
 
+-- If `rect` is non-nil, ensure overlayTable[winId] exists and matches rect.
+-- If `rect` is nil and we have an old overlay for this winId, delete it.
+local function syncOverlay(overlayTable, winId, rect, createFn, win)
+    if rect then
+        if overlayTable[winId] then
+            overlayTable[winId]:frame(padRect(rect))
+        else
+            local newOverlay = createFn(win)
+            if newOverlay then overlayTable[winId] = newOverlay end
+        end
+    elseif overlayTable[winId] then
+        overlayTable[winId]:delete()
+        overlayTable[winId] = nil
+    end
+end
+
 -- Resolve the AX rect for the named button on an already-resolved AX window.
 -- Skips buttons that resolve outside the window frame (e.g. Arc's autohiding sidebar).
 local function getButtonRectFor(axWin, win, axAttributeName)
@@ -157,9 +173,7 @@ function M.createZoomOverlay(win)
             local currentWin = window.get(winId)
             if not currentWin then return end
 
-            if callbacks.toggleFullscreen then
-                callbacks.toggleFullscreen(currentWin, winId)
-            end
+            callbacks.toggleFullscreen(currentWin, winId)
         end
     end)
 
@@ -201,7 +215,7 @@ function M.createMinimizeOverlay(win)
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, alpha = 0.5 })
         elseif msg == "mouseUp" then
             M.hideButtonTooltip()
-            if callbacks.createSnapshot then callbacks.createSnapshot(win) end
+            callbacks.createSnapshot(win)
         end
     end)
 
@@ -297,11 +311,9 @@ function M.createPinOverlay(win)
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, blue = 0.1, alpha = 0.4 })
         elseif msg == "mouseUp" then
             M.hideButtonTooltip()
-            if callbacks.toggleAppExclusion then callbacks.toggleAppExclusion(winId) end
-            -- toggleAppExclusion already retiles and updates outlines; refresh overlays.
-            if callbacks.updateButtonOverlays then
-                timer.doAfter(0.1, callbacks.updateButtonOverlays)
-            end
+            callbacks.toggleAppExclusion(winId)
+            -- toggleAppExclusion already retiles and updates outlines; refresh overlays after.
+            timer.doAfter(0.1, callbacks.updateButtonOverlays)
         end
     end)
 
@@ -353,8 +365,8 @@ function M.createCloseOverlay(win)
 end
 
 function M.updateButtonOverlays()
-    if callbacks.isFullscreenActive and callbacks.isFullscreenActive() then return end
-    if callbacks.isSnapshotsCreating and callbacks.isSnapshotsCreating() then return end
+    if callbacks.isFullscreenActive() then return end
+    if callbacks.isSnapshotsCreating() then return end
 
     local currentSpace = callbacks.getCurrentSpace and callbacks.getCurrentSpace()
     if not currentSpace then return end
@@ -402,45 +414,9 @@ function M.updateButtonOverlays()
             activeWinIds[winId] = true
             axWin = axWin or axuielement.windowElement(win)
 
-            local closeRect    = getButtonRectFor(axWin, win, "AXCloseButton")
-            local zoomRect     = getButtonRectFor(axWin, win, "AXZoomButton")
-            local minimizeRect = getButtonRectFor(axWin, win, "AXMinimizeButton")
-
-            if closeRect then
-                if M.closeOverlays[winId] then
-                    M.closeOverlays[winId]:frame(padRect(closeRect))
-                else
-                    local newOverlay = M.createCloseOverlay(win)
-                    if newOverlay then M.closeOverlays[winId] = newOverlay end
-                end
-            elseif M.closeOverlays[winId] then
-                M.closeOverlays[winId]:delete()
-                M.closeOverlays[winId] = nil
-            end
-
-            if zoomRect then
-                if M.zoomOverlays[winId] then
-                    M.zoomOverlays[winId]:frame(padRect(zoomRect))
-                else
-                    local newOverlay = M.createZoomOverlay(win)
-                    if newOverlay then M.zoomOverlays[winId] = newOverlay end
-                end
-            elseif M.zoomOverlays[winId] then
-                M.zoomOverlays[winId]:delete()
-                M.zoomOverlays[winId] = nil
-            end
-
-            if minimizeRect then
-                if M.minimizeOverlays[winId] then
-                    M.minimizeOverlays[winId]:frame(padRect(minimizeRect))
-                else
-                    local newOverlay = M.createMinimizeOverlay(win)
-                    if newOverlay then M.minimizeOverlays[winId] = newOverlay end
-                end
-            elseif M.minimizeOverlays[winId] then
-                M.minimizeOverlays[winId]:delete()
-                M.minimizeOverlays[winId] = nil
-            end
+            syncOverlay(M.closeOverlays,    winId, getButtonRectFor(axWin, win, "AXCloseButton"),    M.createCloseOverlay,    win)
+            syncOverlay(M.zoomOverlays,     winId, getButtonRectFor(axWin, win, "AXZoomButton"),     M.createZoomOverlay,     win)
+            syncOverlay(M.minimizeOverlays, winId, getButtonRectFor(axWin, win, "AXMinimizeButton"), M.createMinimizeOverlay, win)
         end
 
         ::continue::
