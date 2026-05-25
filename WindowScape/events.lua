@@ -636,10 +636,10 @@ function M.start()
 
     -- Periodic overlay refresh — keeps zoom/min/pin/close buttons aligned with the
     -- active window when sidebar autohide or other slow layout changes occur.
-    core.fullscreenState.overlayRefreshTimer = timer.doEvery(0.5, function()
+    core.fullscreenState.overlayRefreshTimer = timer.doEvery(2, function()
         if not core.fullscreenState.active and
            (not core.snapshotsState or not core.snapshotsState.isCreating) then
-            fullscreen.updateButtonOverlays()
+            fullscreen.updateButtonOverlaysIfFocusChanged()
         end
     end)
 

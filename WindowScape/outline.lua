@@ -29,6 +29,7 @@ local currentColor = nil
 local targetColor = nil
 local colorAnimTimer = nil
 local trackedCornerRadius = nil
+local appliedCornerRadius = nil
 
 local function getCornerRadius(win)
     if not win then return 0 end
@@ -142,6 +143,7 @@ local function updateFrame(frame, win)
         activeOutline:setStrokeWidth(cfg.outlineThickness)
         activeOutline:setRoundedRectRadii(radius, radius)
         activeOutline:setLevel(drawing.windowLevels.floating)
+        appliedCornerRadius = radius
     else
         local framesMatch = framesEqual(adjustedFrame, lastFrame)
         if not framesMatch then
@@ -152,6 +154,10 @@ local function updateFrame(frame, win)
             end
             activeOutline:hide()
             activeOutline:setFrame(geometry.rect(adjustedFrame))
+        end
+        if radius ~= appliedCornerRadius then
+            activeOutline:setRoundedRectRadii(radius, radius)
+            appliedCornerRadius = radius
         end
         animateColor(color)
     end
@@ -219,6 +225,7 @@ local function draw(win)
         trackedWinId = nil
         lastFrame = nil
         trackedCornerRadius = nil
+        appliedCornerRadius = nil
         stopRefresh()
         if activeOutline then
             activeOutline:hide()
@@ -236,6 +243,7 @@ local function cleanup()
     stopRefresh()
     if colorAnimTimer then colorAnimTimer:stop(); colorAnimTimer = nil end
     if activeOutline then activeOutline:hide() end
+    appliedCornerRadius = nil
 end
 
 local function init(config, constants, anim, colorCallback, logFn, isSnapshottedFn, isAXSlowFn)

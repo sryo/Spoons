@@ -22,6 +22,7 @@ M.closeOverlays    = {}
 local buttonTooltipCanvas = nil
 local buttonTooltipTimer  = nil
 local overlayUpdateTimer  = nil
+local lastRefreshFocusedWinId = nil
 
 local function padRect(rect)
     return {
@@ -375,6 +376,7 @@ function M.updateButtonOverlays()
     local allStandardWinIds = {}
     local focusedWin = window.focusedWindow()
     local focusedWinId = focusedWin and focusedWin:id()
+    lastRefreshFocusedWinId = focusedWinId
 
     for _, win in ipairs(window.visibleWindows()) do
         local okSpaces = callbacks.windowSpaces and callbacks.windowSpaces(win)
@@ -446,6 +448,16 @@ function M.updateButtonOverlays()
     for winId, overlay in pairs(M.pinOverlays) do
         if not allStandardWinIds[winId] then overlay:delete(); M.pinOverlays[winId] = nil end
     end
+end
+
+-- Periodic safety-net path: skip the (expensive) full sweep when the focused
+-- window hasn't changed since the last refresh. Real window events still call
+-- updateButtonOverlays() directly and bypass this short-circuit.
+function M.updateButtonOverlaysIfFocusChanged()
+    local fw = window.focusedWindow()
+    local fid = fw and fw:id()
+    if fid == lastRefreshFocusedWinId then return end
+    M.updateButtonOverlays()
 end
 
 function M.updateButtonOverlaysDebounced()
