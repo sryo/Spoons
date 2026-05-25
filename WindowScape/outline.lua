@@ -16,6 +16,7 @@ local axuielement = require("hs.axuielement")
 local cfg, CONST, animation
 local getColorForWindow -- callback to get outline color
 local isSnapshotted -- callback to check if window is snapshotted
+local isAXSlow -- callback to check if a window's app has slow AX (skip queries)
 local log -- logging function
 
 local activeOutline = nil
@@ -32,6 +33,8 @@ local trackedCornerRadius = nil
 local function getCornerRadius(win)
     if not win then return 0 end
     if not win:isStandard() then return 0 end
+    -- Skip AX for known-slow apps (Catalyst etc.) — use the more-common 16.
+    if isAXSlow and isAXSlow(win:application()) then return 16 end
     local axWin = axuielement.windowElement(win)
     local children = axWin:attributeValue("AXChildren")
     if children then
@@ -126,13 +129,14 @@ local function updateFrame(frame, win)
 
     local adjustedFrame = { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
     local color = getColorForWindow(win)
-    local radius = getCornerRadius(win)
+    -- trackedCornerRadius is computed once per focus change in draw(); reuse
+    -- it here so the 30 fps refresh doesn't hit AX on every tick.
+    local radius = trackedCornerRadius or 16
 
     if not activeOutline then
         if log then log("CREATE outline at " .. adjustedFrame.x .. "," .. adjustedFrame.y) end
         activeOutline = drawing.rectangle(geometry.rect(adjustedFrame))
         currentColor = color
-        trackedCornerRadius = radius
         activeOutline:setStrokeColor(currentColor)
         activeOutline:setFill(false)
         activeOutline:setStrokeWidth(cfg.outlineThickness)
@@ -148,10 +152,6 @@ local function updateFrame(frame, win)
             end
             activeOutline:hide()
             activeOutline:setFrame(geometry.rect(adjustedFrame))
-        end
-        if radius ~= trackedCornerRadius then
-            trackedCornerRadius = radius
-            activeOutline:setRoundedRectRadii(radius, radius)
         end
         animateColor(color)
     end
@@ -211,6 +211,7 @@ local function draw(win)
         if not frame then return end
 
         trackedWinId = win:id()
+        trackedCornerRadius = getCornerRadius(win)
         if log then log("outline frame: " .. frame.x .. "," .. frame.y .. " " .. frame.w .. "x" .. frame.h) end
         updateFrame(frame, win)
         startRefresh(win)
@@ -237,13 +238,14 @@ local function cleanup()
     if activeOutline then activeOutline:hide() end
 end
 
-local function init(config, constants, anim, colorCallback, logFn, isSnapshottedFn)
+local function init(config, constants, anim, colorCallback, logFn, isSnapshottedFn, isAXSlowFn)
     cfg = config
     CONST = constants
     animation = anim
     getColorForWindow = colorCallback
     log = logFn
     isSnapshotted = isSnapshottedFn
+    isAXSlow = isAXSlowFn
 end
 
 return {

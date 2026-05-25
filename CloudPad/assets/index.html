@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, viewport-fit=cover, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <title>CloudPad</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="screenshot-container">
+    <div id="screenshot"></div>
+    <div id="server-cursor"></div>
+  </div>
+
+  <div id="local-cursor"></div>
+
+  <div class="keyboard layer main active" data-layer="main">
+    <div class="row">
+      <button class="key" data-key="1" data-shift="!" data-alt="|">1</button>
+      <button class="key" data-key="2" data-shift="&quot;" data-alt="@">2</button>
+      <button class="key" data-key="3" data-shift="·" data-alt="#">3</button>
+      <button class="key" data-key="4" data-shift="$" data-alt="¢">4</button>
+      <button class="key" data-key="5" data-shift="%" data-alt="∞">5</button>
+      <button class="key" data-key="6" data-shift="&amp;" data-alt="¬">6</button>
+      <button class="key" data-key="7" data-shift="/" data-alt="÷">7</button>
+      <button class="key" data-key="8" data-shift="(" data-alt="“">8</button>
+      <button class="key" data-key="9" data-shift=")" data-alt="”">9</button>
+      <button class="key" data-key="0" data-shift="=" data-alt="≠">0</button>
+    </div>
+    <div class="row">
+      <button class="key adaptive" data-key="q" data-shift="Q" data-alt="œ">q</button>
+      <button class="key adaptive" data-key="w" data-shift="W" data-alt="æ">w</button>
+      <button class="key adaptive" data-key="e" data-shift="E" data-alt="€">e</button>
+      <button class="key adaptive" data-key="r" data-shift="R" data-alt="®">r</button>
+      <button class="key adaptive" data-key="t" data-shift="T" data-alt="†">t</button>
+      <button class="key adaptive" data-key="y" data-shift="Y" data-alt="¥">y</button>
+      <button class="key adaptive" data-key="u" data-shift="U" data-alt="ü">u</button>
+      <button class="key adaptive" data-key="i" data-shift="I" data-alt="í">i</button>
+      <button class="key adaptive" data-key="o" data-shift="O" data-alt="ø">o</button>
+      <button class="key adaptive" data-key="p" data-shift="P" data-alt="π">p</button>
+    </div>
+    <div class="row">
+      <button class="key adaptive" data-key="a" data-shift="A" data-alt="å">a</button>
+      <button class="key adaptive" data-key="s" data-shift="S" data-alt="ß">s</button>
+      <button class="key adaptive" data-key="d" data-shift="D" data-alt="∂">d</button>
+      <button class="key adaptive" data-key="f" data-shift="F" data-alt="ƒ">f</button>
+      <button class="key adaptive" data-key="g" data-shift="G" data-alt="©">g</button>
+      <button class="key adaptive" data-key="h" data-shift="H" data-alt="™">h</button>
+      <button class="key adaptive" data-key="j" data-shift="J" data-alt="¶">j</button>
+      <button class="key adaptive" data-key="k" data-shift="K" data-alt="§">k</button>
+      <button class="key adaptive" data-key="l" data-shift="L" data-alt="¬">l</button>
+      <button class="key" data-key="ñ" data-shift="Ñ" data-alt="~">ñ</button>
+    </div>
+    <div class="row">
+      <button class="key mod" data-mod="shift">⇧</button>
+      <button class="key adaptive" data-key="z" data-shift="Z" data-alt="Ω">z</button>
+      <button class="key adaptive" data-key="x" data-shift="X" data-alt="∑">x</button>
+      <button class="key adaptive" data-key="c" data-shift="C" data-alt="©">c</button>
+      <button class="key adaptive" data-key="v" data-shift="V" data-alt="√">v</button>
+      <button class="key adaptive" data-key="b" data-shift="B" data-alt="ß">b</button>
+      <button class="key adaptive" data-key="n" data-shift="N" data-alt="~">n</button>
+      <button class="key adaptive" data-key="m" data-shift="M" data-alt="µ">m</button>
+      <button class="key" data-key="." data-shift=":" data-alt="…">.</button>
+      <button class="key" data-key="backspace">⌫</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="escape">⎋</button>
+      <button class="key mod" data-mod="ctrl">⌃</button>
+      <button class="key mod" data-layer-switch="symbols">#</button>
+      <button class="key mod" data-mod="alt">⌥</button>
+      <button class="key mod" data-mod="cmd">⌘</button>
+      <button class="key space" data-key="space">␣</button>
+      <button class="key mod" data-mod="fn">fn</button>
+      <button class="key" data-key="return">↵</button>
+    </div>
+  </div>
+
+  <div class="keyboard layer symbols" data-layer="symbols">
+    <div class="row">
+      <button class="key" data-key="left">←</button>
+      <button class="key" data-key="right">→</button>
+      <button class="key" data-key="up">↑</button>
+      <button class="key" data-key="down">↓</button>
+      <button class="key" data-mouse="scrollup">⇡</button>
+      <button class="key" data-mouse="scrolldown">⇣</button>
+      <button class="key" data-mouse="leftclick">L</button>
+      <button class="key" data-mouse="middleclick">M</button>
+      <button class="key" data-mouse="rightclick">R</button>
+      <button class="key" data-key="delete">⌦</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="home">⤒</button>
+      <button class="key" data-key="end">⤓</button>
+      <button class="key" data-key="pageup">⇞</button>
+      <button class="key" data-key="pagedown">⇟</button>
+      <button class="key" data-key="f1">F1</button>
+      <button class="key" data-key="f2">F2</button>
+      <button class="key" data-key="f3">F3</button>
+      <button class="key" data-key="f4">F4</button>
+      <button class="key" data-key="f5">F5</button>
+      <button class="key" data-key="f6">F6</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="tab">⇥</button>
+      <button class="key" data-text="~">~</button>
+      <button class="key" data-text="`">`</button>
+      <button class="key" data-text="[">[</button>
+      <button class="key" data-text="]">]</button>
+      <button class="key" data-text="{">{</button>
+      <button class="key" data-text="}">}</button>
+      <button class="key" data-text="&lt;">&lt;</button>
+      <button class="key" data-text="&gt;">&gt;</button>
+      <button class="key" data-text="|">|</button>
+    </div>
+    <div class="row">
+      <button class="key mod" data-mod="shift">⇧</button>
+      <button class="key" data-text="-">-</button>
+      <button class="key" data-text="_">_</button>
+      <button class="key" data-text="+">+</button>
+      <button class="key" data-text="*">*</button>
+      <button class="key" data-text="/">/</button>
+      <button class="key" data-text="\">\</button>
+      <button class="key" data-text="'">'</button>
+      <button class="key" data-text=";">;</button>
+      <button class="key" data-key="backspace">⌫</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="escape">⎋</button>
+      <button class="key mod" data-mod="ctrl">⌃</button>
+      <button class="key mod" data-layer-switch="main">abc</button>
+      <button class="key mod" data-mod="alt">⌥</button>
+      <button class="key mod" data-mod="cmd">⌘</button>
+      <button class="key space" data-key="space">␣</button>
+      <button class="key mod" data-layer-switch="media">▶</button>
+      <button class="key" data-key="return">↵</button>
+    </div>
+  </div>
+
+  <div class="keyboard layer media" data-layer="media">
+    <div class="row">
+      <button class="key" data-key="brightnessdown">☼−</button>
+      <button class="key" data-key="brightnessup">☼+</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="previous">⏮</button>
+      <button class="key" data-key="play">⏯</button>
+      <button class="key" data-key="next">⏭</button>
+    </div>
+    <div class="row">
+      <button class="key" data-key="mute">🔇</button>
+      <button class="key" data-key="sounddown">🔉</button>
+      <button class="key" data-key="soundup">🔊</button>
+    </div>
+    <div class="row">
+      <button class="key mod" data-layer-switch="main">abc</button>
+      <button class="key mod" data-layer-switch="symbols">#</button>
+    </div>
+  </div>
+
+  <script src="/bigrams.js"></script>
+  <script src="/transport.js"></script>
+  <script src="/pointer.js"></script>
+  <script src="/keyboard.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -12,13 +12,15 @@ require "NoTunes"
 require "BubbleCursor"
 --require "DigUp"
 --require "UndoClose"
---local CloudPad = require("CloudPad")
+local CloudPad = require("CloudPad"); CloudPad.start()
 --require "TimeTrail"
 
 
 local MenuMaestro = require("MenuMaestro")
 --local ZXNav = require("ZXNav")
 --ZXNav:start()
+
+local Muse = require("Muse")
 
 
 

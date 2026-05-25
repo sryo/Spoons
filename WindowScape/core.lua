@@ -23,6 +23,7 @@ end
 local window = require("hs.window")
 local screen = require("hs.screen")
 local json   = require("hs.json")
+local timer  = require("hs.timer")
 
 local M = {}
 
@@ -53,6 +54,65 @@ M.tilingDelayTimer  = nil -- timer
 -- Cross-module state pointers (populated after dependent modules init)
 M.snapshotsState  = nil
 M.fullscreenState = nil
+
+-- Per-bundleID cache of apps whose AX queries have measured slow once. Catalyst
+-- apps (e.g. WhatsApp) live here. Modules that hammer AX should consult this
+-- and skip non-essential queries for slow apps. Resets on Hammerspoon reload.
+M.slowAXApps         = {}
+M.slowSetFrameApps   = {}
+M.measuredApps       = {} -- bundleID -> true, so we only log the AX timing once per app
+
+local SLOW_AX_THRESHOLD_MS       = 50
+local SLOW_SETFRAME_THRESHOLD_MS = 50
+
+function M.isAXSlow(app)
+    if not app then return false end
+    local bundleID = app:bundleID()
+    return bundleID and M.slowAXApps[bundleID] or false
+end
+
+-- Wraps `fn`, times it. First time we ever measure a given bundleID we log the
+-- timing (slow OR fast) so the user can see what's being detected. If the call
+-- exceeds the threshold the app is cached as slow and subsequent measureAX
+-- calls short-circuit, returning fn() directly without timing or logging.
+function M.measureAX(app, fn)
+    local bundleID = app and app:bundleID()
+    if bundleID and M.slowAXApps[bundleID] then return fn() end
+
+    local t0 = timer.secondsSinceEpoch()
+    local results = { fn() } -- table-pack to preserve any number of returns
+    local elapsedMs = (timer.secondsSinceEpoch() - t0) * 1000
+
+    if bundleID and not M.measuredApps[bundleID] then
+        M.measuredApps[bundleID] = true
+        if elapsedMs > SLOW_AX_THRESHOLD_MS then
+            M.slowAXApps[bundleID] = true
+            M.log(string.format("AX SLOW: %s took %.0fms — skipping overlays for this app", bundleID, elapsedMs))
+        else
+            M.log(string.format("AX ok:   %s took %.0fms", bundleID, elapsedMs))
+        end
+    elseif bundleID and elapsedMs > SLOW_AX_THRESHOLD_MS then
+        -- Already-measured app suddenly spiked — mark it.
+        M.slowAXApps[bundleID] = true
+        M.log(string.format("AX SLOW: %s spiked to %.0fms — skipping overlays for this app", bundleID, elapsedMs))
+    end
+    return table.unpack(results)
+end
+
+function M.isSetFrameSlow(app)
+    if not app then return false end
+    local bundleID = app:bundleID()
+    return bundleID and M.slowSetFrameApps[bundleID] or false
+end
+
+function M.markSetFrameSlow(app, elapsedMs)
+    local bundleID = app and app:bundleID()
+    if not bundleID or M.slowSetFrameApps[bundleID] then return end
+    if elapsedMs > SLOW_SETFRAME_THRESHOLD_MS then
+        M.slowSetFrameApps[bundleID] = true
+        M.log(string.format("setFrame SLOW: %s took %.0fms — skipping animation for this app", bundleID, elapsedMs))
+    end
+end
 
 function M.log(message)
     if M.cfg and M.cfg.debugLogging then

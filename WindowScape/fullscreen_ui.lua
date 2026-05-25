@@ -390,34 +390,45 @@ function M.updateButtonOverlays()
         local isCollapsed = sz and sz.h <= cfg.collapsedWindowHeight
         local axWin -- resolved lazily; one AX rebuild per window, max.
 
+        -- Skip excluded apps (tile but no overlay) and apps whose AX has
+        -- measured slow this session (e.g. WhatsApp / other Catalyst).
+        local included = app and callbacks.isAppIncluded and callbacks.isAppIncluded(app, win)
+        if not included then goto continue end
+        if callbacks.isAXSlow and callbacks.isAXSlow(app) then goto continue end
+
         if isStandard and not isCollapsed and winId == focusedWinId then
             allStandardWinIds[winId] = true
 
             local pinRect = M.getPinButtonFrame(win)
             if pinRect then
-                local isExcluded = app and callbacks.isAppIncluded and not callbacks.isAppIncluded(app, win)
                 local pinFrame = padRect(pinRect)
                 if M.pinOverlays[winId] then
                     M.pinOverlays[winId]:frame(pinFrame)
-                    M.updatePinOverlayAppearance(M.pinOverlays[winId], isExcluded)
+                    M.updatePinOverlayAppearance(M.pinOverlays[winId], false)
                 else
                     local newOverlay = M.createPinOverlay(win)
                     if newOverlay then
                         M.pinOverlays[winId] = newOverlay
-                        M.updatePinOverlayAppearance(newOverlay, isExcluded)
+                        M.updatePinOverlayAppearance(newOverlay, false)
                     end
                 end
             end
         end
 
-        if app and callbacks.isAppIncluded and callbacks.isAppIncluded(app, win) then
-            activeWinIds[winId] = true
+        activeWinIds[winId] = true
+        -- Time the WHOLE AX block (windowElement + 3 attribute queries). The
+        -- windowElement call alone is cheap; the attribute queries are where
+        -- Catalyst apps stall the Lua thread.
+        local closeRect, zoomRect, minimizeRect = callbacks.measureAX(app, function()
             axWin = axWin or axuielement.windowElement(win)
+            return getButtonRectFor(axWin, win, "AXCloseButton"),
+                   getButtonRectFor(axWin, win, "AXZoomButton"),
+                   getButtonRectFor(axWin, win, "AXMinimizeButton")
+        end)
 
-            syncOverlay(M.closeOverlays,    winId, getButtonRectFor(axWin, win, "AXCloseButton"),    M.createCloseOverlay,    win)
-            syncOverlay(M.zoomOverlays,     winId, getButtonRectFor(axWin, win, "AXZoomButton"),     M.createZoomOverlay,     win)
-            syncOverlay(M.minimizeOverlays, winId, getButtonRectFor(axWin, win, "AXMinimizeButton"), M.createMinimizeOverlay, win)
-        end
+        syncOverlay(M.closeOverlays,    winId, closeRect,    M.createCloseOverlay,    win)
+        syncOverlay(M.zoomOverlays,     winId, zoomRect,     M.createZoomOverlay,     win)
+        syncOverlay(M.minimizeOverlays, winId, minimizeRect, M.createMinimizeOverlay, win)
 
         ::continue::
     end
@@ -448,9 +459,7 @@ end
 -- AX elements need time after a window event to become available; retry a few times.
 function M.updateButtonOverlaysWithRetry()
     timer.doAfter(0.1, M.updateButtonOverlays)
-    timer.doAfter(0.3, M.updateButtonOverlays)
-    timer.doAfter(0.6, M.updateButtonOverlays)
-    timer.doAfter(1.0, M.updateButtonOverlays)
+    timer.doAfter(0.5, M.updateButtonOverlays)
 end
 
 function M.cleanup()

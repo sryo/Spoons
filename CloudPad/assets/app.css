@@ -1,0 +1,100 @@
+* { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; }
+html { user-select: none; -webkit-user-select: none; }
+body {
+  background: #000;
+  color: #fff;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  font: 16px -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.keyboard {
+  display: none;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  transition: opacity 0.15s ease;
+}
+.keyboard.active { display: flex; }
+.mouse-mode .keyboard { opacity: 0.1; pointer-events: none; }
+
+.row {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+}
+
+.key {
+  background: #0d0d0d;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  margin: 3px;
+  padding: 0;
+  font: inherit;
+  font-size: clamp(12px, 6vw, 48px);
+  text-box-trim: trim-both;
+  cursor: pointer;
+  flex: 1;
+  transition: background 0.1s, scale 0.1s, translate 0.1s;
+}
+.key:not(.mod).active {
+  background: #666;
+  scale: 2;
+  translate: 0 -20vh;
+  transition: none;
+  z-index: 10;
+}
+.key.adaptive.preview { background: #1a1a1a; }
+.key.mod { background: #1c1c1e; }
+.key.mod.active { background: #0a84ff; color: #fff; }
+.key.mod.locked { background: #30d158; color: #000; }
+.key.space { flex: 3; }
+
+.screenshot-container {
+  position: fixed;
+  inset: 0;
+  display: none;
+  background: #000;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+.mouse-mode .screenshot-container { display: flex; }
+#screenshot {
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.55;
+}
+
+#local-cursor {
+  position: fixed;
+  width: 44px;
+  height: 44px;
+  border: 2px solid rgba(255, 60, 60, 0.85);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  display: none;
+}
+.mouse-mode #local-cursor { display: block; }
+
+#server-cursor {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #5ac8fa;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(90, 200, 250, 0.8);
+  transform: translate(-50%, -50%);
+  display: none;
+}
+.mouse-mode #server-cursor { display: block; }

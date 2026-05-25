@@ -21,7 +21,10 @@ local events         = require("WindowScape.events")
 local keybinds       = require("WindowScape.keybinds")
 
 core.init(cfg)
-animation.init(cfg)
+animation.init(cfg, {
+    isSetFrameSlow   = core.isSetFrameSlow,
+    markSetFrameSlow = core.markSetFrameSlow,
+})
 core.loadList()
 
 local snapshotCallbacks = {
@@ -45,7 +48,7 @@ local function getOutlineColorForWindow(win)
     return isExcluded and cfg.outlineColorPinned or cfg.outlineColor
 end
 
-outline.init(cfg, CONST, animation, getOutlineColorForWindow, core.log, snapshots.isMinimized)
+outline.init(cfg, CONST, animation, getOutlineColorForWindow, core.log, snapshots.isMinimized, core.isAXSlow)
 
 tiler.init(cfg, {
     core       = core,
@@ -115,6 +118,8 @@ fullscreenCallbacks.toggleAppExclusion   = function(winId)
     if not win then return end
     keybinds.toggleFocusedWindowInList(win)
 end
+fullscreenCallbacks.isAXSlow  = core.isAXSlow
+fullscreenCallbacks.measureAX = core.measureAX
 
 events.init(cfg, {
     core       = core,

@@ -5,6 +5,19 @@ local geometry = require("hs.geometry")
 
 local activeAnimations = {}
 local cfg = nil
+local callbacks = {}
+
+-- Time win:setFrame, hand the elapsed value to core's slow-setFrame detector.
+-- Apps that exceed the threshold are marked and bypass the animation loop on
+-- subsequent calls (see animatedSetFrame).
+local function timedSetFrame(win, rect)
+    local t0 = timer.secondsSinceEpoch()
+    win:setFrame(rect, 0)
+    if callbacks.markSetFrameSlow then
+        local elapsed = (timer.secondsSinceEpoch() - t0) * 1000
+        callbacks.markSetFrameSlow(win:application(), elapsed)
+    end
+end
 
 local function easeOutCubic(t)
     return 1 - math.pow(1 - t, 3)
@@ -46,22 +59,25 @@ local function animatedSetFrame(win, targetFrame, onComplete)
     if not win then return end
     local winId = win:id()
     if not winId then
-        win:setFrame(geometry.rect(targetFrame), 0)
+        timedSetFrame(win, geometry.rect(targetFrame))
         if onComplete then onComplete() end
         return
     end
 
     cancelAnimation(winId)
 
-    if not cfg or not cfg.enableAnimations then
-        win:setFrame(geometry.rect(targetFrame), 0)
+    -- Skip the 9-frame animation loop for apps with slow setFrame
+    -- (Catalyst apps like WhatsApp/Messages). One direct setFrame instead.
+    if not cfg or not cfg.enableAnimations or
+       (callbacks.isSetFrameSlow and callbacks.isSetFrameSlow(win:application())) then
+        timedSetFrame(win, geometry.rect(targetFrame))
         if onComplete then onComplete() end
         return
     end
 
     local startFrame = win:frame()
     if not startFrame then
-        win:setFrame(geometry.rect(targetFrame), 0)
+        timedSetFrame(win, geometry.rect(targetFrame))
         if onComplete then onComplete() end
         return
     end
@@ -72,7 +88,7 @@ local function animatedSetFrame(win, targetFrame, onComplete)
     local dw = math.abs(startFrame.w - targetFrame.w)
     local dh = math.abs(startFrame.h - targetFrame.h)
     if dx < 2 and dy < 2 and dw < 2 and dh < 2 then
-        win:setFrame(geometry.rect(targetFrame), 0)
+        timedSetFrame(win, geometry.rect(targetFrame))
         if onComplete then onComplete() end
         return
     end
@@ -94,12 +110,12 @@ local function animatedSetFrame(win, targetFrame, onComplete)
             h = lerp(startFrame.h, targetFrame.h, ease),
         }
 
-        win:setFrame(geometry.rect(currentFrame), 0)
+        timedSetFrame(win, geometry.rect(currentFrame))
 
         if t >= 1 then
             animTimer:stop()
             activeAnimations[winId] = nil
-            win:setFrame(geometry.rect(targetFrame), 0)
+            timedSetFrame(win, geometry.rect(targetFrame))
             if onComplete then onComplete() end
         end
     end)
@@ -112,8 +128,9 @@ local function animatedSetFrame(win, targetFrame, onComplete)
     }
 end
 
-local function init(config)
+local function init(config, cbs)
     cfg = config
+    callbacks = cbs or {}
 end
 
 return {
