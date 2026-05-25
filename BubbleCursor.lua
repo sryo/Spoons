@@ -41,17 +41,6 @@ local colors = {
     boxStroke  = { red = 0.45, green = 0.60, blue = 0.98, alpha = 0.85 },
 }
 
-local function applyAlpha(c, f)
-    return { red = c.red, green = c.green, blue = c.blue, alpha = c.alpha * f }
-end
-
-local function applyFadeToOverlay(overlay, fade)
-    overlay["focusBox"].strokeColor = applyAlpha(colors.boxStroke,  fade)
-    overlay["focusBox"].fillColor   = applyAlpha(colors.boxFill,    fade)
-    overlay["cone"].strokeColor     = applyAlpha(colors.coneStroke, fade)
-    overlay["cone"].fillColor       = applyAlpha(colors.coneFill,   fade)
-end
-
 local INTERACTIVE_ROLES = {
     "AXButton", "AXCheckBox", "AXRadioButton", "AXPopUpButton",
     "AXComboBox", "AXSlider", "AXTextField",
@@ -139,8 +128,8 @@ end
 --           │        │
 --          C[4]────C[3]
 
-local function buildPolygon(cx, cy, rect)
-    local p = cfg.conePadding
+local function buildPolygon(cx, cy, rect, padding)
+    local p = padding
     local R = { x = rect.x - p, y = rect.y - p, w = rect.w + p * 2, h = rect.h + p * 2 }
 
     local C = {
@@ -262,7 +251,10 @@ local function enumerateTargets()
                 and frame.x + frame.w > wf.x and frame.y + frame.h > wf.y
                 and frame.x < wf.x + wf.w and frame.y < wf.y + wf.h
             then
-                targets[#targets + 1] = { frame = frame, element = el }
+                local parentRole = el.AXParent and el.AXParent.AXRole
+                if parentRole ~= "AXScrollBar" then
+                    targets[#targets + 1] = { frame = frame, element = el }
+                end
             end
         end
         cachedTargets = targets
@@ -368,7 +360,7 @@ local function createOverlay()
     overlay:clickActivating(false)
 end
 
-local function computeFade(nearSq)
+local function computeProximity(nearSq)
     local d = sqrt(nearSq)
     if d <= cfg.fadeStartDistance then return 1 end
     if d >= cfg.maxVisualDistance then return 0 end
@@ -387,43 +379,37 @@ local function updateOverlay(cx, cy)
         return
     end
 
-    -- Track nearest target regardless of visual fade; onMouseClick's
+    -- Track nearest target regardless of visual proximity; onMouseClick's
     -- maxClickDistance is the authoritative gate for click redirect.
     currentTarget = target
 
-    local fade = computeFade(nearSq)
-    if fade <= 0 then
+    local proximity = computeProximity(nearSq)
+    if proximity <= 0 then
         if overlayVisible then overlay:hide(); overlayVisible = false end
         lastTarget = nil
         return
     end
 
     -- Dedupe canvas updates: bail when nothing visible would change.
-    local fadeBin  = math.floor(fade * 20)
+    local proximityBin = math.floor(proximity * 20)
     local sameTgt  = (target == lastTarget)
-    local sameFade = (fadeBin == lastFadeBin)
+    local sameProx = (proximityBin == lastFadeBin)
     local samePos  = abs(cx - lastUpdateX) < 2 and abs(cy - lastUpdateY) < 2
-    if sameTgt and sameFade and samePos and overlayVisible then return end
+    if sameTgt and sameProx and samePos and overlayVisible then return end
 
     local ox, oy = overlayOrigin.x, overlayOrigin.y
     local f = target.frame
-    local bp = cfg.boxPadding
+    local bp = cfg.boxPadding * proximity
+    local cp = cfg.conePadding * proximity
 
-    -- Focus box frame only depends on the target rect.
-    if not sameTgt then
-        overlay["focusBox"].frame = {
-            x = f.x - bp - ox,
-            y = f.y - bp - oy,
-            w = f.w + bp * 2,
-            h = f.h + bp * 2,
-        }
-    end
-    if not sameTgt or not sameFade then
-        applyFadeToOverlay(overlay, fade)
-    end
+    overlay["focusBox"].frame = {
+        x = f.x - bp - ox,
+        y = f.y - bp - oy,
+        w = f.w + bp * 2,
+        h = f.h + bp * 2,
+    }
 
-    -- Cone coords always update (we only reach here when cursor moved enough).
-    local poly = buildPolygon(cx, cy, f)
+    local poly = buildPolygon(cx, cy, f, cp)
     local coords = {}
     for i, pt in ipairs(poly) do
         coords[i] = { x = pt.x - ox, y = pt.y - oy }
@@ -431,7 +417,7 @@ local function updateOverlay(cx, cy)
     overlay["cone"].coordinates = coords
 
     if not overlayVisible then overlay:show(); overlayVisible = true end
-    lastTarget, lastFadeBin = target, fadeBin
+    lastTarget, lastFadeBin = target, proximityBin
     lastUpdateX, lastUpdateY = cx, cy
 end
 
@@ -472,6 +458,7 @@ local function onMouseMoved()
     if steadyTimer then steadyTimer:stop() end
     steadyTimer = timer.doAfter(cfg.steadyTimeoutMs / 1000, function()
         if overlayVisible then overlay:hide(); overlayVisible = false end
+        currentTarget = nil
         lastTarget = nil
     end)
 
