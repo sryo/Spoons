@@ -15,6 +15,7 @@ end
 
 return {
   name = "gemini",
+  multimodal = true,
   guidance = "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in your shell env",
 
   available = function()
@@ -24,14 +25,22 @@ return {
     return true
   end,
 
-  stream = function(_, prompt, history, onChunk, onDone, onError)
+  stream = function(_, prompt, history, attachments, onChunk, onDone, onError)
     local c = M.config.backends.gemini
     local contents = {}
     for _, m in ipairs(history or {}) do
       local role = m.role == "assistant" and "model" or "user"
       table.insert(contents, { role = role, parts = { { text = m.content } } })
     end
-    table.insert(contents, { role = "user", parts = { { text = prompt } } })
+    local parts = { { text = prompt } }
+    if attachments and #attachments > 0 then
+      for _, a in ipairs(attachments) do
+        table.insert(parts, {
+          inline_data = { mime_type = a.mime, data = a.base64 },
+        })
+      end
+    end
+    table.insert(contents, { role = "user", parts = parts })
     local body = h.json.encode({ contents = contents })
     local url  = "https://generativelanguage.googleapis.com/v1beta/models/"
               .. c.model .. ":streamGenerateContent?alt=sse"

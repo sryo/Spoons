@@ -17,7 +17,7 @@ return {
     return true
   end,
 
-  stream = function(_, prompt, history, onChunk, onDone, onError)
+  stream = function(_, prompt, history, _, onChunk, onDone, onError)
     local sh = os.getenv("SHELL") or "/bin/zsh"
     -- --strict-mcp-config + empty mcpServers disables MCP entirely. Without this
     -- claude hangs on MCP startup when launched from Hammerspoon (the user's

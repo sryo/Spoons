@@ -37,7 +37,7 @@ return {
     return true
   end,
 
-  stream = function(_, prompt, _, onChunk, onDone, onError)
+  stream = function(_, prompt, _, _, onChunk, onDone, onError)
     return h.newTask(M.config.backends.apple.helperPath, {}, prompt, onChunk, onDone, onError)
   end,
 }

@@ -20,7 +20,7 @@ return {
     return true
   end,
 
-  stream = function(_, prompt, _, onChunk, onDone, onError)
+  stream = function(_, prompt, _, _, onChunk, onDone, onError)
     local sh = os.getenv("SHELL") or "/bin/zsh"
     local c  = M.config.backends.fabric
     local cmd = "fabric --stream"

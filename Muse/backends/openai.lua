@@ -11,6 +11,7 @@ M.config.backends.openai = M.config.backends.openai or {
 
 return {
   name = "openai",
+  multimodal = true,
   guidance = "Set OPENAI_API_KEY in your shell env",
 
   available = function()
@@ -20,11 +21,21 @@ return {
     return true
   end,
 
-  stream = function(_, prompt, history, onChunk, onDone, onError)
+  stream = function(_, prompt, history, attachments, onChunk, onDone, onError)
     local c = M.config.backends.openai
     local messages = {}
     for _, m in ipairs(history or {}) do table.insert(messages, m) end
-    table.insert(messages, { role = "user", content = prompt })
+    local userContent = prompt
+    if attachments and #attachments > 0 then
+      userContent = { { type = "text", text = prompt } }
+      for _, a in ipairs(attachments) do
+        table.insert(userContent, {
+          type = "image_url",
+          image_url = { url = "data:" .. a.mime .. ";base64," .. a.base64 },
+        })
+      end
+    end
+    table.insert(messages, { role = "user", content = userContent })
     local body = h.json.encode({
       model    = c.model,
       stream   = true,
