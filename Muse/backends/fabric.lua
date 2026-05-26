@@ -2,6 +2,11 @@
 -- Requires: `fabric` on PATH and configured with a model.
 -- Config:   Muse.config.backends.fabric = { pattern = "improve_writing" | nil }
 --           When pattern is set, runs `fabric --stream --pattern <name>`.
+--
+-- Muse.config.systemPrompt is intentionally NOT applied here. Fabric patterns
+-- are themselves the system prompt; stacking Muse's house style on top would
+-- fight whatever the pattern is trying to do. Write a Muse-flavored fabric
+-- pattern if you want both.
 
 local M = require("Muse")
 local h = M.helpers

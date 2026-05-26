@@ -24,6 +24,13 @@ return {
     -- MCP servers are reachable from an interactive shell but not from hs.task).
     local cmd = "claude -p --output-format=stream-json --verbose --include-partial-messages"
               .. " --strict-mcp-config --mcp-config '{\"mcpServers\":{}}'"
+    -- Append Muse's house style on top of Claude Code's default system prompt.
+    -- Using --append-system-prompt (vs --system-prompt) preserves Claude Code's
+    -- own framing — Muse just layers format/tone constraints over it.
+    local sp = h.systemPrompt("claudecli")
+    if sp and sp ~= "" then
+      cmd = cmd .. " --append-system-prompt " .. h.shellQuote(sp)
+    end
     -- Multi-turn continuity: Muse stashes the session id on the history table
     -- after the first turn. We pass --resume to make claude pick up that
     -- conversation; on the first turn there's nothing to resume, so we skip it.

@@ -41,7 +41,12 @@ return {
       end
     end
     table.insert(contents, { role = "user", parts = parts })
-    local body = h.json.encode({ contents = contents })
+    local payload = { contents = contents }
+    local sp = h.systemPrompt("gemini")
+    if sp and sp ~= "" then
+      payload.system_instruction = { parts = { { text = sp } } }
+    end
+    local body = h.json.encode(payload)
     local url  = "https://generativelanguage.googleapis.com/v1beta/models/"
               .. c.model .. ":streamGenerateContent?alt=sse"
     local args = {

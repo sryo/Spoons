@@ -1,9 +1,12 @@
 -- Muse: an inline AI companion. Double-tap right ⌘ to summon near the text caret.
+-- If text is selected when summoned, it's auto-attached as context.
 --
 -- While the overlay is open:
 --   type → ask, Enter → submit (or, with empty buffer, paste the latest reply
 --   into the focused field), Esc → cancel.
---   ⌘⇧S → capture a region and attach as image. ⌘⌫ → clear attachments.
+--   ⌘⇧S → capture a region and attach as image.
+--   ⌘⇧V → attach clipboard contents as text context.
+--   ⌘⌫ → clear attachments and context.
 -- Double-tap right ⌘ within continueMs of last close → conversation continues.
 
 local Muse             = {}
@@ -37,6 +40,18 @@ Muse.config            = {
     rightCmdCode   = 54, -- right ⌘
     backends       = {}, -- per-plugin config: Muse.config.backends[name] = { ... }
 
+    -- House-style system prompt tuned for the Enter-paste flow. Set to nil to
+    -- disable globally; per-backend override lives at
+    -- Muse.config.backends[<name>].systemPrompt. Fabric ignores this (patterns
+    -- ARE its system prompt).
+    systemPrompt   = [[You are Muse, a quiet inline assistant invoked next to the user's text caret. Your reply may be pasted directly into the field they were working in.
+
+Reply concisely. No preamble ("Sure!", "Here is...", "Certainly"). No closing offers ("Let me know if...", "Hope this helps"). No meta-commentary about your own response. Match the user's tone, register, and length — short questions get short replies.
+
+Plain text by default. Use Markdown or code fences only when explicitly asked or when the content genuinely requires it (e.g. actual code).
+
+If <context>...</context> appears, that is the text the user wants to discuss. Do not echo it back. Rewrite requests get just the rewritten text. Questions get just the answer.]],
+
     layout = {
         overlayWidth   = 540,
         inputHeight    = 46,
@@ -53,9 +68,24 @@ Muse.config            = {
         statusDotW     = 20,
         dotGap         = 8,
         dotRadius      = 3,
+        dotRowH        = 14,                  -- extra canvas row reserved for streaming-dots beneath the AI reply
 
         cornerRadius   = 4,
         cursorWidth    = 1.5,
+
+        userFontSize   = 17,                  -- two-tier type: user prompts smaller than AI replies
+        userAlpha      = 0.7,                 -- and dimmer; AI replies stay at fg/spinner full alpha
+
+        pairAlphas     = { 1.0, 0.55, 0.35 }, -- per-turn-pair opacity falloff (latest → older)
+
+        railWidth      = 2,
+        railInset      = 2,                   -- distance from canvas edge to rail
+        railMaxTurns   = 12,                  -- pre-allocated rail slots (visible cap is well below this)
+
+        enterGlyphSize = 12,                  -- "↵" affordance beside the latest AI reply
+
+        fadeMaskStrips = 6,                   -- stacked alpha strips approximating a gradient at the top
+        fadeMaskTotalH = 18,
     },
 
     timings = {
@@ -109,6 +139,18 @@ Muse.helpers           = {
     eventtap = hs.eventtap,
     parseSSE = function(buf, perLine)
         for line in buf:gmatch("[^\r\n]+") do perLine(line) end
+    end,
+    -- Per-backend override wins, then the global default, then nil. Backends
+    -- call this and apply the result natively (system field, --system flag, etc.).
+    systemPrompt = function(backendName)
+        local bcfg = Muse.config.backends[backendName]
+        if bcfg and bcfg.systemPrompt ~= nil then return bcfg.systemPrompt end
+        return Muse.config.systemPrompt
+    end,
+    -- POSIX-safe single-quote shell quoting for embedding strings in shell command
+    -- lines. `'foo'\''bar'` is the standard escape for an embedded apostrophe.
+    shellQuote = function(s)
+        return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
     end,
     newTask  = function(cmd, args, stdin, onLine, onDone, onError)
         local t = taskmod.new(cmd,
@@ -199,6 +241,20 @@ local function focusedElement()
     local el
     pcall(function() el = ax.systemWideElement():attributeValue("AXFocusedUIElement") end)
     return el
+end
+
+-- Pull the currently-selected text from the focused UI element via AX.
+-- Returns nil for unsupported controls (Terminal, many Electron apps) or empty
+-- selections — caller falls back to ⌘⇧V (clipboard) for those cases.
+local function selectedText()
+    local s
+    pcall(function()
+        local el = focusedElement()
+        if not el then return end
+        local v = el:attributeValue("AXSelectedText")
+        if type(v) == "string" and v ~= "" then s = v end
+    end)
+    return s
 end
 
 -- Reject degenerate rects. AX returns {0,0,0,0} for empty docs, dead pids,
@@ -323,6 +379,7 @@ local state = {
     response     = "",
     history      = {},
     attachments  = {},
+    textContext  = nil, -- selection or clipboard text attached as context
     capturing    = false,
     expanded     = false,
     task         = nil,
@@ -333,9 +390,26 @@ local state = {
     inputTop     = 0,
     screenFrame  = nil,
     statusKind   = "idle",
+    streamDotY   = nil, -- y-position where the bouncing dots should ride (below streaming response); nil = input row
+    pulseActive  = false, -- true while the active→idle fade is playing; keeps dotRow reserved during the fade
 }
 
 local close, submitPrompt, commitResponse, rebuildResponse, applyCanvasFrame
+
+-- Where the i-th bouncing dot (0..2) should sit. When streamDotY is set, the
+-- row hangs below the streaming response (dots aligned to the left padding).
+-- Otherwise the dots ride at the right edge of the input row.
+local function activeDotCenter(i)
+    local frameW = state.canv:frame().w
+    local gap    = cfg.layout.dotGap
+    local r      = cfg.layout.dotRadius
+    if state.streamDotY then
+        local baseX = cfg.layout.pad + r
+        return baseX + i * gap, state.streamDotY
+    end
+    local baseX = frameW - cfg.layout.pad - r
+    return baseX - (2 - i) * gap, cfg.layout.inputHeight / 2
+end
 
 local function setStatus(kind, reposition)
     if not state.canv then return end
@@ -344,21 +418,20 @@ local function setStatus(kind, reposition)
         state.statusTimer:stop(); state.statusTimer = nil
     end
     state.statusKind = kind
-    local frameW     = state.canv:frame().w
-    local dotRight   = frameW - cfg.layout.pad
-    local dotGap     = cfg.layout.dotGap
-    local dotR       = cfg.layout.dotRadius
-    local dotY       = cfg.layout.inputHeight / 2
+    local dotR = cfg.layout.dotRadius
     if kind == "active" then
-        -- Three-dot bouncing wave during streaming.
+        -- Three-dot bouncing wave during streaming. Position recomputed each
+        -- frame so the dots ride beneath the streaming AI reply once
+        -- state.streamDotY is set.
         for i = 0, 2 do
-            state.canv[3 + i].action = "fill"
-            state.canv[3 + i].radius = dotR
+            state.canv[3 + i].action    = "fill"
+            state.canv[3 + i].radius    = dotR
             state.canv[3 + i].fillColor = C.spinner
         end
         if reposition then
             for i = 0, 2 do
-                state.canv[3 + i].center = { x = dotRight - (2 - i) * dotGap, y = dotY }
+                local cx, cy = activeDotCenter(i)
+                state.canv[3 + i].center = { x = cx, y = cy }
             end
         else
             local t0           = timer.secondsSinceEpoch()
@@ -373,30 +446,35 @@ local function setStatus(kind, reposition)
                     local d = t - peakAt
                     if d > 0.5 then d = d - 1 elseif d < -0.5 then d = d + 1 end
                     local lift = bounceHeight * math.exp(-(d * d) / (2 * sigma * sigma))
-                    state.canv[3 + i].center = {
-                        x = dotRight - (2 - i) * dotGap,
-                        y = dotY - lift,
-                    }
+                    local cx, cy = activeDotCenter(i)
+                    state.canv[3 + i].center = { x = cx, y = cy - lift }
                 end
             end)
         end
     elseif kind == "error" then
-        state.canv[3].action = "fill"
-        state.canv[3].radius = dotR + 0.5
+        -- Errors are surfaced via the input row regardless of streamDotY —
+        -- the response area may already hold a partial stream when this fires.
+        local frameW = state.canv:frame().w
+        state.canv[3].action    = "fill"
+        state.canv[3].radius    = dotR + 0.5
         state.canv[3].fillColor = C.error
-        state.canv[3].center = { x = dotRight - dotR, y = dotY }
-        state.canv[4].action = "skip"
-        state.canv[5].action = "skip"
+        state.canv[3].center    = { x = frameW - cfg.layout.pad - dotR, y = cfg.layout.inputHeight / 2 }
+        state.canv[4].action    = "skip"
+        state.canv[5].action    = "skip"
     else
         -- Idle: empty by default. Pulse-then-fade only when punctuating a
         -- completed stream (active → idle); other paths stay silent.
         if (not reposition) and prevKind == "active" then
-            state.canv[3].action = "fill"
-            state.canv[3].radius = dotR + 0.5
+            -- Snapshot the dot's center now; state.streamDotY may change as
+            -- onDone rebuilds the panel with state.response cleared.
+            local pulseCx, pulseCy  = activeDotCenter(2)
+            state.pulseActive       = true
+            state.canv[3].action    = "fill"
+            state.canv[3].radius    = dotR + 0.5
             state.canv[3].fillColor = C.spinner
-            state.canv[3].center = { x = dotRight - dotR, y = dotY }
-            state.canv[4].action = "skip"
-            state.canv[5].action = "skip"
+            state.canv[3].center    = { x = pulseCx, y = pulseCy }
+            state.canv[4].action    = "skip"
+            state.canv[5].action    = "skip"
             local t0    = timer.secondsSinceEpoch()
             local holdS = cfg.timings.settledHoldS
             local fadeS = cfg.timings.settledFadeS
@@ -405,9 +483,12 @@ local function setStatus(kind, reposition)
                 if not state.canv then return end
                 local elapsed = timer.secondsSinceEpoch() - t0
                 if elapsed >= holdS + fadeS then
-                    state.canv[3].action = "skip"
+                    state.canv[3].action    = "skip"
                     state.canv[3].fillColor = base
                     if state.statusTimer then state.statusTimer:stop(); state.statusTimer = nil end
+                    state.pulseActive = false
+                    -- Shrink the canvas now that the dot row is no longer needed.
+                    if rebuildResponse then rebuildResponse() end
                     return
                 end
                 local alpha = (elapsed < holdS) and 1 or (1 - (elapsed - holdS) / fadeS)
@@ -431,11 +512,14 @@ end
 -- every resize.
 local function relayout()
     if not state.canv then return end
-    local frameW     = state.canv:frame().w
-    local inputTextY = math.floor((cfg.layout.inputHeight - cfg.fontSize) / 2) - 2
-    -- Right edge reserves space for status dot (~20px) plus chip when visible.
-    local chipReserved = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
-    local rightReserve = cfg.layout.statusDotW + chipReserved
+    local frameW        = state.canv:frame().w
+    local inputTextY    = math.floor((cfg.layout.inputHeight - cfg.fontSize) / 2) - 2
+    -- Right edge reserves space for status dot plus chips when visible.
+    local hasImages     = (#state.attachments > 0)
+    local hasText       = (state.textContext and state.textContext ~= "")
+    local imageReserved = hasImages and (cfg.layout.chipWidth + cfg.layout.pad) or 0
+    local textReserved  = hasText and (cfg.layout.cardSize + cfg.layout.pad) or 0
+    local rightReserve  = cfg.layout.statusDotW + imageReserved + textReserved
     state.canv[2].frame = {
         x = cfg.layout.pad,
         y = inputTextY,
@@ -454,6 +538,15 @@ local function relayout()
         w = 16,
         h = 13 + 6,
     }
+    -- Text-context chip: single card placed left of the image stack (or at the
+    -- image stack's right-anchor when no images are present).
+    local imageStackLeftEdge = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep
+    local textChipX = hasImages
+        and (imageStackLeftEdge - cfg.layout.pad - cfg.layout.cardSize)
+        or (chipRight - cfg.layout.cardSize)
+    state.canv[12].frame = { x = textChipX, y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    -- c[13] label is shorter than the card; offset y to center it vertically.
+    state.canv[13].frame = { x = textChipX, y = cardY + math.floor((cfg.layout.cardSize - 14) / 2), w = cfg.layout.cardSize, h = 16 }
     setStatus(state.statusKind or "idle", true)
 end
 
@@ -474,6 +567,9 @@ local function placeholderForState()
     if #state.attachments > 0 then
         local s = (#state.attachments == 1) and "ask about the image…" or "ask about the images…"
         return s, C.muted
+    end
+    if state.textContext and state.textContext ~= "" then
+        return "ask about the selection…", C.muted
     end
     if #state.history > 0 and not state.lastPrompt then
         return "↵ to insert · type to refine", C.accent
@@ -500,9 +596,10 @@ local function computeInputWidth()
     local styled = inputStyled(probe, C.fg)
     local sz = hs.drawing.getTextDrawingSize(styled)
     local textW = (sz and sz.w) or 100
-    local chipW = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
+    local imageChipW = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
+    local textChipW = (state.textContext and state.textContext ~= "") and (cfg.layout.cardSize + cfg.layout.pad) or 0
     local dotW = cfg.layout.statusDotW
-    local w = math.ceil(textW) + 2 * cfg.layout.pad + chipW + dotW
+    local w = math.ceil(textW) + 2 * cfg.layout.pad + imageChipW + textChipW + dotW
     return math.min(cfg.layout.overlayWidth, w)
 end
 
@@ -543,6 +640,26 @@ local function rebuildInput()
         state.canv[8].action = "skip"
         state.canv[8].text = ""
     end
+    -- Text-context chip: a single card showing "T·<chars>" when context is attached.
+    local hasText = (state.textContext and state.textContext ~= "")
+    if hasText then
+        state.canv[12].action = "strokeAndFill"
+        state.canv[13].action = "fill"
+        state.canv[13].text = hs.styledtext.new(string.format("T·%d", #state.textContext), {
+            font = { name = cfg.font, size = 11 },
+            color = C.accent,
+            paragraphStyle = { alignment = "center" },
+            shadow = textShadow,
+        })
+    else
+        state.canv[12].action = "skip"
+        state.canv[13].action = "skip"
+        state.canv[13].text = ""
+    end
+    -- Re-run relayout in case chip presence changed: reserved widths and chip
+    -- positions both depend on textContext/attachments, and in expanded mode the
+    -- canvas width doesn't change here so applyCanvasFrame won't be invoked.
+    relayout()
     if not state.expanded then
         local desiredW = computeInputWidth()
         local f = state.canv:frame()
@@ -648,65 +765,77 @@ local function animateCanvasTo(targetW, targetH)
     end)
 end
 
-local function buildTranscript(skipTurns)
-    -- Build a styledtext transcript with per-paragraph alignment:
-    -- user prompts left, AI replies right. Optional skipTurns trims the oldest
-    -- N entries from state.history (for overflow handling).
-    local function mkAttrs(align, color)
+-- Two-tier type: user prompts smaller and dimmer than AI replies. Opacity
+-- falloff dims older turn-pairs (pairsBack 0 = latest pair, 1 = one back, …).
+local function turnAttrs(kind, pairsBack)
+    local pa    = cfg.layout.pairAlphas
+    local alpha = pa[math.min(pairsBack + 1, #pa)]
+    if kind == "user" then
         return {
-            font = { name = cfg.font, size = cfg.fontSize },
-            color = color or C.fg,
-            paragraphStyle = { alignment = align },
-            shadow = textShadow,
+            font           = { name = cfg.font, size = cfg.layout.userFontSize },
+            color          = { white = 1, alpha = alpha * cfg.layout.userAlpha },
+            paragraphStyle = { alignment = "right" },
+            shadow         = textShadow,
         }
     end
-    local userA           = mkAttrs("right")
-    local aiA             = mkAttrs("left")
-    -- "Enter target": when the buffer is empty, plain Enter commits the latest
-    -- assistant reply. Highlight that reply in spinner blue so the user sees
-    -- what will be pasted. Suppress when buffer has text (Enter then submits).
-    local highlightLatest = (state.buffer == "")
-    local aiLatest        = mkAttrs("left", C.spinner)
-    local latestAiIdx     = nil
-    if highlightLatest then
-        for i = #state.history, (skipTurns or 0) + 1, -1 do
-            if state.history[i].role == "assistant" then
-                latestAiIdx = i; break
-            end
-        end
-    end
-    local segs = {}
+    return {
+        font           = { name = cfg.font, size = cfg.fontSize },
+        color          = { white = 1, alpha = alpha },
+        paragraphStyle = { alignment = "left" },
+        shadow         = textShadow,
+    }
+end
+
+-- composeTurns flattens history + pending prompt/response into a normalized
+-- list of { kind, content, isLatest } entries (kind = "user" | "assistant").
+local function composeTurns(skipTurns)
+    local turns = {}
     for i = (skipTurns or 0) + 1, #state.history do
         local msg = state.history[i]
-        local attrs
-        if msg.role == "user" then
-            attrs = userA
-        elseif i == latestAiIdx then
-            attrs = aiLatest
-        else
-            attrs = aiA
-        end
-        segs[#segs + 1] = { text = msg.content, attrs = attrs }
+        turns[#turns + 1] = { kind = msg.role, content = msg.content }
     end
     if state.lastPrompt then
-        segs[#segs + 1] = { text = state.lastPrompt, attrs = userA }
+        turns[#turns + 1] = { kind = "user", content = state.lastPrompt }
         if state.response ~= "" then
-            segs[#segs + 1] = { text = state.response, attrs = aiA }
+            turns[#turns + 1] = { kind = "assistant", content = state.response }
         end
     elseif state.response ~= "" then
-        -- No pending prompt → response is guidance/error text; left-align it
-        -- regardless of the user/ai alignment scheme.
-        segs[#segs + 1] = { text = state.response, attrs = mkAttrs("left") }
+        -- No pending prompt → response is guidance/error text; render as AI.
+        turns[#turns + 1] = { kind = "assistant", content = state.response }
     end
-    if #segs == 0 then return nil end
-    local result = nil
-    for i, seg in ipairs(segs) do
-        local text = seg.text
-        if i < #segs then text = text .. "\n\n" end
-        local s = hs.styledtext.new(text, seg.attrs)
-        result = result and (result .. s) or s
+    for i = #turns, 1, -1 do
+        if turns[i].kind == "assistant" then
+            turns[i].isLatest = true; break
+        end
     end
-    return result
+    return turns
+end
+
+-- buildTurns builds the full styledtext transcript AND measures each turn's
+-- cumulative y-offset + height inside c[6], so rails and the Enter glyph can be
+-- positioned per-turn. Requires c[6].frame.w to be set before invocation —
+-- minimumTextSize uses the element's current width for wrap calculations.
+local function buildTurns(turns)
+    local accStyled, accH = nil, 0
+    local measured = {}
+    for i, turn in ipairs(turns) do
+        local pairsBack = math.floor((#turns - i) / 2)
+        local attrs = turnAttrs(turn.kind, pairsBack)
+        local text = turn.content
+        if i < #turns then text = text .. "\n\n" end
+        local s = hs.styledtext.new(text, attrs)
+        accStyled = accStyled and (accStyled .. s) or s
+        local sz = state.canv:minimumTextSize(6, accStyled)
+        local newH = (sz and sz.h) or 0
+        measured[i] = {
+            kind     = turn.kind,
+            isLatest = turn.isLatest,
+            y        = accH,
+            h        = newH - accH,
+        }
+        accH = newH
+    end
+    return accStyled, measured, accH
 end
 
 rebuildResponse = function()
@@ -731,27 +860,96 @@ rebuildResponse = function()
     local maxH = math.min(cfg.layout.responseHeight, availH)
     local frameW = targetW - 2 * cfg.layout.pad
     local respY = cfg.layout.inputHeight + 4
+    -- Frame width must be set before measurement so styledtext wraps correctly.
+    state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = maxH }
+
     -- Iteratively drop oldest turns until the styled transcript fits the cap.
     local skip = 0
-    local styled, measuredH
+    local turns, styled, measured, measuredH = {}, nil, {}, 0
     while true do
-        styled = buildTranscript(skip)
-        if not styled then
-            measuredH = 0; break
-        end
-        state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = maxH }
-        state.canv[6].text = styled
-        local sz = state.canv:minimumTextSize(6, styled)
-        measuredH = (sz and sz.h) or 0
+        turns = composeTurns(skip)
+        if #turns == 0 then break end
+        styled, measured, measuredH = buildTurns(turns)
         if measuredH <= maxH then break end
-        if skip + 2 > #state.history then break end -- can't drop pending turn
+        if skip + 2 > #state.history then break end -- can't drop the pending turn
         skip = skip + 2
     end
-    if not styled then state.canv[6].text = "" end
+    state.canv[6].text = styled or ""
     local contentH = math.min(math.ceil(measuredH) + 4, maxH)
     if measuredH <= 0 then contentH = 0 end
     state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = contentH }
-    local targetCanvasH = cfg.layout.inputHeight + (contentH > 0 and 6 + contentH or 0)
+
+    -- Author rails for AI turns only. User prompts already read as user via
+    -- right-alignment + smaller/dimmer text; a second rail there was visual
+    -- noise. Brightness follows pairAlphas so the latest AI pops.
+    local railBase  = 14
+    local railSlots = cfg.layout.railMaxTurns
+    local pa        = cfg.layout.pairAlphas
+    for slot = 0, railSlots - 1 do
+        local idx  = railBase + slot
+        local turn = measured[slot + 1]
+        if turn and turn.kind == "assistant" then
+            local pairsBack = math.floor((#measured - (slot + 1)) / 2)
+            local alpha     = pa[math.min(pairsBack + 1, #pa)]
+            state.canv[idx].action    = "fill"
+            state.canv[idx].fillColor = {
+                red   = C.spinner.red,
+                green = C.spinner.green,
+                blue  = C.spinner.blue,
+                alpha = (C.spinner.alpha or 1) * alpha,
+            }
+            state.canv[idx].frame = {
+                x = cfg.layout.railInset,
+                y = respY + turn.y,
+                w = cfg.layout.railWidth,
+                h = math.max(turn.h - 6, 4),
+            }
+        else
+            state.canv[idx].action = "skip"
+        end
+    end
+
+    -- The Enter-paste affordance lives in the input-row placeholder
+    -- ("↵ to insert · type to refine") when buffer is empty + history exists.
+    -- No glyph in the response area — that was redundant.
+    state.canv[railBase + railSlots].action = "skip"
+    local streaming = state.task and state.task:isRunning()
+
+    -- Top fade-mask: visible only when we dropped older turns to fit. Stacked
+    -- alpha strips approximate a black→transparent gradient at the top of the
+    -- response area, signalling "there's more above" instead of silently lying.
+    local fadeBase  = enterIdx + 1
+    local nStrips   = cfg.layout.fadeMaskStrips
+    if skip > 0 and contentH > 0 then
+        local stripH = cfg.layout.fadeMaskTotalH / nStrips
+        for s = 0, nStrips - 1 do
+            local stripAlpha = (1 - s / (nStrips - 1)) * (C.bg.alpha or 1)
+            state.canv[fadeBase + s].action    = "fill"
+            state.canv[fadeBase + s].fillColor = { white = 0, alpha = stripAlpha }
+            state.canv[fadeBase + s].frame     = {
+                x = 0, y = respY + s * stripH, w = targetW, h = stripH + 1,
+            }
+        end
+    else
+        for s = 0, nStrips - 1 do
+            state.canv[fadeBase + s].action = "skip"
+        end
+    end
+
+    -- Reserve a row beneath the response for the streaming dots when the AI is
+    -- writing into the panel. Kept active during the post-stream pulse-fade so
+    -- the dots don't fly back to the input row mid-animation.
+    local needsDotRow = (state.response ~= "" and streaming) or state.pulseActive
+    local dotRowH     = needsDotRow and cfg.layout.dotRowH or 0
+    if needsDotRow then
+        state.streamDotY = respY + contentH + math.floor(dotRowH / 2)
+    else
+        state.streamDotY = nil
+    end
+
+    local targetCanvasH = cfg.layout.inputHeight
+        + (contentH > 0 and 6 + contentH or 0)
+        + dotRowH
     animateCanvasTo(targetW, targetCanvasH)
 end
 
@@ -847,6 +1045,60 @@ local function newOverlay()
             frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
         }
     end
+    -- Text-context chip: c[12] rect + c[13] "T·N" label. Visibility/position set
+    -- in rebuildInput() and relayout(); only one chip ever shows.
+    c[12] = {
+        type = "rectangle",
+        action = "skip",
+        fillColor = { white = 0.18, alpha = 0.95 },
+        strokeColor = C.accent,
+        strokeWidth = 0.6,
+        roundedRectRadii = { xRadius = 3, yRadius = 3 },
+        frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
+    }
+    c[13] = {
+        type = "text",
+        action = "skip",
+        text = "",
+        textFont = cfg.font,
+        textSize = 11,
+        textColor = C.accent,
+        frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = 16 },
+    }
+    -- Author rails: pre-allocated rail slots positioned per-turn by rebuildResponse.
+    -- Color and side are decided at render-time based on turn kind (user/AI).
+    local railBase = 14
+    for i = 0, cfg.layout.railMaxTurns - 1 do
+        c[railBase + i] = {
+            type = "rectangle",
+            action = "skip",
+            fillColor = C.muted,
+            frame = { x = 0, y = 0, w = cfg.layout.railWidth, h = 0 },
+        }
+    end
+    -- Enter-target glyph: small "↵" beside the latest AI reply when buffer is empty.
+    -- Index sits right after the rail block so additions are easy to spot.
+    local enterIdx = railBase + cfg.layout.railMaxTurns -- c[26]
+    c[enterIdx] = {
+        type = "text",
+        action = "skip",
+        text = "",
+        textFont = cfg.font,
+        textSize = cfg.layout.enterGlyphSize,
+        textColor = C.spinner,
+        frame = { x = 0, y = 0, w = 14, h = cfg.layout.enterGlyphSize + 4 },
+    }
+    -- Top fade-mask: stacked alpha strips approximating a gradient. Visible only
+    -- when buildTranscript dropped older turns to fit the vertical cap.
+    local fadeBase = enterIdx + 1 -- c[27..]
+    for i = 0, cfg.layout.fadeMaskStrips - 1 do
+        c[fadeBase + i] = {
+            type = "rectangle",
+            action = "skip",
+            fillColor = { white = 0, alpha = 0 },
+            frame = { x = 0, y = 0, w = 0, h = 0 },
+        }
+    end
     c:level(canvas.windowLevels.overlay)
     c:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
     c:show()
@@ -872,9 +1124,19 @@ local function onInputKey(event)
         return true
     end
 
+    if cmdShiftOnly and key == "v" then
+        local clip = pb.getContents()
+        if clip and clip ~= "" then
+            state.textContext = clip
+            rebuildInput()
+        end
+        return true
+    end
+
     if cmdOnly and key == "delete" then
-        if #state.attachments > 0 then
+        if #state.attachments > 0 or (state.textContext and state.textContext ~= "") then
             state.attachments = {}
+            state.textContext = nil
             rebuildInput()
         end
         return true
@@ -927,6 +1189,7 @@ local function open(opts)
     state.buffer          = ""
     state.response        = ""
     state.attachments     = {}
+    state.textContext     = nil
     state.lastPrompt      = nil
     state.anchorX         = x
     state.inputTop        = inputTop
@@ -936,6 +1199,10 @@ local function open(opts)
         state.history = {}
         state.sessionId = nil
     end
+    -- Auto-attach the current selection as context. AX returns nothing for
+    -- unsupported controls (Terminal etc.) — user falls back to ⌘⇧V for those.
+    local sel = selectedText()
+    if sel and sel ~= "" then state.textContext = sel end
     -- Continued sessions reopen at full width (history will fill the response
     -- area); fresh sessions start narrow and grow with the input text.
     state.expanded = opts.continued and #state.history > 0
@@ -985,6 +1252,7 @@ close = function()
     if state.task and state.task:isRunning() then pcall(function() state.task:terminate() end) end
     state.task = nil
     state.attachments = {}
+    state.textContext = nil
     state.expanded = false
     if state.canv then
         state.canv:delete(); state.canv = nil
@@ -1014,7 +1282,12 @@ end
 submitPrompt = function()
     local userText = state.buffer
     if userText == "" then return end
+    local ctx = state.textContext
+    state.textContext = nil
     local finalPrompt = userText
+    if ctx and ctx ~= "" then
+        finalPrompt = "<context>\n" .. ctx .. "\n</context>\n\n" .. userText
+    end
 
     local atts = state.attachments
     state.attachments = {}

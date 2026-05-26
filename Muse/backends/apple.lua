@@ -38,6 +38,15 @@ return {
   end,
 
   stream = function(_, prompt, _, _, onChunk, onDone, onError)
-    return h.newTask(M.config.backends.apple.helperPath, {}, prompt, onChunk, onDone, onError)
+    -- The current helper protocol is "stdin = prompt". FoundationModels does
+    -- support instructions on LanguageModelSession init, so when a Muse
+    -- systemPrompt is set we prepend it inline until the helper grows a real
+    -- system channel. If you rebuild the helper, parse and strip this wrapper.
+    local sp = h.systemPrompt("apple")
+    local input = prompt
+    if sp and sp ~= "" then
+      input = "<system>\n" .. sp .. "\n</system>\n\n" .. prompt
+    end
+    return h.newTask(M.config.backends.apple.helperPath, {}, input, onChunk, onDone, onError)
   end,
 }

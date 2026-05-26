@@ -24,6 +24,10 @@ return {
   stream = function(_, prompt, history, attachments, onChunk, onDone, onError)
     local c = M.config.backends.openai
     local messages = {}
+    local sp = h.systemPrompt("openai")
+    if sp and sp ~= "" then
+      table.insert(messages, { role = "system", content = sp })
+    end
     for _, m in ipairs(history or {}) do table.insert(messages, m) end
     local userContent = prompt
     if attachments and #attachments > 0 then

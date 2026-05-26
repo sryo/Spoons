@@ -38,12 +38,15 @@ return {
       table.insert(userContent, { type = "text", text = prompt })
     end
     table.insert(messages, { role = "user", content = userContent })
-    local body = h.json.encode({
+    local payload = {
       model      = c.model,
       max_tokens = c.maxTokens,
       stream     = true,
       messages   = messages,
-    })
+    }
+    local sp = h.systemPrompt("claude")
+    if sp and sp ~= "" then payload.system = sp end
+    local body = h.json.encode(payload)
     local args = {
       "-N", "-s", "--no-buffer", "https://api.anthropic.com/v1/messages",
       "-H", "x-api-key: " .. os.getenv("ANTHROPIC_API_KEY"),
