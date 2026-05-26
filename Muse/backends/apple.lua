@@ -27,6 +27,7 @@ M.config.backends.apple = M.config.backends.apple or {
 
 return {
   name = "apple",
+  guidance = "Build helper at ~/.hammerspoon/Muse-helpers/muse-foundation (see backends/apple.lua)",
 
   available = function()
     local p = M.config.backends.apple.helperPath

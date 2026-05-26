@@ -15,6 +15,7 @@ end
 
 return {
   name = "gemini",
+  guidance = "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in your shell env",
 
   available = function()
     if not apiKey() then

@@ -12,6 +12,7 @@ M.config.backends.fabric = M.config.backends.fabric or {
 
 return {
   name = "fabric",
+  guidance = "Install fabric CLI (https://github.com/danielmiessler/fabric)",
 
   available = function()
     local out = hs.execute("command -v fabric 2>/dev/null")

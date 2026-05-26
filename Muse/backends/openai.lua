@@ -11,6 +11,7 @@ M.config.backends.openai = M.config.backends.openai or {
 
 return {
   name = "openai",
+  guidance = "Set OPENAI_API_KEY in your shell env",
 
   available = function()
     if not os.getenv("OPENAI_API_KEY") then
