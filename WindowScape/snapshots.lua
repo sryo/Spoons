@@ -148,6 +148,34 @@ end
 local function updateLayout()
     if #snapshots.order == 0 then return end
 
+    -- If a snapshot's screenId no longer matches any current screen (display
+    -- disconnected, rotation re-registered the screen, etc.), reassign it to
+    -- whichever current screen contains the originalFrame center, falling back
+    -- to mainScreen. Without this the snapshot stays frozen at its old
+    -- coordinates because updateLayout silently skips it.
+    local screensById = {}
+    for _, scr in ipairs(screen.allScreens()) do
+        screensById[scr:id()] = scr
+    end
+    for _, winId in ipairs(snapshots.order) do
+        local data = snapshots.windows[winId]
+        if data and data.canvas and data.screenId and not screensById[data.screenId] then
+            local of = data.originalFrame or {}
+            local cx = (of.x or 0) + (of.w or 0) / 2
+            local cy = (of.y or 0) + (of.h or 0) / 2
+            local found
+            for _, scr in ipairs(screen.allScreens()) do
+                local f = scr:frame()
+                if cx >= f.x and cx < f.x + f.w and cy >= f.y and cy < f.y + f.h then
+                    found = scr
+                    break
+                end
+            end
+            local fallback = found or screen.mainScreen()
+            if fallback then data.screenId = fallback:id() end
+        end
+    end
+
     local snapshotsByScreen = {}
     for _, winId in ipairs(snapshots.order) do
         local data = snapshots.windows[winId]

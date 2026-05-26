@@ -131,6 +131,36 @@ function M.enter(win)
     end)
 end
 
+-- Re-apply the fullscreen window's frame after a screen-config change.
+-- `enter()` captures the frame once and `tileWindows` is a no-op while
+-- fullscreen is active, so without this the window keeps the pre-change
+-- frame on resolution or rotation events. Idempotent: re-queries the
+-- screen each call so it's safe to call multiple times.
+function M.reframeToCurrentScreen()
+    if not state.active or not state.window then return end
+    local win = state.window
+    if not callbacks.safeGetApplication or not callbacks.safeGetApplication(win) then return end
+    local scr = win:screen()
+    if not scr then return end
+    local screenFrame = scr:frame()
+
+    win:setFrame(geometry.rect(screenFrame), 0)
+
+    -- Re-park hidden windows. The previous off-screen anchor may now sit
+    -- inside the new arrangement after a display change.
+    for _, data in ipairs(state.hiddenWindows) do
+        if data.win and callbacks.safeGetApplication(data.win) then
+            data.win:setFrame(
+                geometry.rect({
+                    x = screenFrame.x + screenFrame.w + 100,
+                    y = screenFrame.y + screenFrame.h + 100,
+                    w = 1, h = 1,
+                }),
+                0)
+        end
+    end
+end
+
 function M.getState()
     return state
 end

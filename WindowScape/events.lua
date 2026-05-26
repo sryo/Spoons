@@ -24,6 +24,7 @@ local focusPollTimer
 local focusDebounceTimer
 local pendingWindowEvent
 local eventDebounce
+local screenChangeDebounce
 
 local lastKnownFocusedId
 local drawActiveWindowOutline
@@ -262,14 +263,92 @@ local function handleWindowMoved(win)
     local winScreen = win:screen()
     if not winScreen then return end
     local screenId = winScreen:id()
+    -- windowLastScreen is owned by tileWindowsInternal (the only place that
+    -- knows a window was *placed* on a screen). Reading here gives us the
+    -- last *tiled* screen, which stays stable across every windowMoved event
+    -- in the same drag — so `screenChanged` stays true until the user drops.
     local previousScreenId = core.windowLastScreen[winId]
-
-    core.windowLastScreen[winId] = screenId
 
     local screenChanged = previousScreenId and previousScreenId ~= screenId
     local windowNeedsRetile = not previousScreenId and core.lastKnownWindowIds[winId]
 
-    if screenChanged or windowNeedsRetile then
+    if screenChanged then
+        if core.pendingReposition then core.pendingReposition:stop(); core.pendingReposition = nil end
+        if core.tilingDelayTimer then core.tilingDelayTimer:stop(); core.tilingDelayTimer = nil end
+        core.tilingCount = 0
+
+        -- Defer until the user drops: each windowMoved during the cross-screen
+        -- drag resets this timer, so the final firing observes the actual drop
+        -- frame and inserts the window at the computed position on screen B.
+        core.pendingReposition = timer.doAfter(0.3, function()
+            core.pendingReposition = nil
+
+            local curScreen = win:screen()
+            if not curScreen then
+                tiler.tileWindows()
+                return
+            end
+            local destScrId = curScreen:id()
+            local curScrFrame = curScreen:frame()
+            local destSpace = core.spaces.activeSpaceOnScreen(curScreen) or core.getCurrentSpace()
+            local dropFrame = win:frame()
+
+            core.updateWindowOrder()
+
+            local order = core.windowOrderBySpace[destSpace] or {}
+            local othersOnDest = {}
+            local movedInOrder = false
+            for _, w in ipairs(order) do
+                if w:id() == winId then
+                    movedInOrder = true
+                else
+                    local s = w:screen()
+                    if s and s:id() == destScrId then
+                        local sz = w:size()
+                        if sz and sz.h > cfg.collapsedWindowHeight then
+                            table.insert(othersOnDest, w)
+                        end
+                    end
+                end
+            end
+
+            if movedInOrder and #othersOnDest > 0 and dropFrame then
+                local insertIndex = operations.calculateDropPosition(dropFrame, othersOnDest, curScrFrame)
+                insertIndex = math.max(1, math.min(insertIndex, #othersOnDest + 1))
+
+                -- Rebuild order: keep non-dest-screen / collapsed entries in place,
+                -- splice moved window into the dest-screen non-collapsed sequence.
+                local newOrder = {}
+                local destSeen = 0
+                local placed = false
+                for _, w in ipairs(order) do
+                    if w:id() == winId then
+                        -- skip; reinserted at insertIndex below
+                    else
+                        local s = w:screen()
+                        local onDest = s and s:id() == destScrId
+                        local sz = w:size()
+                        local isNonCollapsed = sz and sz.h > cfg.collapsedWindowHeight
+                        if onDest and isNonCollapsed and not placed then
+                            destSeen = destSeen + 1
+                            if destSeen == insertIndex then
+                                table.insert(newOrder, win)
+                                placed = true
+                            end
+                        end
+                        table.insert(newOrder, w)
+                    end
+                end
+                if not placed then table.insert(newOrder, win) end
+                core.windowOrderBySpace[destSpace] = newOrder
+            end
+
+            tiler.tileWindows()
+        end)
+        return
+    end
+
+    if windowNeedsRetile then
         if core.pendingReposition then core.pendingReposition:stop(); core.pendingReposition = nil end
         if core.tilingDelayTimer then core.tilingDelayTimer:stop(); core.tilingDelayTimer = nil end
         core.tilingCount = 0
@@ -465,7 +544,7 @@ local function handleWindowMoved(win)
             if w:id() == win:id() then currentIndex = i; break end
         end
 
-        local newIndex = operations.calculateDropPosition(win, otherWindows, scrFrame)
+        local newIndex = operations.calculateDropPosition(win:frame(), otherWindows, scrFrame)
         newIndex = math.max(1, math.min(newIndex, #otherWindows + 1))
 
         if newIndex ~= currentIndex then
@@ -608,11 +687,25 @@ function M.start()
     end)
     spacesWatcher:start()
 
+    -- macOS posts the screen-config notification before NSScreen metrics are
+    -- fully settled, so reading scr:frame() inside the watcher callback can
+    -- return stale (pre-change) values. Debounce, then re-read.
     screenWatcher = screen.watcher.new(function()
-        core.log("Screen configuration changed, repositioning snapshots")
-        snapshots.updateLayout()
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
+        if screenChangeDebounce then screenChangeDebounce:stop() end
+        screenChangeDebounce = timer.doAfter(0.25, function()
+            screenChangeDebounce = nil
+            core.log("Screen configuration changed, repositioning")
+
+            if core.tilingDelayTimer then core.tilingDelayTimer:stop(); core.tilingDelayTimer = nil end
+            if core.pendingReposition then core.pendingReposition:stop(); core.pendingReposition = nil end
+            core.tilingCount = 0
+
+            fullscreen.reframeToCurrentScreen()
+            snapshots.updateLayout()
+            if not (core.fullscreenState and core.fullscreenState.active) then
+                tiler.tileWindows()
+            end
+        end)
     end)
     screenWatcher:start()
 
@@ -675,6 +768,7 @@ function M.stop()
     if focusPollTimer then focusPollTimer:stop(); focusPollTimer = nil end
     if watchdogTimer then watchdogTimer:stop(); watchdogTimer = nil end
     if rightClickTap then rightClickTap:stop(); rightClickTap = nil end
+    if screenChangeDebounce then screenChangeDebounce:stop(); screenChangeDebounce = nil end
     -- spaces.watcher and screen.watcher don't expose stop() in all Hammerspoon versions;
     -- dropping the reference is sufficient since the Lua state is rebuilt on reload.
     spacesWatcher = nil

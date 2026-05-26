@@ -215,9 +215,11 @@ local function moveWindowToAdjacentScreen(direction)
     end)
 end
 
--- Calculate where a dropped window should be inserted in tiling order
-local function calculateDropPosition(droppedWin, screenWindows, screenFrame)
-    local dropFrame = droppedWin:frame()
+-- Calculate where a dropped window should be inserted in tiling order.
+-- `dropFrame` is the window's frame captured at drop time — pass the captured
+-- value, not `win:frame()` from later, since a retile may have moved the window.
+local function calculateDropPosition(dropFrame, screenWindows, screenFrame)
+    if not dropFrame then return 1 end
     local dropCenterX = dropFrame.x + dropFrame.w / 2
     local dropCenterY = dropFrame.y + dropFrame.h / 2
     local horizontal = (screenFrame.w > screenFrame.h)
