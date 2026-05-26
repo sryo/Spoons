@@ -89,6 +89,9 @@ If <context>...</context> appears, that is the text the user wants to discuss. D
         settledHoldS    = 0.35,   -- after stream ends, hold the comet before fading
         settledFadeS    = 0.25,   -- alpha fade-to-idle duration
         animFrameS      = 0.016,  -- ~60fps timer step
+        matrixFrameS    = 0.1,    -- comet trail frame duration
+        successHoldS    = 0.7,    -- post-stream check glyph hold before idle
+        typingPauseS    = 1.0,    -- typing → ↵ ready glyph after this much idle
         cursorBlinkS    = 0.53,
         rebuildThrottle = 0.033,  -- ~30fps; smooth stream growth
         pasteInjectS    = 0.04,
@@ -175,40 +178,22 @@ local function colorAlpha(c, a)
     return { red = c.red, green = c.green, blue = c.blue, alpha = (c.alpha or 1) * a }
 end
 
-local function colorLighten(c, p)
-    p = math.max(0, math.min(1, p or 0))
-    if c.white ~= nil then
-        return { white = c.white + (1 - c.white) * p, alpha = c.alpha }
-    end
-    return {
-        red   = c.red + (1 - c.red) * p,
-        green = c.green + (1 - c.green) * p,
-        blue  = c.blue + (1 - c.blue) * p,
-        alpha = c.alpha,
-    }
-end
-
-local function colorDarken(c, p)
-    p = math.max(0, math.min(1, p or 0))
-    if c.white ~= nil then
-        return { white = c.white * (1 - p), alpha = c.alpha }
-    end
-    return {
-        red   = c.red * (1 - p),
-        green = c.green * (1 - p),
-        blue  = c.blue * (1 - p),
-        alpha = c.alpha,
-    }
-end
-
 -- 5×5 LED matrix at c[41..65]. All 25 cells stay action="fill"; the lit/unlit
 -- distinction is carried entirely by per-cell color (saturated accent vs
 -- faded accent), so the grid reads as a physical LED panel.
 local MATRIX_SIZE     = 5
 local MATRIX_CELLS    = MATRIX_SIZE * MATRIX_SIZE -- 25
+local MATRIX_BASE     = 41 -- first canvas element index for matrix cells
 local MATRIX_CELL_PX  = 12
 local MATRIX_CELL_GAP = 2
 local MATRIX_PX       = MATRIX_SIZE * MATRIX_CELL_PX + (MATRIX_SIZE - 1) * MATRIX_CELL_GAP
+
+-- Build a 25-bit row-major mask from a list of lit cell indices.
+local function mask(bits)
+    local m = 0
+    for _, b in ipairs(bits) do m = m | (1 << b) end
+    return m
+end
 
 -- 16-cell clockwise perimeter walk of a 5×5 grid: top → right → bottom → left,
 -- corners counted once each.
@@ -236,15 +221,12 @@ end
 --   row 2: cells 10 11 12 13 14
 --   row 3: cells 15 16 17 18 19
 --   row 4: cells 20 21 22 23 24
-local IDLE_MASK   = (1 << 12) -- center dot
-local CHECK_MASK  = (1 << 4)  | (1 << 8)  | (1 << 10) | (1 << 12) | (1 << 16)
-local SAD_MASK    = (1 << 6)  | (1 << 8)  | (1 << 16) | (1 << 17) | (1 << 18)
-                  | (1 << 20) | (1 << 24)
-local CROSS_MASK  = (1 << 0)  | (1 << 4)  | (1 << 6)  | (1 << 8)  | (1 << 12)
-                  | (1 << 16) | (1 << 18) | (1 << 20) | (1 << 24) -- two diagonals
-local RETURN_MASK = (1 << 9)  | (1 << 12) | (1 << 14)
-                  | (1 << 15) | (1 << 16) | (1 << 17) | (1 << 18)
-                  | (1 << 21) -- ↵ shaft + arrowhead
+local IDLE_MASK   = mask{ 12 }                                       -- center dot
+local CHECK_MASK  = mask{ 4, 8, 10, 12, 16 }
+local SAD_MASK    = mask{ 6, 8, 16, 17, 18, 20, 24 }
+local CROSS_MASK  = mask{ 0, 4, 6, 8, 12, 16, 18, 20, 24 }            -- diagonals
+local RETURN_MASK = mask{ 9, 12, 14, 15, 16, 17, 18, 21 }             -- ↵
+local SMILEY_MASK = mask{ 0, 2, 13, 16, 17 }                          -- looking up
 
 Muse.helpers           = {
     json     = hs.json,
@@ -252,9 +234,7 @@ Muse.helpers           = {
     taskmod  = hs.task,
     eventtap = hs.eventtap,
     color    = {
-        alpha   = colorAlpha,
-        lighten = colorLighten,
-        darken  = colorDarken,
+        alpha = colorAlpha,
     },
     parseSSE = function(buf, perLine)
         for line in buf:gmatch("[^\r\n]+") do perLine(line) end
@@ -493,18 +473,22 @@ local state = {
 
 local close, submitPrompt, commitResponse, rebuildResponse, applyCanvasFrame
 
--- Apply a 16-bit bitmask to the 4×4 matrix cells. Bit i lit → cell i uses
--- `litColor`; bit i unlit → cell i uses the faded-accent "off" tint. All 16
--- cells stay at action="fill"; the lit/unlit difference is purely color, so
--- the grid always reads as a physical LED panel.
-local function applyMatrixMask(mask, litColor)
+-- The ↵ "ready" state covers two cases: buffer non-empty → Enter submits,
+-- or empty buffer with an assistant reply in history → Enter pastes it.
+local function hasPasteableResponse()
+    for i = #state.history, 1, -1 do
+        if state.history[i].role == "assistant" then return true end
+    end
+    return false
+end
+
+-- Lit cells get litColor; unlit get the faded-accent tint. All 25 cells stay
+-- at action="fill", so the grid reads as a physical LED panel.
+local function applyMatrixMask(bitmask, litColor)
     local unlit = colorAlpha(C.accent, cfg.layout.matrixUnlitAlpha)
     for i = 0, MATRIX_CELLS - 1 do
-        if (mask >> i) & 1 == 1 then
-            state.canv[41 + i].fillColor = litColor
-        else
-            state.canv[41 + i].fillColor = unlit
-        end
+        state.canv[MATRIX_BASE + i].fillColor =
+            (((bitmask >> i) & 1) == 1) and litColor or unlit
     end
 end
 
@@ -513,32 +497,39 @@ local function setStatus(kind, reposition)
     if (not reposition) and state.statusTimer then
         state.statusTimer:stop(); state.statusTimer = nil
     end
+    if state.typingPauseTimer and kind ~= "typing" then
+        state.typingPauseTimer:stop(); state.typingPauseTimer = nil
+    end
     state.statusKind = kind
 
     if kind == "thinking" then
-        -- Comet trail; 100ms/frame, 1.6s cycle.
         applyMatrixMask(MATRIX_FRAMES[1], C.spinner)
+        state.lastMatrixFrame = 1
         if not reposition then
-            local t0      = timer.secondsSinceEpoch()
-            local frameMs = 0.1
+            local t0 = timer.secondsSinceEpoch()
             state.statusTimer = timer.doEvery(cfg.timings.animFrameS, function()
                 if not state.canv then return end
-                local frame = math.floor((timer.secondsSinceEpoch() - t0) / frameMs) % #MATRIX_FRAMES + 1
+                local frame = math.floor((timer.secondsSinceEpoch() - t0) / cfg.timings.matrixFrameS) % #MATRIX_FRAMES + 1
+                -- Skip the per-cell rewrite when the comet frame hasn't
+                -- advanced (animFrameS=16ms fires ~6× per matrixFrameS=100ms frame).
+                if frame == state.lastMatrixFrame then return end
+                state.lastMatrixFrame = frame
                 applyMatrixMask(MATRIX_FRAMES[frame], C.spinner)
             end)
         end
     elseif kind == "success" then
-        -- Hold the check briefly, then snap to idle.
         applyMatrixMask(CHECK_MASK, C.accent)
         if not reposition then
-            state.statusTimer = timer.doAfter(0.7, function()
+            state.statusTimer = timer.doAfter(cfg.timings.successHoldS, function()
                 if state.canv and state.statusKind == "success" then
-                    setStatus("idle")
+                    setStatus(hasPasteableResponse() and "ready" or "idle")
                 end
             end)
         end
     elseif kind == "ready" then
         applyMatrixMask(RETURN_MASK, C.accent)
+    elseif kind == "typing" then
+        applyMatrixMask(SMILEY_MASK, C.accent)
     elseif kind == "error" then
         applyMatrixMask(CROSS_MASK, C.error)
     elseif kind == "softError" then
@@ -548,14 +539,34 @@ local function setStatus(kind, reposition)
     end
 end
 
--- Reconcile the matrix with the current buffer/task state. Called after every
--- buffer mutation; thinking owns the matrix while a task is running, and a
--- live success-glyph hold should not be cut short by an empty buffer.
+-- Reconcile the matrix with the current buffer/task state. Three rest states:
+--   typing: buffer non-empty (SMILEY glyph)
+--   ready:  empty buffer, paste-able reply in history (RETURN glyph)
+--   idle:   nothing typed, no reply (center dot)
+-- Thinking owns the matrix while a task is running, and a live success-glyph
+-- hold is not cut short by an empty buffer.
 local function updateReadyState()
     if state.task and state.task:isRunning() then return end
-    local want = (state.buffer ~= "") and "ready" or "idle"
+    local want
+    if state.buffer ~= "" then
+        want = "typing"
+    elseif hasPasteableResponse() then
+        want = "ready"
+    else
+        want = "idle"
+    end
     if state.statusKind == "success" and want == "idle" then return end
     if state.statusKind ~= want then setStatus(want) end
+    -- Debounce typing: each keystroke restarts the timer; on expiry, the
+    -- smiley flips to ↵ to surface the submit affordance.
+    if want == "typing" then
+        if state.typingPauseTimer then state.typingPauseTimer:stop() end
+        state.typingPauseTimer = timer.doAfter(cfg.timings.typingPauseS, function()
+            if state.canv and state.statusKind == "typing" then
+                setStatus("ready")
+            end
+        end)
+    end
 end
 
 -- Position the fixed-region card layout. Called once at open; no per-render
@@ -596,7 +607,7 @@ local function relayout()
     for i = 0, MATRIX_CELLS - 1 do
         local row = i // MATRIX_SIZE
         local col = i % MATRIX_SIZE
-        state.canv[41 + i].frame = {
+        state.canv[MATRIX_BASE + i].frame = {
             x = matrixX + col * (MATRIX_CELL_PX + MATRIX_CELL_GAP),
             y = matrixY + row * (MATRIX_CELL_PX + MATRIX_CELL_GAP),
             w = MATRIX_CELL_PX,
@@ -723,7 +734,7 @@ local function placeholderForState()
     if state.textContext and state.textContext ~= "" then
         return styledSegments({ { text = "about this selection…", color = C.muted } }, size)
     end
-    if #state.history > 0 and not state.lastPrompt then
+    if #state.history > 0 and not state.pendingPrompt then
         local preview = lastReplyPreview(50)
         if preview == "" then
             return styledSegments({ { text = "↵ to insert", color = C.accent } }, size)
@@ -742,7 +753,7 @@ end
 -- exists and the user has obviously already figured out how to use the panel.
 local function shouldShowHint()
     if #state.history > 0 then return false end
-    if state.lastPrompt then return false end
+    if state.pendingPrompt then return false end
     if state.task and state.task:isRunning() then return false end
     return true
 end
@@ -823,14 +834,13 @@ local function outputRegionH()
          - cfg.layout.matrixRegionH
 end
 
--- Estimate the height a styledtext will occupy when wrapped to wrapW. Uses
--- the probe element to measure the natural single-line w/h (hs.canvas's
--- minimumTextSize ignores wrap), then estimates wrapped lines as
--- ceil(naturalW / wrapW). Conservative for multi-paragraph text — overshoots
--- slightly, which is safer than truncating the last line.
+-- Estimate the wrapped height of a styledtext at wrapW. hs.canvas's
+-- minimumTextSize ignores wrap (returns natural single-line dimensions), so
+-- we approximate: lines ≈ ceil(naturalW / wrapW), wrappedH = naturalH × lines.
+-- Conservative for multi-paragraph text. Measurement reads the probe element's
+-- frame attrs but does NOT assign the text — that's the caller's job once.
 local function estimateWrappedH(styled, wrapW, probeIdx)
     if wrapW <= 0 then wrapW = 1 end
-    state.canv[probeIdx].text = styled
     local sz       = state.canv:minimumTextSize(probeIdx, styled)
     local naturalW = (sz and sz.w) or 0
     local naturalH = (sz and sz.h) or 0
@@ -839,7 +849,8 @@ local function estimateWrappedH(styled, wrapW, probeIdx)
 end
 
 -- Build a styledtext at the largest font size that fits inside regionH at the
--- probe element's current frame width.
+-- probe element's frame width. Returns (styled, wrappedH) so callers can skip
+-- a redundant remeasure.
 local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, color, alignment)
     local wrapW = state.canv[probeIdx].frame.w
     local size  = maxSize
@@ -850,9 +861,8 @@ local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, c
             shadow         = textShadow,
             paragraphStyle = { alignment = alignment, lineBreak = "wordWrap" },
         })
-        if estimateWrappedH(s, wrapW, probeIdx) <= regionH or size <= minSize then
-            return s
-        end
+        local h = estimateWrappedH(s, wrapW, probeIdx)
+        if h <= regionH or size <= minSize then return s, h end
         size = size - 1
     end
 end
@@ -866,8 +876,9 @@ local function inputText()
             return placeholderForState()
         end
     end
-    return fitText(content, 2, cfg.layout.inputRegionH, cfg.font,
-                   cfg.layout.userFontSize, 11, C.muted, "left")
+    local s = fitText(content, 2, cfg.layout.inputRegionH, cfg.font,
+                      cfg.layout.userFontSize, 11, C.muted, "left")
+    return s
 end
 
 local function outputText()
@@ -880,7 +891,7 @@ local function outputText()
             end
         end
     end
-    if not content or content == "" then return nil end
+    if not content or content == "" then return nil, 0 end
     return fitText(content, 6, outputRegionH(), ".AppleSystemUIFontBold",
                    cfg.layout.assistantFontSize, 12, C.fg, "right")
 end
@@ -1004,25 +1015,18 @@ end
 -- text wraps inside, right-aligned, bottom-anchored via paragraphStyle.
 rebuildResponse = function()
     if not state.canv then return end
-    local styled = outputText()
+    -- outputText returns (styled, wrappedH); reuse the height fitText already
+    -- computed so we don't measure the same string twice per render.
+    local styled, wrappedH = outputText()
     state.canv[6].text = styled or ""
-    -- Anchor text to the bottom of the output region by computing the styled
-    -- text's actual rendered height inside the region width, then shifting
-    -- the frame's y down so the text bottom aligns with the region bottom.
     if styled then
         local regionFrame = state.canv[6].frame
-        local regionW     = regionFrame.w
         local regionH     = regionFrame.h
-        -- Use estimated wrapped height (not the natural single-line h that
-        -- minimumTextSize would return) so multiline replies get a frame
-        -- tall enough to actually render lines 2+.
-        local wrappedH = estimateWrappedH(styled, regionW, 6)
-        local textH    = math.min(wrappedH, regionH)
-        local baseY    = regionFrame.y + (regionH - textH)
+        local textH       = math.min(wrappedH, regionH)
         state.canv[6].frame = {
             x = regionFrame.x,
-            y = baseY,
-            w = regionW,
+            y = regionFrame.y + (regionH - textH),
+            w = regionFrame.w,
             h = textH,
         }
     end
@@ -1184,10 +1188,9 @@ local function newOverlay()
         textColor = C.accent,
         frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = 14 },
     }
-    -- c[41..56]: 4×4 LED matrix cells. Always rendered (action="fill"); lit vs
-    -- unlit carried entirely by fillColor. Positions set by relayout.
+    -- 5×5 matrix cells. Lit vs unlit carried entirely by fillColor (see applyMatrixMask).
     for i = 0, MATRIX_CELLS - 1 do
-        c[41 + i] = {
+        c[MATRIX_BASE + i] = {
             type = "rectangle",
             action = "fill",
             fillColor = colorAlpha(C.accent, cfg.layout.matrixUnlitAlpha),
@@ -1313,7 +1316,7 @@ local function open(opts)
     state.response           = ""
     state.attachments        = {}
     state.textContext        = nil
-    state.lastPrompt         = nil
+    state.pendingPrompt         = nil
     state.anchorX            = x
     state.inputTop           = inputTop
     state.screenFrame        = sf
@@ -1354,6 +1357,9 @@ close = function()
     end
     if state.cursorTimer then
         state.cursorTimer:stop(); state.cursorTimer = nil
+    end
+    if state.typingPauseTimer then
+        state.typingPauseTimer:stop(); state.typingPauseTimer = nil
     end
     if rebuildPendingTimer then
         rebuildPendingTimer:stop(); rebuildPendingTimer = nil
@@ -1434,7 +1440,7 @@ submitPrompt = function()
     end
 
     state.response            = ""
-    state.lastPrompt          = userText ~= "" and userText or finalPrompt
+    state.pendingPrompt          = userText ~= "" and userText or finalPrompt
     state.lastSubmittedPrompt = userText
     state.buffer              = ""
     rebuildInput()
@@ -1455,7 +1461,7 @@ submitPrompt = function()
         -- cleared so outputText() falls back to the last assistant turn in
         -- history (same content, just a different lookup path).
         state.response   = ""
-        state.lastPrompt = nil
+        state.pendingPrompt = nil
         state.buffer     = ""
         rebuildInput()
         rebuildResponse()
