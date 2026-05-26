@@ -370,7 +370,7 @@ local function relayout()
     local frameW     = state.canv:frame().w
     local inputTextY = math.floor((cfg.inputHeight - cfg.fontSize) / 2) - 2
     -- Right edge reserves space for status dot (~20px) plus chip when visible.
-    local chipReserved = (#state.attachments > 0) and (48 + cfg.pad) or 0
+    local chipReserved = (#state.attachments > 0) and (76 + cfg.pad) or 0
     local rightReserve = 20 + chipReserved
     state.canv[2].frame = {
         x = cfg.pad,
@@ -378,10 +378,20 @@ local function relayout()
         w = math.max(0, frameW - cfg.pad - rightReserve),
         h = cfg.fontSize + 8,
     }
+    local chipRight = frameW - cfg.pad - 20
+    local cardSize = 30
+    local cardStep = 12
+    local cardY = math.floor((cfg.inputHeight - cardSize) / 2)
+    -- Cards: c[11]=front (rightmost), c[10]=middle, c[9]=back (leftmost).
+    -- 12px step between left edges overlaps cards by 18px for a stack read.
+    state.canv[11].frame = { x = chipRight - cardSize,                y = cardY, w = cardSize, h = cardSize }
+    state.canv[10].frame = { x = chipRight - cardSize - cardStep,     y = cardY, w = cardSize, h = cardSize }
+    state.canv[9].frame  = { x = chipRight - cardSize - 2 * cardStep, y = cardY, w = cardSize, h = cardSize }
+    -- "+N" overflow label sits left of the back card.
     state.canv[8].frame = {
-        x = frameW - cfg.pad - 20 - 48,
+        x = chipRight - cardSize - 2 * cardStep - 18,
         y = math.floor((cfg.inputHeight - 13) / 2) - 1,
-        w = 48,
+        w = 16,
         h = 13 + 6,
     }
     setStatus(state.statusKind or "idle", true)
@@ -408,7 +418,7 @@ local function placeholderForState()
     if #state.history > 0 and not state.lastPrompt then
         return "↵ to insert · type to refine", C.accent
     end
-    return "ask anything…", C.muted
+    return "ask anything · ⌘⇧S to attach", C.muted
 end
 
 local function rebuildCursor()
@@ -430,7 +440,7 @@ local function computeInputWidth()
     local styled = inputStyled(probe, C.fg)
     local sz = hs.drawing.getTextDrawingSize(styled)
     local textW = (sz and sz.w) or 100
-    local chipW = (#state.attachments > 0) and (48 + cfg.pad) or 0
+    local chipW = (#state.attachments > 0) and (76 + cfg.pad) or 0
     local dotW = 20
     local w = math.ceil(textW) + 2 * cfg.pad + chipW + dotW
     return math.min(cfg.overlayWidth, w)
@@ -446,10 +456,28 @@ local function rebuildInput()
         state.canv[2].text = inputStyled(state.buffer, C.fg)
     end
     local n = #state.attachments
-    if n > 0 then
+    -- Card slots render thumbnails of the 3 most recent attachments. Front
+    -- (c[11], rightmost) is the newest; back (c[9]) is two-prior. Back cards
+    -- dim via imageAlpha to imply depth.
+    local alphas = { 0.55, 0.8, 1.0 }  -- back, middle, front
+    for slot = 0, 2 do
+        local idx = 9 + slot
+        local stepsFromFront = 2 - slot          -- front=0, middle=1, back=2
+        local attIdx = n - stepsFromFront
+        local att = (attIdx >= 1) and state.attachments[attIdx] or nil
+        if att and att.img then
+            state.canv[idx].action = "fill"
+            state.canv[idx].image = att.img
+            state.canv[idx].imageAlpha = alphas[slot + 1]
+        else
+            state.canv[idx].action = "skip"
+            state.canv[idx].image = nil
+        end
+    end
+    if n > 3 then
         state.canv[8].action = "fill"
-        state.canv[8].text = hs.styledtext.new(n .. " img", {
-            font = { name = cfg.font, size = 13 },
+        state.canv[8].text = hs.styledtext.new("+" .. (n - 3), {
+            font = { name = cfg.font, size = 11 },
             color = C.accent,
             paragraphStyle = { alignment = "right" },
         })
@@ -499,6 +527,7 @@ local function captureRegion()
                         table.insert(state.attachments, {
                             mime = "image/png",
                             base64 = url:sub(#prefix + 1),
+                            img = img,
                         })
                         if state.canv then rebuildInput() end
                     end
@@ -738,17 +767,30 @@ local function newOverlay()
         fillColor = { white = 1, alpha = 0 },
         frame = { x = cfg.pad, y = 0, w = 1.5, h = cfg.fontSize + 4 },
     }
-    -- Attachment chip: "n img" badge shown in the input row when state.attachments
-    -- is non-empty. Positioned in relayout(), text set in rebuildInput().
+    -- Attachment chip: stack-of-cards visual shown in the input row when
+    -- state.attachments is non-empty. c[9..11] are the cards (back→front),
+    -- c[8] is the "+N" overflow label rendered when n > 3. Positioned in
+    -- relayout(), state-flipped in rebuildInput().
     c[8] = {
         type = "text",
         text = "",
         action = "skip",
         textFont = cfg.font,
-        textSize = 13,
+        textSize = 11,
         textColor = C.accent,
-        frame = { x = 0, y = 0, w = 48, h = cfg.inputHeight },
+        frame = { x = 0, y = 0, w = 14, h = cfg.inputHeight },
     }
+    for i = 0, 2 do
+        c[9 + i] = {
+            type = "image",
+            action = "skip",
+            image = nil,
+            imageAlignment = "center",
+            imageScaling = "scaleToFit",
+            imageAlpha = 1.0,
+            frame = { x = 0, y = 0, w = 30, h = 30 },
+        }
+    end
     c:level(canvas.windowLevels.overlay)
     c:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
     c:show()
