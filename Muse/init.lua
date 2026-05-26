@@ -28,10 +28,6 @@ local json             = hs.json
 local screen           = hs.screen
 local keymap           = hs.keycodes.map
 
-----------------------------------------------------------------------
--- Config
-----------------------------------------------------------------------
-
 Muse.config            = {
     backend        = "claudecli", -- "claude" | "openai" | "gemini" | "fabric" | "claudecli" | "apple"
     fallbackOrder  = { "claudecli", "claude", "openai", "gemini", "fabric", "apple" },
@@ -40,10 +36,8 @@ Muse.config            = {
     rightCmdCode   = 54, -- right ⌘
     backends       = {}, -- per-plugin config: Muse.config.backends[name] = { ... }
 
-    -- House-style system prompt tuned for the Enter-paste flow. Set to nil to
-    -- disable globally; per-backend override lives at
-    -- Muse.config.backends[<name>].systemPrompt. Fabric ignores this (patterns
-    -- ARE its system prompt).
+    -- Per-backend override at backends[name].systemPrompt. Fabric ignores this
+    -- (its patterns ARE the system prompt).
     systemPrompt   = [[You are Muse, a quiet inline assistant invoked next to the user's text caret. Your reply may be pasted directly into the field they were working in.
 
 Reply concisely. No preamble ("Sure!", "Here is...", "Certainly"). No closing offers ("Let me know if...", "Hope this helps"). No meta-commentary about your own response. Match the user's tone, register, and length — short questions get short replies.
@@ -53,52 +47,50 @@ Plain text by default. Use Markdown or code fences only when explicitly asked or
 If <context>...</context> appears, that is the text the user wants to discuss. Do not echo it back. Rewrite requests get just the rewritten text. Questions get just the answer.]],
 
     layout = {
-        overlayWidth   = 540,
-        inputHeight    = 46,
-        responseHeight = 260,
-        anchorOffset   = 8,
-        pad            = 8,
+        panelSize      = 320,                 -- fixed-square card edge length
+        anchorOffset   = 8,                   -- gap between caret and panel top
+        pad            = 16,                  -- inner padding inside the card
         screenMargin   = 8,                   -- min gap between overlay and screen edge
 
-        chipWidth      = 76,                  -- horizontal budget for the attachment chip
+        strokeWidth    = 2,                   -- blue border around the card
+
+        -- Three stacked regions inside the card (top → bottom):
+        inputRegionH   = 96,
+        hintLineH      = 18,
+        matrixRegionH  = 80,                  -- includes a small gap above/below the matrix itself
+        -- outputRegionH is derived: panelSize - 2*pad - inputRegionH - hintLineH - matrixRegionH
+
+        chipWidth      = 76,                  -- horizontal budget for the attachment chip (kept; chips still float near input)
         cardSize       = 30,                  -- thumbnail edge length
         cardStep       = 12,                  -- left-edge offset between stacked cards
         cardAlphas     = { 0.55, 0.8, 1.0 },  -- back, middle, front depth
 
-        statusDotW     = 20,
+        statusDotW     = 20,                  -- (kept for error/idle paths that still use circle slots)
         dotGap         = 8,
         dotRadius      = 3,
-        dotRowH        = 14,                  -- extra canvas row reserved for streaming-dots beneath the AI reply
 
-        cornerRadius   = 4,
-        cursorWidth    = 1.5,
+        cornerRadius   = 12,
+        cursorWidth    = 2,
 
-        userFontSize   = 17,                  -- two-tier type: user prompts smaller than AI replies
-        userAlpha      = 0.7,                 -- and dimmer; AI replies stay at fg/spinner full alpha
+        userFontSize       = 18,              -- input slot text size (multi-line wrap)
+        assistantFontSize  = 20,              -- output slot text size (multi-line wrap, bold)
 
-        pairAlphas     = { 1.0, 0.55, 0.35 }, -- per-turn-pair opacity falloff (latest → older)
+        chipSymbolInset = 6,                  -- breathing room around the SF Symbol inside the text-chip card
 
-        railWidth      = 2,
-        railInset      = 2,                   -- distance from canvas edge to rail
-        railMaxTurns   = 12,                  -- pre-allocated rail slots (visible cap is well below this)
+        hintAlpha       = 0.95,               -- subtext alpha multiplier (applied on top of C.muted's alpha)
+        hintSizeScale   = 0.55,               -- subtext font-size scale relative to cfg.fontSize
 
-        enterGlyphSize = 12,                  -- "↵" affordance beside the latest AI reply
-
-        fadeMaskStrips = 6,                   -- stacked alpha strips approximating a gradient at the top
-        fadeMaskTotalH = 18,
+        matrixUnlitAlpha = 0.12,              -- alpha for the "off" cells so the grid reads as a physical LED panel
     },
 
     timings = {
         doubleTapMs     = 250,
         continueMs      = 600,
-        bouncePeriod    = 1.1,    -- status-dot wave period (s)
-        bounceSigma     = 0.08,   -- Gaussian width of each bounce peak
-        settledHoldS    = 0.35,   -- after stream ends, hold the dot before fading
-        settledFadeS    = 0.25,   -- alpha fade-to-zero duration
+        settledHoldS    = 0.35,   -- after stream ends, hold the comet before fading
+        settledFadeS    = 0.25,   -- alpha fade-to-idle duration
         animFrameS      = 0.016,  -- ~60fps timer step
-        sizeAnimS       = 0.18,   -- canvas resize tween duration
         cursorBlinkS    = 0.53,
-        rebuildThrottle = 0.1,
+        rebuildThrottle = 0.033,  -- ~30fps; smooth stream growth
         pasteInjectS    = 0.04,
         pasteRestoreS   = 0.12,
     },
@@ -106,42 +98,167 @@ If <context>...</context> appears, that is the text the user wants to discuss. D
 
 local cfg              = Muse.config
 
+-- Mutated in place by loadAppearance(); don't replace tables — canvas elements
+-- capture these refs at creation and re-read on next render.
 local C                = {
-    bg      = { white = 0, alpha = 0.95 },
-    fg      = { white = 1, alpha = 1 },
-    muted   = { white = 1, alpha = 0.55 },
-    accent  = { red = 0.40, green = 0.78, blue = 1.00, alpha = 1 },
-    spinner = { red = 0.10, green = 0.30, blue = 0.90, alpha = 0.80 }, -- match WindowScape outlineColor
-    error   = { red = 1.00, green = 0.40, blue = 0.40, alpha = 1 },
+    bg      = { white = 1,    alpha = 0.98 },
+    fg      = { white = 0,    alpha = 1 },
+    muted   = { white = 0,    alpha = 0.55 },
+    accent  = { red = 0.1, green = 0.3, blue = 0.9, alpha = 1 },
+    spinner = { red = 0.1, green = 0.3, blue = 0.9, alpha = 1 },
+    error   = { red = 0.85, green = 0.20, blue = 0.20, alpha = 1 },
 }
 
 local textShadow       = {
     offset = { h = -1, w = 0 },
     blurRadius = 2,
-    color = { alpha = 1 },
+    color = { alpha = 0 }, -- alpha is flipped to 1 in dark mode
 }
 
-----------------------------------------------------------------------
--- Backends: registry, helpers, autoload
---   Each plugin under ~/.hammerspoon/Muse/backends/*.lua returns:
---     { name = "...", available = fn -> bool,reason, stream = fn(self, prompt, history, onChunk, onDone, onError) -> task }
---   Plugin config lives in Muse.config.backends[name]; plugins seed their own defaults.
---   Shared helpers exposed via Muse.helpers; access from a plugin via:
---     local M = require("Muse"); local h = M.helpers
-----------------------------------------------------------------------
+-- Sample appearance and mutate C + textShadow in place. Accent/spinner/error
+-- stay constant across modes; only bg/fg/muted swap to invert contrast.
+local function loadAppearance()
+    -- hs.host.interfaceStyle() returns "Dark" when Dark mode is active and
+    -- NIL when Light mode is active (macOS only sets AppleInterfaceStyle for
+    -- Dark; Light is the absence of the key). Don't default nil → "Dark" —
+    -- that's what was hiding light-mode entirely.
+    local isDark = hs.host.interfaceStyle() == "Dark"
+    if isDark then
+        -- Dark mode: near-black bg, near-white fg, muted = dimmed white.
+        C.bg.white,    C.bg.alpha    = 0.12, 0.96
+        C.fg.white,    C.fg.alpha    = 1,    1
+        C.muted.white, C.muted.alpha = 1,    0.55
+        textShadow.color.alpha = 1
+    else
+        -- Light mode: white bg, near-black fg, muted = dimmed black.
+        C.bg.white,    C.bg.alpha    = 1,    0.98
+        C.fg.white,    C.fg.alpha    = 0,    1
+        C.muted.white, C.muted.alpha = 0,    0.55
+        textShadow.color.alpha = 0
+    end
+end
 
+-- SF Symbol for the text-context chip; falls back to nil (border-only) if unresolvable.
+local textChipIcon
+do
+    for _, name in ipairs({ "text.alignleft", "doc.text", "doc.plaintext" }) do
+        local ok, img = pcall(hs.image.imageFromName, name)
+        if ok and img then textChipIcon = img; break end
+    end
+end
+
+local function formatCount(n)
+    if n < 1000 then return tostring(n) end
+    if n < 10000 then return string.format("%.1fk", n / 1000) end
+    return string.format("%dk", math.floor(n / 1000 + 0.5))
+end
+
+-- Char count of an attached text context. Uses utf8.len so multi-byte chars
+-- count as one; falls back to byte length if the string is malformed UTF-8.
+local function textContextCount(s)
+    if not s or s == "" then return 0 end
+    local n = utf8 and utf8.len(s)
+    return n or #s
+end
+
+-- Backends: each plugin under Muse/backends/*.lua returns
+--   { name, available() -> bool,reason, stream(self, prompt, history, atts, onChunk, onDone, onError) -> task }
+-- Plugin config: Muse.config.backends[name]. Shared helpers via require("Muse").helpers.
 Muse.backends          = {}
+
+-- Color helpers return NEW tables so canvas elements get frozen snapshots,
+-- not live views that loadAppearance() would mutate under them.
+local function colorAlpha(c, a)
+    if c.white ~= nil then
+        return { white = c.white, alpha = (c.alpha or 1) * a }
+    end
+    return { red = c.red, green = c.green, blue = c.blue, alpha = (c.alpha or 1) * a }
+end
+
+local function colorLighten(c, p)
+    p = math.max(0, math.min(1, p or 0))
+    if c.white ~= nil then
+        return { white = c.white + (1 - c.white) * p, alpha = c.alpha }
+    end
+    return {
+        red   = c.red + (1 - c.red) * p,
+        green = c.green + (1 - c.green) * p,
+        blue  = c.blue + (1 - c.blue) * p,
+        alpha = c.alpha,
+    }
+end
+
+local function colorDarken(c, p)
+    p = math.max(0, math.min(1, p or 0))
+    if c.white ~= nil then
+        return { white = c.white * (1 - p), alpha = c.alpha }
+    end
+    return {
+        red   = c.red * (1 - p),
+        green = c.green * (1 - p),
+        blue  = c.blue * (1 - p),
+        alpha = c.alpha,
+    }
+end
+
+-- 5×5 LED matrix at c[41..65]. All 25 cells stay action="fill"; the lit/unlit
+-- distinction is carried entirely by per-cell color (saturated accent vs
+-- faded accent), so the grid reads as a physical LED panel.
+local MATRIX_SIZE     = 5
+local MATRIX_CELLS    = MATRIX_SIZE * MATRIX_SIZE -- 25
+local MATRIX_CELL_PX  = 12
+local MATRIX_CELL_GAP = 2
+local MATRIX_PX       = MATRIX_SIZE * MATRIX_CELL_PX + (MATRIX_SIZE - 1) * MATRIX_CELL_GAP
+
+-- 16-cell clockwise perimeter walk of a 5×5 grid: top → right → bottom → left,
+-- corners counted once each.
+local PERIMETER = {
+    0, 1, 2, 3, 4,    -- top row L→R
+    9, 14, 19, 24,    -- right column (skip top-right corner)
+    23, 22, 21, 20,   -- bottom row R→L (skip bottom-right corner)
+    15, 10, 5,        -- left column (skip bottom-left and top-left corners)
+}
+
+-- Comet trail (head + 2-cell tail) chasing the perimeter clockwise.
+local MATRIX_FRAMES = {}
+for f = 0, #PERIMETER - 1 do
+    local lit = 0
+    for tail = 0, 2 do
+        local p = ((f - tail) % #PERIMETER + #PERIMETER) % #PERIMETER
+        lit = lit | (1 << PERIMETER[p + 1])
+    end
+    MATRIX_FRAMES[f + 1] = lit
+end
+
+-- Static glyphs (single-frame bitmasks). 25-bit row-major layout:
+--   row 0: cells  0  1  2  3  4
+--   row 1: cells  5  6  7  8  9
+--   row 2: cells 10 11 12 13 14
+--   row 3: cells 15 16 17 18 19
+--   row 4: cells 20 21 22 23 24
+local IDLE_MASK   = (1 << 12) -- center dot
+local CHECK_MASK  = (1 << 4)  | (1 << 8)  | (1 << 10) | (1 << 12) | (1 << 16)
+local SAD_MASK    = (1 << 6)  | (1 << 8)  | (1 << 16) | (1 << 17) | (1 << 18)
+                  | (1 << 20) | (1 << 24)
+local CROSS_MASK  = (1 << 0)  | (1 << 4)  | (1 << 6)  | (1 << 8)  | (1 << 12)
+                  | (1 << 16) | (1 << 18) | (1 << 20) | (1 << 24) -- two diagonals
+local RETURN_MASK = (1 << 9)  | (1 << 12) | (1 << 14)
+                  | (1 << 15) | (1 << 16) | (1 << 17) | (1 << 18)
+                  | (1 << 21) -- ↵ shaft + arrowhead
 
 Muse.helpers           = {
     json     = hs.json,
     alert    = hs.alert,
     taskmod  = hs.task,
     eventtap = hs.eventtap,
+    color    = {
+        alpha   = colorAlpha,
+        lighten = colorLighten,
+        darken  = colorDarken,
+    },
     parseSSE = function(buf, perLine)
         for line in buf:gmatch("[^\r\n]+") do perLine(line) end
     end,
-    -- Per-backend override wins, then the global default, then nil. Backends
-    -- call this and apply the result natively (system field, --system flag, etc.).
     systemPrompt = function(backendName)
         local bcfg = Muse.config.backends[backendName]
         if bcfg and bcfg.systemPrompt ~= nil then return bcfg.systemPrompt end
@@ -233,19 +350,13 @@ local function chooseBackend(opts)
     return nil
 end
 
-----------------------------------------------------------------------
--- Anchor: caret rect with fallbacks
-----------------------------------------------------------------------
-
 local function focusedElement()
     local el
     pcall(function() el = ax.systemWideElement():attributeValue("AXFocusedUIElement") end)
     return el
 end
 
--- Pull the currently-selected text from the focused UI element via AX.
--- Returns nil for unsupported controls (Terminal, many Electron apps) or empty
--- selections — caller falls back to ⌘⇧V (clipboard) for those cases.
+-- Returns nil for unsupported controls (Terminal, Electron) or empty selections.
 local function selectedText()
     local s
     pcall(function()
@@ -284,8 +395,6 @@ local function focusedWindowFrame()
     return frame
 end
 
--- Best-effort caret / selection / focused-element / focused-window rect.
--- Returns nil if nothing usable can be found.
 local function anchorRect()
     local rect
     pcall(function()
@@ -307,10 +416,8 @@ local function anchorRect()
     return nil
 end
 
--- Decide overlay placement: leading-x, pinned input-top y, and the screen
--- frame to clamp future growth against. Input always sits below the caret;
--- if there isn't enough room, the overlay slides up to stay inside the
--- screen — even if that means visually overlapping the caret line.
+-- Decide overlay placement. Input sits below the caret; slides up if it would
+-- overflow the screen — even if that means visually overlapping the caret line.
 local function placeOverlay()
     local r = anchorRect()
     local leadX, trailX, bottom
@@ -333,32 +440,24 @@ local function placeOverlay()
     local sf = scr:fullFrame()
     local mar = cfg.layout.screenMargin
 
-    -- Horizontal: prefer leading-edge alignment with the caret. If the overlay
-    -- would overflow the right edge, right-align its right edge to the trailing
-    -- edge of the caret/selection so the visual anchor stays meaningful.
+    local panelSz = cfg.layout.panelSize
     local x = leadX
-    if x + cfg.layout.overlayWidth > sf.x + sf.w - mar then
-        x = trailX - cfg.layout.overlayWidth
+    if x + panelSz > sf.x + sf.w - mar then
+        x = trailX - panelSz
     end
     if x < sf.x + mar then x = sf.x + mar end
-    if x + cfg.layout.overlayWidth > sf.x + sf.w - mar then
-        x = sf.x + sf.w - cfg.layout.overlayWidth - mar
+    if x + panelSz > sf.x + sf.w - mar then
+        x = sf.x + sf.w - panelSz - mar
     end
 
-    -- Vertical: always below the caret; slide up only enough to keep the input
-    -- inside the screen.
     local inputTop = bottom + cfg.layout.anchorOffset
-    if inputTop + cfg.layout.inputHeight > sf.y + sf.h - mar then
-        inputTop = sf.y + sf.h - mar - cfg.layout.inputHeight
+    if inputTop + panelSz > sf.y + sf.h - mar then
+        inputTop = sf.y + sf.h - mar - panelSz
     end
     if inputTop < sf.y + mar then inputTop = sf.y + mar end
 
     return x, inputTop, sf
 end
-
-----------------------------------------------------------------------
--- Paste-injection (clipboard hack, like AnyComplete)
-----------------------------------------------------------------------
 
 local function pasteText(text)
     local saved = pb.getContents()
@@ -366,10 +465,6 @@ local function pasteText(text)
     eventtap.keyStroke({ "cmd" }, "v", 0)
     timer.doAfter(cfg.timings.pasteRestoreS, function() if saved then pb.setContents(saved) end end)
 end
-
-----------------------------------------------------------------------
--- Overlay
-----------------------------------------------------------------------
 
 local state = {
     open         = false,
@@ -390,164 +485,179 @@ local state = {
     inputTop     = 0,
     screenFrame  = nil,
     statusKind   = "idle",
-    streamDotY   = nil, -- y-position where the bouncing dots should ride (below streaming response); nil = input row
-    pulseActive  = false, -- true while the active→idle fade is playing; keeps dotRow reserved during the fade
+    -- Most-recently-submitted prompt. Displayed in the input slot whenever the
+    -- typing buffer is empty (so the card always shows "you said X, I replied Y"
+    -- between turns). Cleared on session start; set by submitPrompt.
+    lastSubmittedPrompt = nil,
 }
 
 local close, submitPrompt, commitResponse, rebuildResponse, applyCanvasFrame
 
--- Where the i-th bouncing dot (0..2) should sit. When streamDotY is set, the
--- row hangs below the streaming response (dots aligned to the left padding).
--- Otherwise the dots ride at the right edge of the input row.
-local function activeDotCenter(i)
-    local frameW = state.canv:frame().w
-    local gap    = cfg.layout.dotGap
-    local r      = cfg.layout.dotRadius
-    if state.streamDotY then
-        local baseX = cfg.layout.pad + r
-        return baseX + i * gap, state.streamDotY
+-- Apply a 16-bit bitmask to the 4×4 matrix cells. Bit i lit → cell i uses
+-- `litColor`; bit i unlit → cell i uses the faded-accent "off" tint. All 16
+-- cells stay at action="fill"; the lit/unlit difference is purely color, so
+-- the grid always reads as a physical LED panel.
+local function applyMatrixMask(mask, litColor)
+    local unlit = colorAlpha(C.accent, cfg.layout.matrixUnlitAlpha)
+    for i = 0, MATRIX_CELLS - 1 do
+        if (mask >> i) & 1 == 1 then
+            state.canv[41 + i].fillColor = litColor
+        else
+            state.canv[41 + i].fillColor = unlit
+        end
     end
-    local baseX = frameW - cfg.layout.pad - r
-    return baseX - (2 - i) * gap, cfg.layout.inputHeight / 2
 end
 
 local function setStatus(kind, reposition)
     if not state.canv then return end
-    local prevKind = state.statusKind
     if (not reposition) and state.statusTimer then
         state.statusTimer:stop(); state.statusTimer = nil
     end
     state.statusKind = kind
-    local dotR = cfg.layout.dotRadius
-    if kind == "active" then
-        -- Three-dot bouncing wave during streaming. Position recomputed each
-        -- frame so the dots ride beneath the streaming AI reply once
-        -- state.streamDotY is set.
-        for i = 0, 2 do
-            state.canv[3 + i].action    = "fill"
-            state.canv[3 + i].radius    = dotR
-            state.canv[3 + i].fillColor = C.spinner
-        end
-        if reposition then
-            for i = 0, 2 do
-                local cx, cy = activeDotCenter(i)
-                state.canv[3 + i].center = { x = cx, y = cy }
-            end
-        else
-            local t0           = timer.secondsSinceEpoch()
-            local period       = cfg.timings.bouncePeriod
-            local bounceHeight = 4
-            local sigma        = cfg.timings.bounceSigma
-            state.statusTimer  = timer.doEvery(cfg.timings.animFrameS, function()
-                if not state.canv then return end
-                local t = ((timer.secondsSinceEpoch() - t0) / period) % 1
-                for i = 0, 2 do
-                    local peakAt = (i + 0.5) / 3
-                    local d = t - peakAt
-                    if d > 0.5 then d = d - 1 elseif d < -0.5 then d = d + 1 end
-                    local lift = bounceHeight * math.exp(-(d * d) / (2 * sigma * sigma))
-                    local cx, cy = activeDotCenter(i)
-                    state.canv[3 + i].center = { x = cx, y = cy - lift }
-                end
-            end)
-        end
-    elseif kind == "error" then
-        -- Errors are surfaced via the input row regardless of streamDotY —
-        -- the response area may already hold a partial stream when this fires.
-        local frameW = state.canv:frame().w
-        state.canv[3].action    = "fill"
-        state.canv[3].radius    = dotR + 0.5
-        state.canv[3].fillColor = C.error
-        state.canv[3].center    = { x = frameW - cfg.layout.pad - dotR, y = cfg.layout.inputHeight / 2 }
-        state.canv[4].action    = "skip"
-        state.canv[5].action    = "skip"
-    else
-        -- Idle: empty by default. Pulse-then-fade only when punctuating a
-        -- completed stream (active → idle); other paths stay silent.
-        if (not reposition) and prevKind == "active" then
-            -- Snapshot the dot's center now; state.streamDotY may change as
-            -- onDone rebuilds the panel with state.response cleared.
-            local pulseCx, pulseCy  = activeDotCenter(2)
-            state.pulseActive       = true
-            state.canv[3].action    = "fill"
-            state.canv[3].radius    = dotR + 0.5
-            state.canv[3].fillColor = C.spinner
-            state.canv[3].center    = { x = pulseCx, y = pulseCy }
-            state.canv[4].action    = "skip"
-            state.canv[5].action    = "skip"
-            local t0    = timer.secondsSinceEpoch()
-            local holdS = cfg.timings.settledHoldS
-            local fadeS = cfg.timings.settledFadeS
-            local base  = C.spinner
+
+    if kind == "thinking" then
+        -- Comet trail; 100ms/frame, 1.6s cycle.
+        applyMatrixMask(MATRIX_FRAMES[1], C.spinner)
+        if not reposition then
+            local t0      = timer.secondsSinceEpoch()
+            local frameMs = 0.1
             state.statusTimer = timer.doEvery(cfg.timings.animFrameS, function()
                 if not state.canv then return end
-                local elapsed = timer.secondsSinceEpoch() - t0
-                if elapsed >= holdS + fadeS then
-                    state.canv[3].action    = "skip"
-                    state.canv[3].fillColor = base
-                    if state.statusTimer then state.statusTimer:stop(); state.statusTimer = nil end
-                    state.pulseActive = false
-                    -- Shrink the canvas now that the dot row is no longer needed.
-                    if rebuildResponse then rebuildResponse() end
-                    return
-                end
-                local alpha = (elapsed < holdS) and 1 or (1 - (elapsed - holdS) / fadeS)
-                state.canv[3].fillColor = {
-                    red   = base.red,
-                    green = base.green,
-                    blue  = base.blue,
-                    alpha = (base.alpha or 1) * alpha,
-                }
+                local frame = math.floor((timer.secondsSinceEpoch() - t0) / frameMs) % #MATRIX_FRAMES + 1
+                applyMatrixMask(MATRIX_FRAMES[frame], C.spinner)
             end)
-        else
-            state.canv[3].action = "skip"
-            state.canv[4].action = "skip"
-            state.canv[5].action = "skip"
         end
+    elseif kind == "success" then
+        -- Hold the check briefly, then snap to idle.
+        applyMatrixMask(CHECK_MASK, C.accent)
+        if not reposition then
+            state.statusTimer = timer.doAfter(0.7, function()
+                if state.canv and state.statusKind == "success" then
+                    setStatus("idle")
+                end
+            end)
+        end
+    elseif kind == "ready" then
+        applyMatrixMask(RETURN_MASK, C.accent)
+    elseif kind == "error" then
+        applyMatrixMask(CROSS_MASK, C.error)
+    elseif kind == "softError" then
+        applyMatrixMask(SAD_MASK, C.error)
+    else
+        applyMatrixMask(IDLE_MASK, C.accent)
     end
 end
 
--- Position input-row elements (input text + status dots) inside the canvas.
--- Input always sits at the top of the canvas; called once at open and after
--- every resize.
+-- Reconcile the matrix with the current buffer/task state. Called after every
+-- buffer mutation; thinking owns the matrix while a task is running, and a
+-- live success-glyph hold should not be cut short by an empty buffer.
+local function updateReadyState()
+    if state.task and state.task:isRunning() then return end
+    local want = (state.buffer ~= "") and "ready" or "idle"
+    if state.statusKind == "success" and want == "idle" then return end
+    if state.statusKind ~= want then setStatus(want) end
+end
+
+-- Position the fixed-region card layout. Called once at open; no per-render
+-- geometry math because the panel never resizes for content.
+--
+-- Vertical bands (top → bottom), all anchored to fixed y offsets:
+--   pad
+--   input region  (inputRegionH)
+--   hint line     (hintLineH)
+--   matrix region (matrixRegionH, matrix vertically centered inside)
+--   output region (derived: fills the remainder)
+--   pad
 local function relayout()
     if not state.canv then return end
-    local frameW        = state.canv:frame().w
-    local inputTextY    = math.floor((cfg.layout.inputHeight - cfg.fontSize) / 2) - 2
-    -- Right edge reserves space for status dot plus chips when visible.
-    local hasImages     = (#state.attachments > 0)
-    local hasText       = (state.textContext and state.textContext ~= "")
-    local imageReserved = hasImages and (cfg.layout.chipWidth + cfg.layout.pad) or 0
-    local textReserved  = hasText and (cfg.layout.cardSize + cfg.layout.pad) or 0
-    local rightReserve  = cfg.layout.statusDotW + imageReserved + textReserved
+    local pad         = cfg.layout.pad
+    local sz          = cfg.layout.panelSize
+    local innerW      = sz - 2 * pad
+    local inputY      = pad
+    local inputH      = cfg.layout.inputRegionH
+    local matrixBandY = inputY + inputH
+    local matrixBandH = cfg.layout.matrixRegionH
+    local outputY     = matrixBandY + matrixBandH
+    local outputH     = sz - pad - outputY
+
+    local hasImages    = (#state.attachments > 0)
+    local hasText      = (state.textContext and state.textContext ~= "")
+    local imageReserve = hasImages and (cfg.layout.chipWidth + pad) or 0
+    local textReserve  = hasText and (cfg.layout.cardSize + pad) or 0
     state.canv[2].frame = {
-        x = cfg.layout.pad,
-        y = inputTextY,
-        w = math.max(0, frameW - cfg.layout.pad - rightReserve),
-        h = cfg.fontSize + 8,
+        x = pad,
+        y = inputY,
+        w = math.max(0, innerW - imageReserve - textReserve),
+        h = inputH,
     }
-    local chipRight = frameW - cfg.layout.pad - 20
-    local cardY = math.floor((cfg.layout.inputHeight - cfg.layout.cardSize) / 2)
-    -- c[9..11] = back→front; cards overlap so they read as a stack.
-    state.canv[11].frame = { x = chipRight - cfg.layout.cardSize,                    y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
-    state.canv[10].frame = { x = chipRight - cfg.layout.cardSize - cfg.layout.cardStep,     y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
-    state.canv[9].frame  = { x = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep, y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
-    state.canv[8].frame = {
+
+    local matrixX = math.floor((sz - MATRIX_PX) / 2)
+    local matrixY = matrixBandY + math.floor((matrixBandH - MATRIX_PX) / 2)
+    for i = 0, MATRIX_CELLS - 1 do
+        local row = i // MATRIX_SIZE
+        local col = i % MATRIX_SIZE
+        state.canv[41 + i].frame = {
+            x = matrixX + col * (MATRIX_CELL_PX + MATRIX_CELL_GAP),
+            y = matrixY + row * (MATRIX_CELL_PX + MATRIX_CELL_GAP),
+            w = MATRIX_CELL_PX,
+            h = MATRIX_CELL_PX,
+        }
+    end
+
+    -- 3-line hint stack — narrow column flush against the left edge of the
+    -- matrix, right-aligned text, vertically centered in the matrix band.
+    local hintGap    = 12
+    local hintBlockH = 56 -- 3 lines × ~14pt + breathing room
+    state.canv[39].frame = {
+        x = pad,
+        y = matrixBandY + math.floor((matrixBandH - hintBlockH) / 2),
+        w = math.max(0, matrixX - pad - hintGap),
+        h = hintBlockH,
+    }
+
+    -- Output text (bottom region). Frame fills the region; styledtext's
+    -- right-alignment + bottom-anchoring is handled in rebuildResponse.
+    state.canv[6].frame = {
+        x = pad,
+        y = outputY,
+        w = innerW,
+        h = outputH,
+    }
+
+    -- Chips anchored to the input row's right edge. Stacked top-right.
+    local chipRight = sz - pad
+    local cardY     = inputY
+    state.canv[11].frame = { x = chipRight - cfg.layout.cardSize,                                y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    state.canv[10].frame = { x = chipRight - cfg.layout.cardSize - cfg.layout.cardStep,         y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    state.canv[9].frame  = { x = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep,     y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    state.canv[8].frame  = {
         x = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep - 18,
-        y = math.floor((cfg.layout.inputHeight - 13) / 2) - 1,
+        y = cardY,
         w = 16,
-        h = 13 + 6,
+        h = 18,
     }
-    -- Text-context chip: single card placed left of the image stack (or at the
-    -- image stack's right-anchor when no images are present).
+
+    -- Text-context chip: left of the image stack (or at the chips' right anchor
+    -- if no images attached).
     local imageStackLeftEdge = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep
     local textChipX = hasImages
-        and (imageStackLeftEdge - cfg.layout.pad - cfg.layout.cardSize)
+        and (imageStackLeftEdge - pad - cfg.layout.cardSize)
         or (chipRight - cfg.layout.cardSize)
     state.canv[12].frame = { x = textChipX, y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
-    -- c[13] label is shorter than the card; offset y to center it vertically.
-    state.canv[13].frame = { x = textChipX, y = cardY + math.floor((cfg.layout.cardSize - 14) / 2), w = cfg.layout.cardSize, h = 16 }
-    setStatus(state.statusKind or "idle", true)
+    local symbolInset = cfg.layout.chipSymbolInset
+    state.canv[13].frame = {
+        x = textChipX + symbolInset,
+        y = cardY + symbolInset,
+        w = cfg.layout.cardSize - 2 * symbolInset,
+        h = cfg.layout.cardSize - 2 * symbolInset,
+    }
+    state.canv[40].frame = {
+        x = textChipX,
+        y = cardY + math.floor((cfg.layout.cardSize - 14) / 2),
+        w = cfg.layout.cardSize,
+        h = 14,
+    }
+    state.canv[40].textAlignment = "center"
 end
 
 local function inputStyled(text, color)
@@ -558,122 +668,280 @@ local function inputStyled(text, color)
     })
 end
 
--- Decide the placeholder text + color for the current state. First match wins.
--- The "↵ paste reply" variant doubles as the Enter-paste affordance.
+-- Concatenate styled-text segments into a single styledtext object. Each
+-- segment is { text, color, [size] } — size falls back to the row's default.
+-- Optional `alignment` (e.g. "left" | "right" | "center") applies to the
+-- whole resulting styledtext via paragraphStyle. Returns nil for an empty
+-- segment list.
+local function styledSegments(segments, defaultSize, alignment)
+    local result
+    local pStyle = alignment and { alignment = alignment } or nil
+    for _, seg in ipairs(segments) do
+        local s = hs.styledtext.new(seg.text, {
+            font           = { name = cfg.font, size = seg.size or defaultSize },
+            color          = seg.color,
+            shadow         = textShadow,
+            paragraphStyle = pStyle,
+        })
+        result = result and (result .. s) or s
+    end
+    return result
+end
+
+-- First ~maxChars of the most recent assistant reply in state.history,
+-- whitespace-collapsed, truncated UTF-8-safe with an ellipsis. Empty string
+-- if no assistant reply exists yet (e.g. only errors so far).
+local function lastReplyPreview(maxChars)
+    for i = #state.history, 1, -1 do
+        if state.history[i].role == "assistant" then
+            local s = (state.history[i].content or "")
+                :gsub("%s+", " ")
+                :gsub("^%s+", "")
+            if #s == 0 then return "" end
+            local len = utf8 and utf8.len(s)
+            if len and len <= maxChars then return s end
+            local offset = utf8 and utf8.offset(s, maxChars + 1)
+            if offset then return s:sub(1, offset - 1) .. "…" end
+            return s:sub(1, maxChars) .. "…"
+        end
+    end
+    return ""
+end
+
+-- Placeholder for the current state, returned as a styledtext object so
+-- different segments can render in different colours (action affordances in
+-- accent, descriptive payload in muted). First match wins.
 local function placeholderForState()
+    local size = cfg.fontSize
     if state.task and state.task:isRunning() then
-        return "thinking…", C.muted
+        return styledSegments({ { text = "thinking…", color = C.muted } }, size)
     end
     if #state.attachments > 0 then
-        local s = (#state.attachments == 1) and "ask about the image…" or "ask about the images…"
-        return s, C.muted
+        local s = (#state.attachments == 1) and "about this image…" or "about these images…"
+        return styledSegments({ { text = s, color = C.muted } }, size)
     end
     if state.textContext and state.textContext ~= "" then
-        return "ask about the selection…", C.muted
+        return styledSegments({ { text = "about this selection…", color = C.muted } }, size)
     end
     if #state.history > 0 and not state.lastPrompt then
-        return "↵ to insert · type to refine", C.accent
+        local preview = lastReplyPreview(50)
+        if preview == "" then
+            return styledSegments({ { text = "↵ to insert", color = C.accent } }, size)
+        end
+        return styledSegments({
+            { text = "↵ to insert", color = C.accent },
+            { text = ": " .. preview, color = C.muted },
+        }, size)
     end
-    return "ask anything · ⌘⇧S to attach", C.muted
+    return styledSegments({ { text = "ask, summarize, rewrite…", color = C.muted } }, size)
 end
 
+-- The discoverability subtext shows while the user is composing their first
+-- prompt in a session — visible during typing so the shortcuts stay reachable
+-- when they're actually relevant. Hides after the first submit, once history
+-- exists and the user has obviously already figured out how to use the panel.
+local function shouldShowHint()
+    if #state.history > 0 then return false end
+    if state.lastPrompt then return false end
+    if state.task and state.task:isRunning() then return false end
+    return true
+end
+
+-- 3-line hint stack — each shortcut on its own line, right-aligned so the
+-- column sits flush against the left edge of the matrix. Modifier glyphs in
+-- accent (the actionable token), verbs in muted (descriptive).
+local function hintStyled()
+    local size      = math.floor(cfg.fontSize * cfg.layout.hintSizeScale)
+    local modColor  = colorAlpha(C.accent, cfg.layout.hintAlpha)
+    local verbColor = colorAlpha(C.muted,  cfg.layout.hintAlpha)
+    local lines = {
+        { "⌘⇧S", "attach" },
+        { "⌘⇧V", "paste" },
+        { "⌘⌫",  "clear" },
+    }
+    local segments = {}
+    for i, p in ipairs(lines) do
+        if i > 1 then
+            segments[#segments + 1] = { text = "\n", color = verbColor }
+        end
+        segments[#segments + 1] = { text = p[1], color = modColor }
+        segments[#segments + 1] = { text = " " .. p[2], color = verbColor }
+    end
+    return styledSegments(segments, size, "right")
+end
+
+-- Place the text cursor at the visual end of the buffer's wrapped text inside
+-- the input region. Multi-line aware: measures the whole buffer's bounding
+-- size at the input frame's width, then walks the last visible line to find
+-- where the cursor should sit.
 local function rebuildCursor()
     if not state.canv then return end
-    local x = cfg.layout.pad
+    local inputFrame = state.canv[2].frame
+    local x, y
+    local cursorH = cfg.layout.userFontSize + 4
     if state.buffer ~= "" then
-        local sz = state.canv:minimumTextSize(2, state.buffer)
-        if sz and sz.w then x = cfg.layout.pad + sz.w end
+        local fullSz = state.canv:minimumTextSize(2, state.buffer)
+        local fullH  = (fullSz and fullSz.h) or cursorH
+        -- Last-line width: measure from the final newline to end. If no
+        -- newline, the buffer is a single visual line and last-line == buffer.
+        local lastBreak = state.buffer:find("\n[^\n]*$")
+        local lastLine  = lastBreak and state.buffer:sub(lastBreak + 1) or state.buffer
+        local lineSz    = state.canv:minimumTextSize(2, lastLine)
+        local lineW     = (lineSz and lineSz.w) or 0
+        x = inputFrame.x + lineW
+        y = inputFrame.y + math.max(0, math.floor(fullH - cursorH))
+    else
+        x = inputFrame.x
+        y = inputFrame.y
     end
-    local cursorH = cfg.fontSize + 4
-    local cursorY = (cfg.layout.inputHeight - cursorH) / 2
     local visible = state.cursorOn and not (state.task and state.task:isRunning())
-    state.canv[7].frame = { x = x, y = cursorY, w = cfg.layout.cursorWidth, h = cursorH }
-    state.canv[7].fillColor = { white = 1, alpha = visible and 1.0 or 0 }
+    state.canv[7].frame     = { x = x, y = y, w = cfg.layout.cursorWidth, h = cursorH }
+    state.canv[7].fillColor = colorAlpha(C.accent, visible and 1.0 or 0)
 end
 
-local function computeInputWidth()
-    local probe = state.buffer ~= "" and state.buffer or placeholderForState()
-    local styled = inputStyled(probe, C.fg)
-    local sz = hs.drawing.getTextDrawingSize(styled)
-    local textW = (sz and sz.w) or 100
-    local imageChipW = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
-    local textChipW = (state.textContext and state.textContext ~= "") and (cfg.layout.cardSize + cfg.layout.pad) or 0
-    local dotW = cfg.layout.statusDotW
-    local w = math.ceil(textW) + 2 * cfg.layout.pad + imageChipW + textChipW + dotW
-    return math.min(cfg.layout.overlayWidth, w)
+-- Force the cursor on and restart the blink phase. Called from open() and from
+-- every onInputKey branch that mutates the buffer — the cursor must be visible
+-- the instant the user's keystroke lands, not at some arbitrary point in the
+-- pre-existing blink phase.
+local function startCursorBlink()
+    if state.cursorTimer then state.cursorTimer:stop() end
+    state.cursorOn = true
+    rebuildCursor()
+    state.cursorTimer = timer.doEvery(cfg.timings.cursorBlinkS, function()
+        state.cursorOn = not state.cursorOn
+        rebuildCursor()
+    end)
+end
+
+-- Region height of the output slot (the band between the matrix and the
+-- bottom pad). Computed once from layout constants — must NOT be read from
+-- state.canv[6].frame.h, because rebuildResponse shrinks that frame to fit.
+local function outputRegionH()
+    return cfg.layout.panelSize
+         - 2 * cfg.layout.pad
+         - cfg.layout.inputRegionH
+         - cfg.layout.matrixRegionH
+end
+
+-- Estimate the height a styledtext will occupy when wrapped to wrapW. Uses
+-- the probe element to measure the natural single-line w/h (hs.canvas's
+-- minimumTextSize ignores wrap), then estimates wrapped lines as
+-- ceil(naturalW / wrapW). Conservative for multi-paragraph text — overshoots
+-- slightly, which is safer than truncating the last line.
+local function estimateWrappedH(styled, wrapW, probeIdx)
+    if wrapW <= 0 then wrapW = 1 end
+    state.canv[probeIdx].text = styled
+    local sz       = state.canv:minimumTextSize(probeIdx, styled)
+    local naturalW = (sz and sz.w) or 0
+    local naturalH = (sz and sz.h) or 0
+    local lines    = math.max(1, math.ceil(naturalW / wrapW))
+    return naturalH * lines
+end
+
+-- Build a styledtext at the largest font size that fits inside regionH at the
+-- probe element's current frame width.
+local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, color, alignment)
+    local wrapW = state.canv[probeIdx].frame.w
+    local size  = maxSize
+    while true do
+        local s = hs.styledtext.new(content, {
+            font           = { name = fontName, size = size },
+            color          = color,
+            shadow         = textShadow,
+            paragraphStyle = { alignment = alignment, lineBreak = "wordWrap" },
+        })
+        if estimateWrappedH(s, wrapW, probeIdx) <= regionH or size <= minSize then
+            return s
+        end
+        size = size - 1
+    end
+end
+
+local function inputText()
+    local content = state.buffer
+    if content == "" then
+        if state.lastSubmittedPrompt and state.lastSubmittedPrompt ~= "" then
+            content = state.lastSubmittedPrompt
+        else
+            return placeholderForState()
+        end
+    end
+    return fitText(content, 2, cfg.layout.inputRegionH, cfg.font,
+                   cfg.layout.userFontSize, 11, C.muted, "left")
+end
+
+local function outputText()
+    local content = state.response
+    if content == "" then
+        for i = #state.history, 1, -1 do
+            if state.history[i].role == "assistant" then
+                content = state.history[i].content or ""
+                break
+            end
+        end
+    end
+    if not content or content == "" then return nil end
+    return fitText(content, 6, outputRegionH(), ".AppleSystemUIFontBold",
+                   cfg.layout.assistantFontSize, 12, C.fg, "right")
 end
 
 local function rebuildInput()
     if not state.canv then return end
-    local nowEmpty = (state.buffer == "")
-    if nowEmpty then
-        local ph, color = placeholderForState()
-        state.canv[2].text = inputStyled(ph, color)
-    else
-        state.canv[2].text = inputStyled(state.buffer, C.fg)
-    end
-    local n = #state.attachments
-    -- Front (c[11]) shows the newest attachment; alpha dims older cards for depth.
+    state.canv[2].text = inputText()
+
+    -- Image attachments: front (c[11]) shows the newest; alpha dims older cards.
+    local n      = #state.attachments
     local alphas = cfg.layout.cardAlphas
     for slot = 0, 2 do
         local idx = 9 + slot
-        local stepsFromFront = 2 - slot  -- slot 0 = back = 2 prior; slot 2 = front = newest
+        local stepsFromFront = 2 - slot
         local attIdx = n - stepsFromFront
         local att = (attIdx >= 1) and state.attachments[attIdx] or nil
         if att and att.img then
-            state.canv[idx].action = "fill"
-            state.canv[idx].image = att.img
+            state.canv[idx].action     = "fill"
+            state.canv[idx].image      = att.img
             state.canv[idx].imageAlpha = alphas[slot + 1]
         else
             state.canv[idx].action = "skip"
-            state.canv[idx].image = nil
+            state.canv[idx].image  = nil
         end
     end
     if n > 3 then
         state.canv[8].action = "fill"
-        state.canv[8].text = hs.styledtext.new("+" .. (n - 3), {
-            font = { name = cfg.font, size = 11 },
-            color = C.accent,
+        state.canv[8].text   = hs.styledtext.new("+" .. (n - 3), {
+            font           = { name = cfg.font, size = 11 },
+            color          = C.accent,
             paragraphStyle = { alignment = "right" },
         })
     else
         state.canv[8].action = "skip"
-        state.canv[8].text = ""
+        state.canv[8].text   = ""
     end
-    -- Text-context chip: a single card showing "T·<chars>" when context is attached.
+
+    -- Text-context chip + count badge.
     local hasText = (state.textContext and state.textContext ~= "")
     if hasText then
         state.canv[12].action = "strokeAndFill"
-        state.canv[13].action = "fill"
-        state.canv[13].text = hs.styledtext.new(string.format("T·%d", #state.textContext), {
-            font = { name = cfg.font, size = 11 },
-            color = C.accent,
-            paragraphStyle = { alignment = "center" },
-            shadow = textShadow,
-        })
+        state.canv[13].action = "skip"
+        state.canv[40].action = "fill"
+        state.canv[40].text   = formatCount(textContextCount(state.textContext))
     else
         state.canv[12].action = "skip"
         state.canv[13].action = "skip"
-        state.canv[13].text = ""
+        state.canv[40].action = "skip"
     end
-    -- Re-run relayout in case chip presence changed: reserved widths and chip
-    -- positions both depend on textContext/attachments, and in expanded mode the
-    -- canvas width doesn't change here so applyCanvasFrame won't be invoked.
+
+    -- Discoverability subtext.
+    local showHint = shouldShowHint()
+    state.canv[39].action = showHint and "fill" or "skip"
+    if showHint then state.canv[39].text = hintStyled() end
+
     relayout()
-    if not state.expanded then
-        local desiredW = computeInputWidth()
-        local f = state.canv:frame()
-        if math.abs(f.w - desiredW) >= 1 then
-            applyCanvasFrame(desiredW, f.h)
-        end
-    end
+    -- relayout() resets c[6].frame to the full output region; the actual
+    -- bottom-anchored y is computed in rebuildResponse, so re-apply it after
+    -- every input rebuild — otherwise the reply jumps to the top of the region.
+    rebuildResponse()
     rebuildCursor()
-    -- Toggle the "Enter target" highlight on the latest reply when buffer
-    -- emptiness flips (empty → Enter pastes; non-empty → Enter submits).
-    if state.bufferWasEmpty ~= nowEmpty then
-        state.bufferWasEmpty = nowEmpty
-        if state.canv and state.canv[6] then rebuildResponse() end
-    end
 end
 
 local function captureRegion()
@@ -714,243 +982,50 @@ local function captureRegion()
     t:start()
 end
 
-applyCanvasFrame = function(w, h)
-    -- Prefer dropping below the caret (state.inputTop); if the canvas would
-    -- overflow the screen bottom, shift the whole thing up so it still fits.
-    local sf = state.screenFrame
+-- Place the fixed-square canvas at the caret anchor. If the bottom would
+-- overflow the screen, shift the whole card up so it still fits.
+applyCanvasFrame = function()
+    if not state.canv then return end
+    local sz  = cfg.layout.panelSize
+    local sf  = state.screenFrame
     local mar = cfg.layout.screenMargin
-    local y = state.inputTop
+    local y   = state.inputTop
     if sf then
         local maxBottom = sf.y + sf.h - mar
-        if y + h > maxBottom then y = maxBottom - h end
+        if y + sz > maxBottom then y = maxBottom - sz end
         if y < sf.y + mar then y = sf.y + mar end
     end
-    state.canv:frame({
-        x = state.anchorX,
-        y = y,
-        w = w,
-        h = h,
-    })
+    state.canv:frame({ x = state.anchorX, y = y, w = sz, h = sz })
     relayout()
 end
 
-local function animateCanvasTo(targetW, targetH)
-    if not state.canv then return end
-    if state.sizeAnim then
-        state.sizeAnim:stop(); state.sizeAnim = nil
-    end
-    local startF = state.canv:frame()
-    local startW, startH = startF.w, startF.h
-    if math.abs(startW - targetW) < 1 and math.abs(startH - targetH) < 1 then
-        applyCanvasFrame(startW, startH)
-        return
-    end
-    local t0 = timer.secondsSinceEpoch()
-    local duration = cfg.timings.sizeAnimS
-    state.sizeAnim = timer.doEvery(cfg.timings.animFrameS, function()
-        if not state.canv then
-            if state.sizeAnim then
-                state.sizeAnim:stop(); state.sizeAnim = nil
-            end
-            return
-        end
-        local t = math.min((timer.secondsSinceEpoch() - t0) / duration, 1)
-        local ease = 1 - (1 - t) * (1 - t) * (1 - t)
-        applyCanvasFrame(
-            startW + (targetW - startW) * ease,
-            startH + (targetH - startH) * ease)
-        if t >= 1 then
-            state.sizeAnim:stop(); state.sizeAnim = nil
-        end
-    end)
-end
-
--- Two-tier type: user prompts smaller and dimmer than AI replies. Opacity
--- falloff dims older turn-pairs (pairsBack 0 = latest pair, 1 = one back, …).
-local function turnAttrs(kind, pairsBack)
-    local pa    = cfg.layout.pairAlphas
-    local alpha = pa[math.min(pairsBack + 1, #pa)]
-    if kind == "user" then
-        return {
-            font           = { name = cfg.font, size = cfg.layout.userFontSize },
-            color          = { white = 1, alpha = alpha * cfg.layout.userAlpha },
-            paragraphStyle = { alignment = "right" },
-            shadow         = textShadow,
-        }
-    end
-    return {
-        font           = { name = cfg.font, size = cfg.fontSize },
-        color          = { white = 1, alpha = alpha },
-        paragraphStyle = { alignment = "left" },
-        shadow         = textShadow,
-    }
-end
-
--- composeTurns flattens history + pending prompt/response into a normalized
--- list of { kind, content, isLatest } entries (kind = "user" | "assistant").
-local function composeTurns(skipTurns)
-    local turns = {}
-    for i = (skipTurns or 0) + 1, #state.history do
-        local msg = state.history[i]
-        turns[#turns + 1] = { kind = msg.role, content = msg.content }
-    end
-    if state.lastPrompt then
-        turns[#turns + 1] = { kind = "user", content = state.lastPrompt }
-        if state.response ~= "" then
-            turns[#turns + 1] = { kind = "assistant", content = state.response }
-        end
-    elseif state.response ~= "" then
-        -- No pending prompt → response is guidance/error text; render as AI.
-        turns[#turns + 1] = { kind = "assistant", content = state.response }
-    end
-    for i = #turns, 1, -1 do
-        if turns[i].kind == "assistant" then
-            turns[i].isLatest = true; break
-        end
-    end
-    return turns
-end
-
--- buildTurns builds the full styledtext transcript AND measures each turn's
--- cumulative y-offset + height inside c[6], so rails and the Enter glyph can be
--- positioned per-turn. Requires c[6].frame.w to be set before invocation —
--- minimumTextSize uses the element's current width for wrap calculations.
-local function buildTurns(turns)
-    local accStyled, accH = nil, 0
-    local measured = {}
-    for i, turn in ipairs(turns) do
-        local pairsBack = math.floor((#turns - i) / 2)
-        local attrs = turnAttrs(turn.kind, pairsBack)
-        local text = turn.content
-        if i < #turns then text = text .. "\n\n" end
-        local s = hs.styledtext.new(text, attrs)
-        accStyled = accStyled and (accStyled .. s) or s
-        local sz = state.canv:minimumTextSize(6, accStyled)
-        local newH = (sz and sz.h) or 0
-        measured[i] = {
-            kind     = turn.kind,
-            isLatest = turn.isLatest,
-            y        = accH,
-            h        = newH - accH,
-        }
-        accH = newH
-    end
-    return accStyled, measured, accH
-end
-
+-- Push the current output text into c[6]. Called from submitPrompt, every
+-- streaming chunk (throttled), and onDone. The frame is fixed by relayout;
+-- text wraps inside, right-aligned, bottom-anchored via paragraphStyle.
 rebuildResponse = function()
     if not state.canv then return end
-    -- Decide target width: once any response/history is present, expand to
-    -- cfg.layout.overlayWidth and stay there for the rest of the session.
-    local hasContent = (#state.history > 0) or state.response ~= "" or state.lastPrompt
-    local targetW
-    if hasContent then
-        state.expanded = true
-        targetW = cfg.layout.overlayWidth
-    else
-        targetW = computeInputWidth()
-    end
-    -- Cap response height by absolute screen height (minus input + margins).
-    -- The canvas shifts upward when it would overflow the bottom edge — see
-    -- applyCanvasFrame — so we don't need to reserve only the space below.
-    local sf = state.screenFrame
-    local mar = cfg.layout.screenMargin
-    local availH = sf.h - 2 * mar - cfg.layout.inputHeight - 6
-    if availH < 0 then availH = 0 end
-    local maxH = math.min(cfg.layout.responseHeight, availH)
-    local frameW = targetW - 2 * cfg.layout.pad
-    local respY = cfg.layout.inputHeight + 4
-    -- Frame width must be set before measurement so styledtext wraps correctly.
-    state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = maxH }
-
-    -- Iteratively drop oldest turns until the styled transcript fits the cap.
-    local skip = 0
-    local turns, styled, measured, measuredH = {}, nil, {}, 0
-    while true do
-        turns = composeTurns(skip)
-        if #turns == 0 then break end
-        styled, measured, measuredH = buildTurns(turns)
-        if measuredH <= maxH then break end
-        if skip + 2 > #state.history then break end -- can't drop the pending turn
-        skip = skip + 2
-    end
+    local styled = outputText()
     state.canv[6].text = styled or ""
-    local contentH = math.min(math.ceil(measuredH) + 4, maxH)
-    if measuredH <= 0 then contentH = 0 end
-    state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = contentH }
-
-    -- Author rails for AI turns only. User prompts already read as user via
-    -- right-alignment + smaller/dimmer text; a second rail there was visual
-    -- noise. Brightness follows pairAlphas so the latest AI pops.
-    local railBase  = 14
-    local railSlots = cfg.layout.railMaxTurns
-    local pa        = cfg.layout.pairAlphas
-    for slot = 0, railSlots - 1 do
-        local idx  = railBase + slot
-        local turn = measured[slot + 1]
-        if turn and turn.kind == "assistant" then
-            local pairsBack = math.floor((#measured - (slot + 1)) / 2)
-            local alpha     = pa[math.min(pairsBack + 1, #pa)]
-            state.canv[idx].action    = "fill"
-            state.canv[idx].fillColor = {
-                red   = C.spinner.red,
-                green = C.spinner.green,
-                blue  = C.spinner.blue,
-                alpha = (C.spinner.alpha or 1) * alpha,
-            }
-            state.canv[idx].frame = {
-                x = cfg.layout.railInset,
-                y = respY + turn.y,
-                w = cfg.layout.railWidth,
-                h = math.max(turn.h - 6, 4),
-            }
-        else
-            state.canv[idx].action = "skip"
-        end
+    -- Anchor text to the bottom of the output region by computing the styled
+    -- text's actual rendered height inside the region width, then shifting
+    -- the frame's y down so the text bottom aligns with the region bottom.
+    if styled then
+        local regionFrame = state.canv[6].frame
+        local regionW     = regionFrame.w
+        local regionH     = regionFrame.h
+        -- Use estimated wrapped height (not the natural single-line h that
+        -- minimumTextSize would return) so multiline replies get a frame
+        -- tall enough to actually render lines 2+.
+        local wrappedH = estimateWrappedH(styled, regionW, 6)
+        local textH    = math.min(wrappedH, regionH)
+        local baseY    = regionFrame.y + (regionH - textH)
+        state.canv[6].frame = {
+            x = regionFrame.x,
+            y = baseY,
+            w = regionW,
+            h = textH,
+        }
     end
-
-    -- The Enter-paste affordance lives in the input-row placeholder
-    -- ("↵ to insert · type to refine") when buffer is empty + history exists.
-    -- No glyph in the response area — that was redundant.
-    state.canv[railBase + railSlots].action = "skip"
-    local streaming = state.task and state.task:isRunning()
-
-    -- Top fade-mask: visible only when we dropped older turns to fit. Stacked
-    -- alpha strips approximate a black→transparent gradient at the top of the
-    -- response area, signalling "there's more above" instead of silently lying.
-    local fadeBase  = enterIdx + 1
-    local nStrips   = cfg.layout.fadeMaskStrips
-    if skip > 0 and contentH > 0 then
-        local stripH = cfg.layout.fadeMaskTotalH / nStrips
-        for s = 0, nStrips - 1 do
-            local stripAlpha = (1 - s / (nStrips - 1)) * (C.bg.alpha or 1)
-            state.canv[fadeBase + s].action    = "fill"
-            state.canv[fadeBase + s].fillColor = { white = 0, alpha = stripAlpha }
-            state.canv[fadeBase + s].frame     = {
-                x = 0, y = respY + s * stripH, w = targetW, h = stripH + 1,
-            }
-        end
-    else
-        for s = 0, nStrips - 1 do
-            state.canv[fadeBase + s].action = "skip"
-        end
-    end
-
-    -- Reserve a row beneath the response for the streaming dots when the AI is
-    -- writing into the panel. Kept active during the post-stream pulse-fade so
-    -- the dots don't fly back to the input row mid-animation.
-    local needsDotRow = (state.response ~= "" and streaming) or state.pulseActive
-    local dotRowH     = needsDotRow and cfg.layout.dotRowH or 0
-    if needsDotRow then
-        state.streamDotY = respY + contentH + math.floor(dotRowH / 2)
-    else
-        state.streamDotY = nil
-    end
-
-    local targetCanvasH = cfg.layout.inputHeight
-        + (contentH > 0 and 6 + contentH or 0)
-        + dotRowH
-    animateCanvasTo(targetW, targetCanvasH)
 end
 
 local rebuildPendingTimer = nil
@@ -973,58 +1048,71 @@ local function rebuildResponseThrottled()
 end
 
 local function newOverlay()
-    -- Initial canvas covers just the input row. Width starts as fit-to-text
-    -- when the session is fresh; expanded state (set by rebuildResponse) jumps
-    -- straight to cfg.layout.overlayWidth.
-    local initW = state.expanded and cfg.layout.overlayWidth or computeInputWidth()
+    -- Fixed-square card. No content-flex resizing; canvas is always panelSize×panelSize.
+    local sz = cfg.layout.panelSize
     local c = canvas.new({
         x = state.anchorX,
         y = state.inputTop,
-        w = initW,
-        h = cfg.layout.inputHeight,
+        w = sz,
+        h = sz,
     })
+    -- c[1]: card background + blue stroke border. Inset by half the stroke
+    -- width so the entire stroke lives inside the canvas window — without
+    -- this, hs.canvas centers the stroke on the rect's path, so half the
+    -- stroke draws outside the canvas bounds and gets clipped (visible
+    -- thickness ends up at strokeWidth/2).
+    local strokeInset = cfg.layout.strokeWidth / 2
     c[1] = {
         type = "rectangle",
-        action = "fill",
+        action = "strokeAndFill",
         fillColor = C.bg,
+        strokeColor = C.accent,
+        strokeWidth = cfg.layout.strokeWidth,
         roundedRectRadii = { xRadius = cfg.layout.cornerRadius, yRadius = cfg.layout.cornerRadius },
+        frame = {
+            x = strokeInset,
+            y = strokeInset,
+            w = sz - 2 * strokeInset,
+            h = sz - 2 * strokeInset,
+        },
     }
     c[2] = {
         type = "text",
         text = "",
         textFont = cfg.font,
-        textSize = cfg.fontSize,
+        textSize = cfg.layout.userFontSize,
         textColor = C.muted,
-        frame = { x = cfg.layout.pad, y = 0, w = math.max(0, initW - cfg.layout.pad - 20), h = cfg.fontSize + 8 },
+        textLineBreak = "wordWrap",
+        frame = { x = 0, y = 0, w = 0, h = 0 }, -- set by relayout
     }
-    -- Status indicator slots (3-5). One dot shown idle/error, three animated for "active".
-    for i = 0, 2 do
-        c[3 + i] = {
-            type = "circle",
+    -- c[3..5]: inert placeholders. hs.canvas requires contiguous element
+    -- indices, so we can't skip these slots even though the redesign no
+    -- longer uses them. Cleanup pass will renumber everything end-to-end.
+    for i = 3, 5 do
+        c[i] = {
+            type = "rectangle",
             action = "skip",
-            fillColor = C.spinner,
-            center = { x = 0, y = 0 },
-            radius = 3,
+            fillColor = { white = 0, alpha = 0 },
+            frame = { x = 0, y = 0, w = 0, h = 0 },
         }
     end
     c[6] = {
         type = "text",
         text = "",
         textFont = cfg.font,
-        textSize = cfg.fontSize,
+        textSize = cfg.layout.assistantFontSize,
         textColor = C.fg,
-        frame = { x = cfg.layout.pad, y = cfg.layout.inputHeight + 4, w = math.max(0, initW - 2 * cfg.layout.pad), h = 0 },
+        textLineBreak = "wordWrap",
+        frame = { x = 0, y = 0, w = 0, h = 0 }, -- set by relayout
     }
-    -- Text cursor: a thin rectangle drawn separately from the text element so
-    -- blinking it on/off can't shift the placeholder layout.
+    -- c[7]: cursor (thin rectangle).
     c[7] = {
         type = "rectangle",
         action = "fill",
         fillColor = { white = 1, alpha = 0 },
-        frame = { x = cfg.layout.pad, y = 0, w = cfg.layout.cursorWidth, h = cfg.fontSize + 4 },
+        frame = { x = 0, y = 0, w = cfg.layout.cursorWidth, h = cfg.layout.userFontSize + 4 },
     }
-    -- Attachment chip: c[8] = "+N" overflow; c[9..11] = thumbnail cards (back→front).
-    -- Frames set in relayout(); image + visibility set in rebuildInput().
+    -- c[8]: "+N" overflow label for stacked image attachments.
     c[8] = {
         type = "text",
         text = "",
@@ -1032,8 +1120,9 @@ local function newOverlay()
         textFont = cfg.font,
         textSize = 11,
         textColor = C.accent,
-        frame = { x = 0, y = 0, w = 14, h = cfg.layout.inputHeight },
+        frame = { x = 0, y = 0, w = 14, h = 18 },
     }
+    -- c[9..11]: thumbnail card stack (back → front).
     for i = 0, 2 do
         c[9 + i] = {
             type = "image",
@@ -1045,58 +1134,64 @@ local function newOverlay()
             frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
         }
     end
-    -- Text-context chip: c[12] rect + c[13] "T·N" label. Visibility/position set
-    -- in rebuildInput() and relayout(); only one chip ever shows.
+    -- c[12, 13]: text-context chip (rect + SF Symbol fallback). c[40] count badge replaces the icon when attached.
     c[12] = {
         type = "rectangle",
         action = "skip",
-        fillColor = { white = 0.18, alpha = 0.95 },
+        fillColor = colorAlpha(C.accent, 0.10),
         strokeColor = C.accent,
         strokeWidth = 0.6,
         roundedRectRadii = { xRadius = 3, yRadius = 3 },
         frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
     }
     c[13] = {
+        type = "image",
+        action = "skip",
+        image = textChipIcon,
+        imageAlignment = "center",
+        imageScaling = "scaleProportionally",
+        imageAlpha = 1.0,
+        frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
+    }
+    -- c[14..38]: inert placeholders for indices the old rail / enter-glyph /
+    -- fade-mask slots used to occupy. Same reason as c[3..5] — hs.canvas needs
+    -- contiguous indices. Cleanup pass will renumber.
+    for i = 14, 38 do
+        c[i] = {
+            type = "rectangle",
+            action = "skip",
+            fillColor = { white = 0, alpha = 0 },
+            frame = { x = 0, y = 0, w = 0, h = 0 },
+        }
+    end
+    -- c[39]: discoverability hint subtext. Position set by relayout.
+    c[39] = {
+        type = "text",
+        action = "skip",
+        text = "",
+        textFont = cfg.font,
+        textSize = math.floor(cfg.fontSize * cfg.layout.hintSizeScale),
+        textColor = C.muted,
+        frame = { x = 0, y = 0, w = 0, h = cfg.layout.hintLineH },
+    }
+    -- c[40]: text-context chip count badge.
+    c[40] = {
         type = "text",
         action = "skip",
         text = "",
         textFont = cfg.font,
         textSize = 11,
         textColor = C.accent,
-        frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = 16 },
+        frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = 14 },
     }
-    -- Author rails: pre-allocated rail slots positioned per-turn by rebuildResponse.
-    -- Color and side are decided at render-time based on turn kind (user/AI).
-    local railBase = 14
-    for i = 0, cfg.layout.railMaxTurns - 1 do
-        c[railBase + i] = {
+    -- c[41..56]: 4×4 LED matrix cells. Always rendered (action="fill"); lit vs
+    -- unlit carried entirely by fillColor. Positions set by relayout.
+    for i = 0, MATRIX_CELLS - 1 do
+        c[41 + i] = {
             type = "rectangle",
-            action = "skip",
-            fillColor = C.muted,
-            frame = { x = 0, y = 0, w = cfg.layout.railWidth, h = 0 },
-        }
-    end
-    -- Enter-target glyph: small "↵" beside the latest AI reply when buffer is empty.
-    -- Index sits right after the rail block so additions are easy to spot.
-    local enterIdx = railBase + cfg.layout.railMaxTurns -- c[26]
-    c[enterIdx] = {
-        type = "text",
-        action = "skip",
-        text = "",
-        textFont = cfg.font,
-        textSize = cfg.layout.enterGlyphSize,
-        textColor = C.spinner,
-        frame = { x = 0, y = 0, w = 14, h = cfg.layout.enterGlyphSize + 4 },
-    }
-    -- Top fade-mask: stacked alpha strips approximating a gradient. Visible only
-    -- when buildTranscript dropped older turns to fit the vertical cap.
-    local fadeBase = enterIdx + 1 -- c[27..]
-    for i = 0, cfg.layout.fadeMaskStrips - 1 do
-        c[fadeBase + i] = {
-            type = "rectangle",
-            action = "skip",
-            fillColor = { white = 0, alpha = 0 },
-            frame = { x = 0, y = 0, w = 0, h = 0 },
+            action = "fill",
+            fillColor = colorAlpha(C.accent, cfg.layout.matrixUnlitAlpha),
+            frame = { x = 0, y = 0, w = MATRIX_CELL_PX, h = MATRIX_CELL_PX },
         }
     end
     c:level(canvas.windowLevels.overlay)
@@ -1108,6 +1203,20 @@ end
 ----------------------------------------------------------------------
 -- Input eventtap (active only while overlay is open)
 ----------------------------------------------------------------------
+
+-- Navigation / function keys that must never be inserted as text. macOS's
+-- NSEvent reports these as Private-Use Area characters (F700–F7FF) whose UTF-8
+-- encoding starts with 0xEF (239) — that passes the b >= 32 printable filter
+-- below, so without an explicit denylist arrow keys appear in the buffer.
+local NON_TEXT_KEYS = {
+    up = true, down = true, left = true, right = true,
+    pageup = true, pagedown = true, home = true, ["end"] = true,
+    forwarddelete = true, help = true,
+    f1 = true, f2 = true, f3 = true, f4 = true, f5 = true, f6 = true,
+    f7 = true, f8 = true, f9 = true, f10 = true, f11 = true, f12 = true,
+    f13 = true, f14 = true, f15 = true, f16 = true, f17 = true, f18 = true,
+    f19 = true, f20 = true,
+}
 
 local function onInputKey(event)
     if not state.open then return false end
@@ -1142,6 +1251,13 @@ local function onInputKey(event)
         return true
     end
 
+    -- Navigation / function keys: swallow so they never insert as text. The
+    -- single-line / wrapped input doesn't have cursor navigation, and the
+    -- card design has no transcript scroll.
+    if key and NON_TEXT_KEYS[key] then
+        return true
+    end
+
     if key == "escape" then
         close(); return true
     end
@@ -1160,6 +1276,8 @@ local function onInputKey(event)
     if key == "delete" then
         state.buffer = state.buffer:sub(1, -2)
         rebuildInput()
+        startCursorBlink()
+        updateReadyState()
         return true
     end
 
@@ -1169,6 +1287,8 @@ local function onInputKey(event)
         if b and b >= 32 and b ~= 127 then
             state.buffer = state.buffer .. chars
             rebuildInput()
+            startCursorBlink()
+            updateReadyState()
             return true
         end
     end
@@ -1183,39 +1303,37 @@ end
 local function open(opts)
     if state.open then return end
     opts                  = opts or {}
+    -- Sample appearance first so newOverlay() picks up the right palette and
+    -- mid-session-stale color references in other functions see fresh values.
+    loadAppearance()
     local x, inputTop, sf = placeOverlay()
 
-    state.open            = true
-    state.buffer          = ""
-    state.response        = ""
-    state.attachments     = {}
-    state.textContext     = nil
-    state.lastPrompt      = nil
-    state.anchorX         = x
-    state.inputTop        = inputTop
-    state.screenFrame     = sf
-    state.statusKind      = "idle"
+    state.open               = true
+    state.buffer             = ""
+    state.response           = ""
+    state.attachments        = {}
+    state.textContext        = nil
+    state.lastPrompt         = nil
+    state.anchorX            = x
+    state.inputTop           = inputTop
+    state.screenFrame        = sf
+    state.statusKind         = "idle"
     if not opts.continued then
         state.history = {}
         state.sessionId = nil
+        state.lastSubmittedPrompt = nil
     end
     -- Auto-attach the current selection as context. AX returns nothing for
     -- unsupported controls (Terminal etc.) — user falls back to ⌘⇧V for those.
     local sel = selectedText()
     if sel and sel ~= "" then state.textContext = sel end
-    -- Continued sessions reopen at full width (history will fill the response
-    -- area); fresh sessions start narrow and grow with the input text.
-    state.expanded = opts.continued and #state.history > 0
 
     state.canv = newOverlay()
-    relayout()
+    applyCanvasFrame()  -- screen-fit-clamps + calls relayout
     rebuildInput()
+    rebuildResponse()
     setStatus("idle")
-    state.cursorOn = true
-    state.cursorTimer = timer.doEvery(cfg.timings.cursorBlinkS, function()
-        state.cursorOn = not state.cursorOn
-        rebuildCursor()
-    end)
+    startCursorBlink()
     state.inputTap = eventtap.new({ etypes.keyDown }, onInputKey):start()
     state.dismissTap = eventtap.new({ etypes.leftMouseDown, etypes.rightMouseDown }, function(e)
         if not state.open or not state.canv then return false end
@@ -1237,9 +1355,6 @@ close = function()
     if state.cursorTimer then
         state.cursorTimer:stop(); state.cursorTimer = nil
     end
-    if state.sizeAnim then
-        state.sizeAnim:stop(); state.sizeAnim = nil
-    end
     if rebuildPendingTimer then
         rebuildPendingTimer:stop(); rebuildPendingTimer = nil
     end
@@ -1253,7 +1368,6 @@ close = function()
     state.task = nil
     state.attachments = {}
     state.textContext = nil
-    state.expanded = false
     if state.canv then
         state.canv:delete(); state.canv = nil
     end
@@ -1315,16 +1429,17 @@ submitPrompt = function()
         for n in pairs(Muse.backends) do addBackend(n) end
         state.response = table.concat(lines, "\n")
         rebuildResponse()
-        setStatus("error")
+        setStatus("softError")
         return
     end
 
-    state.response = ""
-    state.lastPrompt = userText ~= "" and userText or finalPrompt
-    state.buffer = ""
+    state.response            = ""
+    state.lastPrompt          = userText ~= "" and userText or finalPrompt
+    state.lastSubmittedPrompt = userText
+    state.buffer              = ""
     rebuildInput()
     rebuildResponse()
-    setStatus("active")
+    setStatus("thinking")
 
     local function onChunk(text)
         state.response = state.response .. text
@@ -1335,12 +1450,13 @@ submitPrompt = function()
         if not state.open then return end
         table.insert(state.history, { role = "user", content = finalPrompt })
         table.insert(state.history, { role = "assistant", content = state.response })
-        setStatus("idle")
-        -- Chat-mode: keep open, fold the in-flight turn into history, clear the
-        -- in-flight slots so the next prompt renders cleanly.
-        state.response = ""
+        setStatus("success")
+        -- Card-mode: keep the just-finished reply visible. state.response is
+        -- cleared so outputText() falls back to the last assistant turn in
+        -- history (same content, just a different lookup path).
+        state.response   = ""
         state.lastPrompt = nil
-        state.buffer = ""
+        state.buffer     = ""
         rebuildInput()
         rebuildResponse()
     end
