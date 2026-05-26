@@ -15,6 +15,25 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 - Press ⌘⌃C to copy the server URL.
 - Open the URL on your phone's browser.
 
+### DigUp
+[`DigUp/`](https://github.com/sryo/Spoons/blob/main/DigUp) - Remember everything you've seen on screen. Captures the screen periodically, OCRs each frame, and lets you search the text back later and scrub through the moments around any hit.
+
+#### Features
+- Periodic screenshots, with the text in each frame made searchable on-device (no network).
+- Full-text search across everything that's been on screen.
+- Optional clipboard history, searchable alongside screenshots.
+- Per-app blacklist plus built-in skips for password managers and private-browsing windows.
+- Pauses automatically on screen lock, sleep, and low battery.
+
+#### How to Use
+
+| Action               | Shortcut                                  |
+|----------------------|---------------------------------------------|
+| Search past screen content | <kbd>⌘ CMD</kbd><kbd>⇧ SHIFT</kbd><kbd>SPACE</kbd> |
+| Pause/resume recording     | Menubar icon → "Pause recording" |
+| Skip/record current app    | Menubar icon → "Skip <app>" / "Record <app>" |
+
+
 ![framemaster](https://github.com/user-attachments/assets/155fd5d5-3bb4-4ad3-9056-ef8c22bf7514)
 ### FrameMaster
 [`FrameMaster.lua`](https://github.com/sryo/Spoons/blob/main/FrameMaster.lua) - Take control of your Mac's 'hot corners', menu bar, and dock. Master your screen frame and manage your workflow with minimal distractions.

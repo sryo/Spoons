@@ -9,8 +9,7 @@ local cfg = {
     blacklist         = {},
     retentionDays     = 30,
     maxStorageGB      = 5,
-    searchHotkey      = { mods = {"ctrl", "alt", "cmd"}, key = "r" },
-    toggleHotkey      = { mods = {"ctrl", "alt", "cmd"}, key = "d" },
+    searchHotkey      = { mods = {"cmd", "shift"}, key = "space" },
 
     -- Skip windows whose title contains any of these (lowercase match)
     sensitivePatterns = {

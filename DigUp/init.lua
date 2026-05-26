@@ -4,8 +4,8 @@
   search it all back. Pick a result and scrub through nearby moments.
 
   Hotkeys (change in DigUp/config.lua):
-    ctrl+alt+cmd+R  search
-    ctrl+alt+cmd+D  toggle recording
+    cmd+shift+space  search
+  (Pause/resume recording lives in the menubar.)
 
   Files:
     DigUp/init.lua                 loads everything (this file)
@@ -104,15 +104,6 @@ local ok, err = pcall(function()
     -- Bind hotkeys
     hotkey.bind(cfg.searchHotkey.mods, cfg.searchHotkey.key, function()
         search.show()
-    end)
-
-    hotkey.bind(cfg.toggleHotkey.mods, cfg.toggleHotkey.key, function()
-        if capture.isRecording() then
-            capture.pause()
-        else
-            capture.resume()
-        end
-        mb.updateIcon()
     end)
 
     -- Pause on screen lock, resume on unlock
