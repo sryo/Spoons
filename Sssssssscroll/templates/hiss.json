@@ -1,0 +1,1 @@
+{"type":"band","name":"hiss","main_band":[40,100],"noise_bands":[[3,40],[180,257]],"sensitivity":3.0,"hysteresis":0.8,"lowpass":0.6}
