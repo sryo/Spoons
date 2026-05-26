@@ -201,10 +201,7 @@ local function cleanup()
     animation.cancelAllAnimations()
     outline.cleanup()
     if cfg.enableTTTaps then gestures.stop() end
-    fullscreen.clearZoomOverlays()
-    fullscreen.clearMinimizeOverlays()
-    fullscreen.clearPinOverlays()
-    fullscreen.clearCloseOverlays()
+    fullscreen.cleanup()
     core.log("WindowScape cleanup complete")
 end
 

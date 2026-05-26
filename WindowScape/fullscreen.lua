@@ -115,19 +115,10 @@ function M.enter(win)
         end
     end)
 
-    -- Overlay AX elements aren't reliably available immediately; wait briefly.
+    -- AX button rects aren't reliably available immediately; wait briefly.
     timer.doAfter(0.15, function()
         if not state.active then return end
-        local winId = win:id()
-        if not winId then return end
-
-        ui.clearAllOverlays()
-
-        local zoomOverlay = ui.createZoomOverlay(win)
-        local minimizeOverlay = ui.createMinimizeOverlay(win)
-
-        if zoomOverlay     then ui.zoomOverlays[winId]     = zoomOverlay end
-        if minimizeOverlay then ui.minimizeOverlays[winId] = minimizeOverlay end
+        ui.setFullscreenButtons(win)
     end)
 end
 
