@@ -32,6 +32,10 @@ local cfg = {
     -- Debug hotkey: prints AX role chain under the cursor to the console.
     debugMods        = { "ctrl", "cmd" },
     debugKey         = "D",
+    -- Continuous-log hotkey: toggle streaming AX element + picked target on
+    -- every cursor move (deduped by element identity, not time).
+    logMods          = { "ctrl", "cmd" },
+    logKey           = "I",
 }
 
 local colors = {
@@ -86,6 +90,9 @@ local lastMoveX, lastMoveY = -1, -1
 local lastTarget = nil
 local lastFadeBin = -1
 local lastUpdateX, lastUpdateY = -1, -1
+-- Continuous debug log state
+local debugLog = false
+local lastLogKey = nil
 
 -- Tag set on synthetic clicks we post so our own clickTap can recognize
 -- and pass them through instead of recursing.
@@ -471,6 +478,36 @@ local function onMouseMoved()
         return false
     end
     updateOverlay(pos.x, pos.y)
+
+    if debugLog then
+        local el = ax.systemWideElement():elementAtPosition(pos)
+        if el then
+            local role    = el:attributeValue("AXRole") or "?"
+            local subrole = el:attributeValue("AXSubrole") or ""
+            local frame   = el:attributeValue("AXFrame")
+            local fStr    = frame
+                and string.format("%.0fx%.0f@%.0f,%.0f", frame.w, frame.h, frame.x, frame.y)
+                or "no-frame"
+            local key = role .. "|" .. subrole .. "|" .. fStr
+            if key ~= lastLogKey then
+                lastLogKey = key
+                local inRoles = roleSet[role] and "yes" or "no"
+                local picked = "none"
+                if currentTarget then
+                    local pf = currentTarget.frame
+                    local d  = sqrt(distSq(pos.x, pos.y, pf))
+                    local pr = (currentTarget.element and currentTarget.element:attributeValue("AXRole")) or "?"
+                    picked = string.format("%s %.0fpx away", pr, d)
+                end
+                print(string.format(
+                    "BC @ %.0f,%.0f: %s%s %s  in_roles=%s  picked=%s",
+                    pos.x, pos.y, role,
+                    subrole ~= "" and (" (" .. subrole .. ")") or "",
+                    fStr, inRoles, picked))
+            end
+        end
+    end
+
     return false
 end
 
@@ -588,7 +625,7 @@ local function inspectUnderCursor()
     local el  = ax.systemWideElement():elementAtPosition(pos)
     if not el then hs.alert.show("BubbleCursor: nothing under cursor"); return end
 
-    print(string.format("\n── BubbleCursor inspect @ %d,%d ──", pos.x, pos.y))
+    print(string.format("\n── BubbleCursor inspect @ %.0f,%.0f ──", pos.x, pos.y))
     local node = el
     local depth = 0
     while node and depth < 6 do
@@ -597,7 +634,7 @@ local function inspectUnderCursor()
         local frame   = node:attributeValue("AXFrame")
         local ok, actions = pcall(function() return node:actionNames() end)
         local actStr = (ok and actions) and table.concat(actions, ",") or "-"
-        local fStr   = frame and string.format("%dx%d@%d,%d", frame.w, frame.h, frame.x, frame.y) or "no-frame"
+        local fStr   = frame and string.format("%.0fx%.0f@%.0f,%.0f", frame.w, frame.h, frame.x, frame.y) or "no-frame"
         print(string.format("  [%d] %s%s  %s  actions={%s}",
             depth, role,
             subrole ~= "" and (" (" .. subrole .. ")") or "",
@@ -624,6 +661,12 @@ hs.hotkey.bind(cfg.mods, cfg.key, function()
 end)
 
 hs.hotkey.bind(cfg.debugMods, cfg.debugKey, inspectUnderCursor)
+
+hs.hotkey.bind(cfg.logMods, cfg.logKey, function()
+    debugLog = not debugLog
+    lastLogKey = nil
+    hs.alert.show("Bubble Cursor log " .. (debugLog and "ON" or "OFF"))
+end)
 
 start()
 
