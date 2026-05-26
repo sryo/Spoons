@@ -309,9 +309,11 @@ hideTooltip = function()
     local cornerToFade = lastCorner
 
     local function fade()
-        local point = hs.mouse.absolutePosition()
-        if cornerToFade == checkForHotCorner(point.x, point.y) then
-            return
+        if cornerToFade then
+            local point = hs.mouse.absolutePosition()
+            if cornerToFade == checkForHotCorner(point.x, point.y) then
+                return
+            end
         end
         currentAlpha = currentAlpha - fadeOutAlphaStep
         tooltipAlert:alpha(currentAlpha)
