@@ -229,25 +229,23 @@ local function showTooltip(winId, snapFrame)
     if tooltipFadeTimer then tooltipFadeTimer:stop(); tooltipFadeTimer = nil end
     if tooltipHideTimer then tooltipHideTimer:stop(); tooltipHideTimer = nil end
 
-    local fontSize = 12
     local padding = 8
-    local maxWidth = 180
 
     local lines = {}
     for line in message:gmatch("[^\n]+") do
-        table.insert(lines, truncateMiddle(line, 30))
+        table.insert(lines, truncateMiddle(line, 50))
     end
     local truncatedMessage = table.concat(lines, "\n")
 
     local styledMessage = styledtext.new(truncatedMessage, {
-        font = { size = fontSize },
+        font = { size = 20 },
         color = { white = 1, alpha = 1 },
         paragraphStyle = { alignment = "center" },
         shadow = { offset = { h = -1, w = 0 }, blurRadius = 2, color = { alpha = 1 } }
     })
 
     local textSize = drawing.getTextDrawingSize(styledMessage)
-    local tooltipW = math.min(textSize.w, maxWidth) + padding * 2
+    local tooltipW = textSize.w + padding * 2
     local tooltipH = textSize.h + padding
 
     local tooltipX = snapFrame.x - tooltipW - 8

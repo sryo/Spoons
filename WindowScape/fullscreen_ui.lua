@@ -6,6 +6,10 @@ local timer       = require("hs.timer")
 local window      = require("hs.window")
 local axuielement = require("hs.axuielement")
 local fnutils     = require("hs.fnutils")
+local styledtext  = require("hs.styledtext")
+local drawing     = require("hs.drawing")
+local mouse       = require("hs.mouse")
+local screen      = require("hs.screen")
 
 local M = {}
 
@@ -104,37 +108,76 @@ function M.showButtonTooltip(text, x, y)
     if buttonTooltipTimer then buttonTooltipTimer:stop(); buttonTooltipTimer = nil end
 
     if not buttonTooltipCanvas then
-        buttonTooltipCanvas = canvas.new({ x = 0, y = 0, w = 100, h = 24 })
+        buttonTooltipCanvas = canvas.new({ x = 0, y = 0, w = 1, h = 1 })
         buttonTooltipCanvas:level(canvas.windowLevels._MaximumWindowLevelKey)
+        buttonTooltipCanvas:behavior("canJoinAllSpaces")
         buttonTooltipCanvas:appendElements({
             type = "rectangle",
             action = "fill",
             roundedRectRadii = { xRadius = 4, yRadius = 4 },
-            fillColor = { white = 0, alpha = 0.8 },
+            fillColor = { white = 0, alpha = 0.75 },
         })
         buttonTooltipCanvas:appendElements({
             type = "text",
             text = "",
-            textAlignment = "center",
-            textColor = { white = 1 },
-            textSize = 12,
-            frame = { x = 0, y = 4, w = "100%", h = "100%" },
+            frame = { x = 0, y = 0, w = "100%", h = "100%" },
         })
     end
 
-    local padding = 8
-    local tooltipW = math.max(#text * 7 + padding * 2, 60)
+    local styledMessage = styledtext.new(text, {
+        font = { size = 20 },
+        color = { white = 1, alpha = 1 },
+        shadow = { offset = { h = -1, w = 0 }, blurRadius = 2, color = { alpha = 1 } },
+    })
+
+    local textSize = drawing.getTextDrawingSize(styledMessage)
+    local tooltipW = textSize.w
     local tooltipH = 24
 
-    buttonTooltipCanvas:elementAttribute(2, "text", text)
-    buttonTooltipCanvas:frame({ x = x - tooltipW / 2, y = y + 20, w = tooltipW, h = tooltipH })
+    local tooltipX = x - tooltipW / 2
+    local tooltipY = y + 20
+
+    local scrFrame = (mouse.getCurrentScreen() or screen.mainScreen()):fullFrame()
+    local edgeMargin = 8
+
+    if tooltipX < scrFrame.x + edgeMargin then
+        tooltipX = scrFrame.x + edgeMargin
+    elseif tooltipX + tooltipW > scrFrame.x + scrFrame.w - edgeMargin then
+        tooltipX = scrFrame.x + scrFrame.w - edgeMargin - tooltipW
+    end
+
+    if tooltipY < scrFrame.y + edgeMargin then
+        tooltipY = scrFrame.y + edgeMargin
+    elseif tooltipY + tooltipH > scrFrame.y + scrFrame.h - edgeMargin then
+        tooltipY = scrFrame.y + scrFrame.h - edgeMargin - tooltipH
+    end
+
+    buttonTooltipCanvas:elementAttribute(2, "text", styledMessage)
+    buttonTooltipCanvas:frame({ x = tooltipX, y = tooltipY, w = tooltipW, h = tooltipH })
     buttonTooltipCanvas:alpha(1)
     buttonTooltipCanvas:show()
 end
 
 function M.hideButtonTooltip()
-    if buttonTooltipCanvas then buttonTooltipCanvas:hide() end
+    if not buttonTooltipCanvas then return end
     if buttonTooltipTimer then buttonTooltipTimer:stop(); buttonTooltipTimer = nil end
+
+    local fadeOutDuration = 0.125
+    local fadeOutStep = 0.025
+    local fadeOutAlphaStep = fadeOutStep / fadeOutDuration
+    local currentAlpha = buttonTooltipCanvas:alpha()
+
+    local function fade()
+        currentAlpha = currentAlpha - fadeOutAlphaStep
+        if currentAlpha > 0 then
+            buttonTooltipCanvas:alpha(currentAlpha)
+            buttonTooltipTimer = timer.doAfter(fadeOutStep, fade)
+        else
+            buttonTooltipCanvas:hide()
+            buttonTooltipTimer = nil
+        end
+    end
+    fade()
 end
 
 function M.createZoomOverlay(win)
