@@ -1,6 +1,7 @@
+require("hs.ipc")
 --require "TrackpadKeys"
 --require "HyperlinkHijacker"
---require "Sssssssscroll"
+require "Sssssssscroll"
 require "WindowScape"
 require "FrameMaster"
 --require "EdgeHopper"
@@ -9,7 +10,7 @@ require "SideSwipe"
 require "AutoDMG"
 --require "AppTimeout"
 require "NoTunes"
-require "BubbleCursor"
+--require "BubbleCursor"
 --require "DigUp"
 --require "UndoClose"
 local CloudPad = require("CloudPad"); CloudPad.start()
