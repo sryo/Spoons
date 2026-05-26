@@ -32,17 +32,46 @@ local keymap           = hs.keycodes.map
 Muse.config            = {
     backend        = "claudecli", -- "claude" | "openai" | "gemini" | "fabric" | "claudecli" | "apple"
     fallbackOrder  = { "claudecli", "claude", "openai", "gemini", "fabric", "apple" },
-    doubleTapMs    = 250,
-    continueMs     = 600,
-    anchorOffset   = 8,
-    overlayWidth   = 540,
-    inputHeight    = 46,
-    responseHeight = 260,
-    pad            = 8,
     font           = ".AppleSystemUIFontMedium",
     fontSize       = 20,
     rightCmdCode   = 54, -- right ⌘
     backends       = {}, -- per-plugin config: Muse.config.backends[name] = { ... }
+
+    layout = {
+        overlayWidth   = 540,
+        inputHeight    = 46,
+        responseHeight = 260,
+        anchorOffset   = 8,
+        pad            = 8,
+        screenMargin   = 8,                   -- min gap between overlay and screen edge
+
+        chipWidth      = 76,                  -- horizontal budget for the attachment chip
+        cardSize       = 30,                  -- thumbnail edge length
+        cardStep       = 12,                  -- left-edge offset between stacked cards
+        cardAlphas     = { 0.55, 0.8, 1.0 },  -- back, middle, front depth
+
+        statusDotW     = 20,
+        dotGap         = 8,
+        dotRadius      = 3,
+
+        cornerRadius   = 4,
+        cursorWidth    = 1.5,
+    },
+
+    timings = {
+        doubleTapMs     = 250,
+        continueMs      = 600,
+        bouncePeriod    = 1.1,    -- status-dot wave period (s)
+        bounceSigma     = 0.08,   -- Gaussian width of each bounce peak
+        settledHoldS    = 0.35,   -- after stream ends, hold the dot before fading
+        settledFadeS    = 0.25,   -- alpha fade-to-zero duration
+        animFrameS      = 0.016,  -- ~60fps timer step
+        sizeAnimS       = 0.18,   -- canvas resize tween duration
+        cursorBlinkS    = 0.53,
+        rebuildThrottle = 0.1,
+        pasteInjectS    = 0.04,
+        pasteRestoreS   = 0.12,
+    },
 }
 
 local cfg              = Muse.config
@@ -246,25 +275,25 @@ local function placeOverlay()
         bottom = p.y
     end
     local sf = scr:fullFrame()
-    local mar = 8
+    local mar = cfg.layout.screenMargin
 
     -- Horizontal: prefer leading-edge alignment with the caret. If the overlay
     -- would overflow the right edge, right-align its right edge to the trailing
     -- edge of the caret/selection so the visual anchor stays meaningful.
     local x = leadX
-    if x + cfg.overlayWidth > sf.x + sf.w - mar then
-        x = trailX - cfg.overlayWidth
+    if x + cfg.layout.overlayWidth > sf.x + sf.w - mar then
+        x = trailX - cfg.layout.overlayWidth
     end
     if x < sf.x + mar then x = sf.x + mar end
-    if x + cfg.overlayWidth > sf.x + sf.w - mar then
-        x = sf.x + sf.w - cfg.overlayWidth - mar
+    if x + cfg.layout.overlayWidth > sf.x + sf.w - mar then
+        x = sf.x + sf.w - cfg.layout.overlayWidth - mar
     end
 
     -- Vertical: always below the caret; slide up only enough to keep the input
     -- inside the screen.
-    local inputTop = bottom + cfg.anchorOffset
-    if inputTop + cfg.inputHeight > sf.y + sf.h - mar then
-        inputTop = sf.y + sf.h - mar - cfg.inputHeight
+    local inputTop = bottom + cfg.layout.anchorOffset
+    if inputTop + cfg.layout.inputHeight > sf.y + sf.h - mar then
+        inputTop = sf.y + sf.h - mar - cfg.layout.inputHeight
     end
     if inputTop < sf.y + mar then inputTop = sf.y + mar end
 
@@ -279,7 +308,7 @@ local function pasteText(text)
     local saved = pb.getContents()
     pb.setContents(text)
     eventtap.keyStroke({ "cmd" }, "v", 0)
-    timer.doAfter(0.12, function() if saved then pb.setContents(saved) end end)
+    timer.doAfter(cfg.timings.pasteRestoreS, function() if saved then pb.setContents(saved) end end)
 end
 
 ----------------------------------------------------------------------
@@ -310,15 +339,16 @@ local close, submitPrompt, commitResponse, rebuildResponse, applyCanvasFrame
 
 local function setStatus(kind, reposition)
     if not state.canv then return end
+    local prevKind = state.statusKind
     if (not reposition) and state.statusTimer then
         state.statusTimer:stop(); state.statusTimer = nil
     end
     state.statusKind = kind
     local frameW     = state.canv:frame().w
-    local dotRight   = frameW - cfg.pad
-    local dotGap     = 8
-    local dotR       = 3
-    local dotY       = cfg.inputHeight / 2
+    local dotRight   = frameW - cfg.layout.pad
+    local dotGap     = cfg.layout.dotGap
+    local dotR       = cfg.layout.dotRadius
+    local dotY       = cfg.layout.inputHeight / 2
     if kind == "active" then
         -- Three-dot bouncing wave during streaming.
         for i = 0, 2 do
@@ -332,10 +362,10 @@ local function setStatus(kind, reposition)
             end
         else
             local t0           = timer.secondsSinceEpoch()
-            local period       = 1.1
+            local period       = cfg.timings.bouncePeriod
             local bounceHeight = 4
-            local sigma        = 0.08
-            state.statusTimer  = timer.doEvery(0.016, function()
+            local sigma        = cfg.timings.bounceSigma
+            state.statusTimer  = timer.doEvery(cfg.timings.animFrameS, function()
                 if not state.canv then return end
                 local t = ((timer.secondsSinceEpoch() - t0) / period) % 1
                 for i = 0, 2 do
@@ -350,15 +380,49 @@ local function setStatus(kind, reposition)
                 end
             end)
         end
-    else
-        -- Idle / error: a single solid dot, the other two skipped.
-        local color = (kind == "error") and C.error or C.spinner
+    elseif kind == "error" then
         state.canv[3].action = "fill"
         state.canv[3].radius = dotR + 0.5
-        state.canv[3].fillColor = color
+        state.canv[3].fillColor = C.error
         state.canv[3].center = { x = dotRight - dotR, y = dotY }
         state.canv[4].action = "skip"
         state.canv[5].action = "skip"
+    else
+        -- Idle: empty by default. Pulse-then-fade only when punctuating a
+        -- completed stream (active → idle); other paths stay silent.
+        if (not reposition) and prevKind == "active" then
+            state.canv[3].action = "fill"
+            state.canv[3].radius = dotR + 0.5
+            state.canv[3].fillColor = C.spinner
+            state.canv[3].center = { x = dotRight - dotR, y = dotY }
+            state.canv[4].action = "skip"
+            state.canv[5].action = "skip"
+            local t0    = timer.secondsSinceEpoch()
+            local holdS = cfg.timings.settledHoldS
+            local fadeS = cfg.timings.settledFadeS
+            local base  = C.spinner
+            state.statusTimer = timer.doEvery(cfg.timings.animFrameS, function()
+                if not state.canv then return end
+                local elapsed = timer.secondsSinceEpoch() - t0
+                if elapsed >= holdS + fadeS then
+                    state.canv[3].action = "skip"
+                    state.canv[3].fillColor = base
+                    if state.statusTimer then state.statusTimer:stop(); state.statusTimer = nil end
+                    return
+                end
+                local alpha = (elapsed < holdS) and 1 or (1 - (elapsed - holdS) / fadeS)
+                state.canv[3].fillColor = {
+                    red   = base.red,
+                    green = base.green,
+                    blue  = base.blue,
+                    alpha = (base.alpha or 1) * alpha,
+                }
+            end)
+        else
+            state.canv[3].action = "skip"
+            state.canv[4].action = "skip"
+            state.canv[5].action = "skip"
+        end
     end
 end
 
@@ -368,29 +432,25 @@ end
 local function relayout()
     if not state.canv then return end
     local frameW     = state.canv:frame().w
-    local inputTextY = math.floor((cfg.inputHeight - cfg.fontSize) / 2) - 2
+    local inputTextY = math.floor((cfg.layout.inputHeight - cfg.fontSize) / 2) - 2
     -- Right edge reserves space for status dot (~20px) plus chip when visible.
-    local chipReserved = (#state.attachments > 0) and (76 + cfg.pad) or 0
-    local rightReserve = 20 + chipReserved
+    local chipReserved = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
+    local rightReserve = cfg.layout.statusDotW + chipReserved
     state.canv[2].frame = {
-        x = cfg.pad,
+        x = cfg.layout.pad,
         y = inputTextY,
-        w = math.max(0, frameW - cfg.pad - rightReserve),
+        w = math.max(0, frameW - cfg.layout.pad - rightReserve),
         h = cfg.fontSize + 8,
     }
-    local chipRight = frameW - cfg.pad - 20
-    local cardSize = 30
-    local cardStep = 12
-    local cardY = math.floor((cfg.inputHeight - cardSize) / 2)
-    -- Cards: c[11]=front (rightmost), c[10]=middle, c[9]=back (leftmost).
-    -- 12px step between left edges overlaps cards by 18px for a stack read.
-    state.canv[11].frame = { x = chipRight - cardSize,                y = cardY, w = cardSize, h = cardSize }
-    state.canv[10].frame = { x = chipRight - cardSize - cardStep,     y = cardY, w = cardSize, h = cardSize }
-    state.canv[9].frame  = { x = chipRight - cardSize - 2 * cardStep, y = cardY, w = cardSize, h = cardSize }
-    -- "+N" overflow label sits left of the back card.
+    local chipRight = frameW - cfg.layout.pad - 20
+    local cardY = math.floor((cfg.layout.inputHeight - cfg.layout.cardSize) / 2)
+    -- c[9..11] = back→front; cards overlap so they read as a stack.
+    state.canv[11].frame = { x = chipRight - cfg.layout.cardSize,                    y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    state.canv[10].frame = { x = chipRight - cfg.layout.cardSize - cfg.layout.cardStep,     y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
+    state.canv[9].frame  = { x = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep, y = cardY, w = cfg.layout.cardSize, h = cfg.layout.cardSize }
     state.canv[8].frame = {
-        x = chipRight - cardSize - 2 * cardStep - 18,
-        y = math.floor((cfg.inputHeight - 13) / 2) - 1,
+        x = chipRight - cfg.layout.cardSize - 2 * cfg.layout.cardStep - 18,
+        y = math.floor((cfg.layout.inputHeight - 13) / 2) - 1,
         w = 16,
         h = 13 + 6,
     }
@@ -423,15 +483,15 @@ end
 
 local function rebuildCursor()
     if not state.canv then return end
-    local x = cfg.pad
+    local x = cfg.layout.pad
     if state.buffer ~= "" then
         local sz = state.canv:minimumTextSize(2, state.buffer)
-        if sz and sz.w then x = cfg.pad + sz.w end
+        if sz and sz.w then x = cfg.layout.pad + sz.w end
     end
     local cursorH = cfg.fontSize + 4
-    local cursorY = (cfg.inputHeight - cursorH) / 2
+    local cursorY = (cfg.layout.inputHeight - cursorH) / 2
     local visible = state.cursorOn and not (state.task and state.task:isRunning())
-    state.canv[7].frame = { x = x, y = cursorY, w = 1.5, h = cursorH }
+    state.canv[7].frame = { x = x, y = cursorY, w = cfg.layout.cursorWidth, h = cursorH }
     state.canv[7].fillColor = { white = 1, alpha = visible and 1.0 or 0 }
 end
 
@@ -440,10 +500,10 @@ local function computeInputWidth()
     local styled = inputStyled(probe, C.fg)
     local sz = hs.drawing.getTextDrawingSize(styled)
     local textW = (sz and sz.w) or 100
-    local chipW = (#state.attachments > 0) and (76 + cfg.pad) or 0
-    local dotW = 20
-    local w = math.ceil(textW) + 2 * cfg.pad + chipW + dotW
-    return math.min(cfg.overlayWidth, w)
+    local chipW = (#state.attachments > 0) and (cfg.layout.chipWidth + cfg.layout.pad) or 0
+    local dotW = cfg.layout.statusDotW
+    local w = math.ceil(textW) + 2 * cfg.layout.pad + chipW + dotW
+    return math.min(cfg.layout.overlayWidth, w)
 end
 
 local function rebuildInput()
@@ -456,13 +516,11 @@ local function rebuildInput()
         state.canv[2].text = inputStyled(state.buffer, C.fg)
     end
     local n = #state.attachments
-    -- Card slots render thumbnails of the 3 most recent attachments. Front
-    -- (c[11], rightmost) is the newest; back (c[9]) is two-prior. Back cards
-    -- dim via imageAlpha to imply depth.
-    local alphas = { 0.55, 0.8, 1.0 }  -- back, middle, front
+    -- Front (c[11]) shows the newest attachment; alpha dims older cards for depth.
+    local alphas = cfg.layout.cardAlphas
     for slot = 0, 2 do
         local idx = 9 + slot
-        local stepsFromFront = 2 - slot          -- front=0, middle=1, back=2
+        local stepsFromFront = 2 - slot  -- slot 0 = back = 2 prior; slot 2 = front = newest
         local attIdx = n - stepsFromFront
         local att = (attIdx >= 1) and state.attachments[attIdx] or nil
         if att and att.img then
@@ -543,7 +601,7 @@ applyCanvasFrame = function(w, h)
     -- Prefer dropping below the caret (state.inputTop); if the canvas would
     -- overflow the screen bottom, shift the whole thing up so it still fits.
     local sf = state.screenFrame
-    local mar = 8
+    local mar = cfg.layout.screenMargin
     local y = state.inputTop
     if sf then
         local maxBottom = sf.y + sf.h - mar
@@ -571,8 +629,8 @@ local function animateCanvasTo(targetW, targetH)
         return
     end
     local t0 = timer.secondsSinceEpoch()
-    local duration = 0.18
-    state.sizeAnim = timer.doEvery(0.016, function()
+    local duration = cfg.timings.sizeAnimS
+    state.sizeAnim = timer.doEvery(cfg.timings.animFrameS, function()
         if not state.canv then
             if state.sizeAnim then
                 state.sizeAnim:stop(); state.sizeAnim = nil
@@ -654,12 +712,12 @@ end
 rebuildResponse = function()
     if not state.canv then return end
     -- Decide target width: once any response/history is present, expand to
-    -- cfg.overlayWidth and stay there for the rest of the session.
+    -- cfg.layout.overlayWidth and stay there for the rest of the session.
     local hasContent = (#state.history > 0) or state.response ~= "" or state.lastPrompt
     local targetW
     if hasContent then
         state.expanded = true
-        targetW = cfg.overlayWidth
+        targetW = cfg.layout.overlayWidth
     else
         targetW = computeInputWidth()
     end
@@ -667,12 +725,12 @@ rebuildResponse = function()
     -- The canvas shifts upward when it would overflow the bottom edge — see
     -- applyCanvasFrame — so we don't need to reserve only the space below.
     local sf = state.screenFrame
-    local mar = 8
-    local availH = sf.h - 2 * mar - cfg.inputHeight - 6
+    local mar = cfg.layout.screenMargin
+    local availH = sf.h - 2 * mar - cfg.layout.inputHeight - 6
     if availH < 0 then availH = 0 end
-    local maxH = math.min(cfg.responseHeight, availH)
-    local frameW = targetW - 2 * cfg.pad
-    local respY = cfg.inputHeight + 4
+    local maxH = math.min(cfg.layout.responseHeight, availH)
+    local frameW = targetW - 2 * cfg.layout.pad
+    local respY = cfg.layout.inputHeight + 4
     -- Iteratively drop oldest turns until the styled transcript fits the cap.
     local skip = 0
     local styled, measuredH
@@ -681,7 +739,7 @@ rebuildResponse = function()
         if not styled then
             measuredH = 0; break
         end
-        state.canv[6].frame = { x = cfg.pad, y = respY, w = frameW, h = maxH }
+        state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = maxH }
         state.canv[6].text = styled
         local sz = state.canv:minimumTextSize(6, styled)
         measuredH = (sz and sz.h) or 0
@@ -692,8 +750,8 @@ rebuildResponse = function()
     if not styled then state.canv[6].text = "" end
     local contentH = math.min(math.ceil(measuredH) + 4, maxH)
     if measuredH <= 0 then contentH = 0 end
-    state.canv[6].frame = { x = cfg.pad, y = respY, w = frameW, h = contentH }
-    local targetCanvasH = cfg.inputHeight + (contentH > 0 and 6 + contentH or 0)
+    state.canv[6].frame = { x = cfg.layout.pad, y = respY, w = frameW, h = contentH }
+    local targetCanvasH = cfg.layout.inputHeight + (contentH > 0 and 6 + contentH or 0)
     animateCanvasTo(targetW, targetCanvasH)
 end
 
@@ -701,14 +759,14 @@ local rebuildPendingTimer = nil
 local rebuildLastAt = 0
 local function rebuildResponseThrottled()
     local now = timer.secondsSinceEpoch()
-    if now - rebuildLastAt >= 0.1 then
+    if now - rebuildLastAt >= cfg.timings.rebuildThrottle then
         if rebuildPendingTimer then
             rebuildPendingTimer:stop(); rebuildPendingTimer = nil
         end
         rebuildLastAt = now
         rebuildResponse()
     elseif not rebuildPendingTimer then
-        rebuildPendingTimer = timer.doAfter(0.1 - (now - rebuildLastAt), function()
+        rebuildPendingTimer = timer.doAfter(cfg.timings.rebuildThrottle - (now - rebuildLastAt), function()
             rebuildPendingTimer = nil
             rebuildLastAt = timer.secondsSinceEpoch()
             rebuildResponse()
@@ -719,19 +777,19 @@ end
 local function newOverlay()
     -- Initial canvas covers just the input row. Width starts as fit-to-text
     -- when the session is fresh; expanded state (set by rebuildResponse) jumps
-    -- straight to cfg.overlayWidth.
-    local initW = state.expanded and cfg.overlayWidth or computeInputWidth()
+    -- straight to cfg.layout.overlayWidth.
+    local initW = state.expanded and cfg.layout.overlayWidth or computeInputWidth()
     local c = canvas.new({
         x = state.anchorX,
         y = state.inputTop,
         w = initW,
-        h = cfg.inputHeight,
+        h = cfg.layout.inputHeight,
     })
     c[1] = {
         type = "rectangle",
         action = "fill",
         fillColor = C.bg,
-        roundedRectRadii = { xRadius = 4, yRadius = 4 },
+        roundedRectRadii = { xRadius = cfg.layout.cornerRadius, yRadius = cfg.layout.cornerRadius },
     }
     c[2] = {
         type = "text",
@@ -739,7 +797,7 @@ local function newOverlay()
         textFont = cfg.font,
         textSize = cfg.fontSize,
         textColor = C.muted,
-        frame = { x = cfg.pad, y = 0, w = math.max(0, initW - cfg.pad - 20), h = cfg.fontSize + 8 },
+        frame = { x = cfg.layout.pad, y = 0, w = math.max(0, initW - cfg.layout.pad - 20), h = cfg.fontSize + 8 },
     }
     -- Status indicator slots (3-5). One dot shown idle/error, three animated for "active".
     for i = 0, 2 do
@@ -757,7 +815,7 @@ local function newOverlay()
         textFont = cfg.font,
         textSize = cfg.fontSize,
         textColor = C.fg,
-        frame = { x = cfg.pad, y = cfg.inputHeight + 4, w = math.max(0, initW - 2 * cfg.pad), h = 0 },
+        frame = { x = cfg.layout.pad, y = cfg.layout.inputHeight + 4, w = math.max(0, initW - 2 * cfg.layout.pad), h = 0 },
     }
     -- Text cursor: a thin rectangle drawn separately from the text element so
     -- blinking it on/off can't shift the placeholder layout.
@@ -765,12 +823,10 @@ local function newOverlay()
         type = "rectangle",
         action = "fill",
         fillColor = { white = 1, alpha = 0 },
-        frame = { x = cfg.pad, y = 0, w = 1.5, h = cfg.fontSize + 4 },
+        frame = { x = cfg.layout.pad, y = 0, w = cfg.layout.cursorWidth, h = cfg.fontSize + 4 },
     }
-    -- Attachment chip: stack-of-cards visual shown in the input row when
-    -- state.attachments is non-empty. c[9..11] are the cards (back→front),
-    -- c[8] is the "+N" overflow label rendered when n > 3. Positioned in
-    -- relayout(), state-flipped in rebuildInput().
+    -- Attachment chip: c[8] = "+N" overflow; c[9..11] = thumbnail cards (back→front).
+    -- Frames set in relayout(); image + visibility set in rebuildInput().
     c[8] = {
         type = "text",
         text = "",
@@ -778,7 +834,7 @@ local function newOverlay()
         textFont = cfg.font,
         textSize = 11,
         textColor = C.accent,
-        frame = { x = 0, y = 0, w = 14, h = cfg.inputHeight },
+        frame = { x = 0, y = 0, w = 14, h = cfg.layout.inputHeight },
     }
     for i = 0, 2 do
         c[9 + i] = {
@@ -788,7 +844,7 @@ local function newOverlay()
             imageAlignment = "center",
             imageScaling = "scaleToFit",
             imageAlpha = 1.0,
-            frame = { x = 0, y = 0, w = 30, h = 30 },
+            frame = { x = 0, y = 0, w = cfg.layout.cardSize, h = cfg.layout.cardSize },
         }
     end
     c:level(canvas.windowLevels.overlay)
@@ -889,7 +945,7 @@ local function open(opts)
     rebuildInput()
     setStatus("idle")
     state.cursorOn = true
-    state.cursorTimer = timer.doEvery(0.53, function()
+    state.cursorTimer = timer.doEvery(cfg.timings.cursorBlinkS, function()
         state.cursorOn = not state.cursorOn
         rebuildCursor()
     end)
@@ -952,7 +1008,7 @@ commitResponse = function()
         close(); return
     end
     close()
-    timer.doAfter(0.04, function() pasteText(out) end)
+    timer.doAfter(cfg.timings.pasteInjectS, function() pasteText(out) end)
 end
 
 submitPrompt = function()
@@ -1040,12 +1096,12 @@ local function onFlags(event)
     if downNow and not state.rCmdHeld then
         state.rCmdHeld = true
         local elapsed = (now - state.lastRCmdEdge) * 1000
-        if elapsed <= cfg.doubleTapMs and state.lastRCmdEdge > 0 then
+        if elapsed <= cfg.timings.doubleTapMs and state.lastRCmdEdge > 0 then
             if state.open then
                 close()
             else
                 local continued = #state.history > 0
-                    and ((now - state.lastClose) * 1000 <= cfg.continueMs)
+                    and ((now - state.lastClose) * 1000 <= cfg.timings.continueMs)
                 open({ continued = continued })
             end
             state.lastRCmdEdge = 0
