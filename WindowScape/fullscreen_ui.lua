@@ -17,6 +17,10 @@ local cfg, callbacks
 
 local OVERLAY_PADDING = 4
 
+-- Lazy require — FrameMaster is loaded after WindowScape in init.lua, so an
+-- eager require would race. Mouse callbacks fire long after both are loaded.
+local function FM() return require("FrameMaster") end
+
 -- Overlay state — keyed by winId.
 M.zoomOverlays     = {}
 M.minimizeOverlays = {}
@@ -200,20 +204,17 @@ function M.createZoomOverlay(win)
     overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg)
-        local frame = c:frame()
-        local centerX = frame.x + frame.w / 2
-        local centerY = frame.y + frame.h / 2
-
         if msg == "mouseEnter" then
             c:elementAttribute(1, "fillColor", { green = 0.6, alpha = 0.3 })
-            M.showButtonTooltip("Fullscreen", centerX, centerY)
+            local fm = FM()
+            fm.showMessage("topRight", fm.messages.topRight(win))
         elseif msg == "mouseExit" then
             c:elementAttribute(1, "fillColor", { alpha = 0.01 })
-            M.hideButtonTooltip()
+            FM().hideTooltip()
         elseif msg == "mouseDown" then
             c:elementAttribute(1, "fillColor", { green = 0.8, alpha = 0.5 })
         elseif msg == "mouseUp" then
-            M.hideButtonTooltip()
+            FM().hideTooltip()
             local currentWin = window.get(winId)
             if not currentWin then return end
 
@@ -245,20 +246,17 @@ function M.createMinimizeOverlay(win)
     overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg)
-        local frame = c:frame()
-        local centerX = frame.x + frame.w / 2
-        local centerY = frame.y + frame.h / 2
-
         if msg == "mouseEnter" then
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, alpha = 0.3 })
-            M.showButtonTooltip("Minimize", centerX, centerY)
+            local fm = FM()
+            fm.showMessage("bottomRight", fm.messages.bottomRight(win))
         elseif msg == "mouseExit" then
             c:elementAttribute(1, "fillColor", { alpha = 0.01 })
-            M.hideButtonTooltip()
+            FM().hideTooltip()
         elseif msg == "mouseDown" then
             c:elementAttribute(1, "fillColor", { red = 0.9, green = 0.6, alpha = 0.5 })
         elseif msg == "mouseUp" then
-            M.hideButtonTooltip()
+            FM().hideTooltip()
             callbacks.createSnapshot(win)
         end
     end)
@@ -385,20 +383,17 @@ function M.createCloseOverlay(win)
     overlay:canvasMouseEvents(true, true, true, true)
 
     overlay:mouseCallback(function(c, msg)
-        local frame = c:frame()
-        local centerX = frame.x + frame.w / 2
-        local centerY = frame.y + frame.h / 2
-
         if msg == "mouseEnter" then
             c:elementAttribute(1, "fillColor", { red = 0.8, alpha = 0.3 })
-            M.showButtonTooltip("Close", centerX, centerY)
+            local fm = FM()
+            fm.showMessage("topLeft", fm.messages.topLeft(win))
         elseif msg == "mouseExit" then
             c:elementAttribute(1, "fillColor", { alpha = 0.01 })
-            M.hideButtonTooltip()
+            FM().hideTooltip()
         elseif msg == "mouseDown" then
             c:elementAttribute(1, "fillColor", { red = 0.8, alpha = 0.5 })
         elseif msg == "mouseUp" then
-            M.hideButtonTooltip()
+            FM().hideTooltip()
             local currentWin = window.get(winId)
             if currentWin then currentWin:close() end
         end

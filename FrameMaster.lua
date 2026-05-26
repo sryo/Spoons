@@ -19,15 +19,18 @@ if not ok then
     windowScape = nil
 end
 
-local function focusedWindowName()
-    local w = hs.window.focusedWindow()
+local function windowName(w)
+    w = w or hs.window.focusedWindow()
     return (w and w:title()) or "Window"
 end
 
-local function frontmostAppName()
-    local a = hs.application.frontmostApplication()
+local function appNameOf(w)
+    local a = w and w:application() or hs.application.frontmostApplication()
     return (a and a:name()) or "App"
 end
+
+local focusedWindowName = windowName
+local frontmostAppName  = appNameOf
 
 local function getDockPosition()
     local handle = io.popen("defaults read com.apple.dock orientation")
@@ -114,13 +117,13 @@ local hotCorners = {
 
             return result
         end,
-        message = function()
-            local window = hs.window.focusedWindow()
-            if not window then return "" end
+        message = function(win)
+            win = win or hs.window.focusedWindow()
+            if not win then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
-                return "Kill " .. frontmostAppName()
+                return "Kill " .. appNameOf(win)
             end
-            return "Close " .. focusedWindowName()
+            return "Close " .. windowName(win)
         end
     },
     topRight = {
@@ -137,16 +140,16 @@ local hotCorners = {
             hs.eventtap.keyStroke({ "ctrl", "cmd" }, "F")
             return "Toggled Fullscreen for " .. focusedWindowName()
         end,
-        message = function()
-            local window = hs.window.focusedWindow()
-            if not window then return "" end
+        message = function(win)
+            win = win or hs.window.focusedWindow()
+            if not win then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
-                return "Zoom " .. focusedWindowName()
+                return "Zoom " .. windowName(win)
             end
-            if cfg.useWindowScape and windowScape and windowScapeIsFullscreen(window) then
-                return "Exit Fullscreen for " .. focusedWindowName()
+            if cfg.useWindowScape and windowScape and windowScapeIsFullscreen(win) then
+                return "Exit Fullscreen for " .. windowName(win)
             end
-            return "Toggle Fullscreen for " .. focusedWindowName()
+            return "Toggle Fullscreen for " .. windowName(win)
         end
     },
     bottomRight = {
@@ -164,13 +167,13 @@ local hotCorners = {
             window:minimize()
             return "Minimized " .. focusedWindowName()
         end,
-        message = function()
-            local window = hs.window.focusedWindow()
-            if not window or window:isFullScreen() then return "" end
+        message = function(win)
+            win = win or hs.window.focusedWindow()
+            if not win or win:isFullScreen() then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
-                return "Hide " .. focusedWindowName()
+                return "Hide " .. windowName(win)
             end
-            return "Minimize " .. focusedWindowName()
+            return "Minimize " .. windowName(win)
         end
     },
     bottomLeft = {
@@ -402,4 +405,11 @@ return {
     cornerClick  = cornerClick,
     tooltipAlert = tooltipAlert,
     dockWatcher  = dockWatcher,
+    showMessage  = showMessage,
+    hideTooltip  = hideTooltip,
+    messages     = {
+        topLeft     = function(win) return hotCorners.topLeft.message(win)     end,
+        topRight    = function(win) return hotCorners.topRight.message(win)    end,
+        bottomRight = function(win) return hotCorners.bottomRight.message(win) end,
+    },
 }
