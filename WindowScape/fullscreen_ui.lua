@@ -96,10 +96,10 @@ local function buildPolygon(cx, cy, rect, padding)
     local isA = cy < R.y
     local isB = cy > R.y + R.h
     local P = { { x = cx, y = cy } }
-    if     isA and isL then P[2]=C[2]; P[3]=C[3]; P[4]=C[4]; P[5]=C[1]
-    elseif isA and isR then P[2]=C[1]; P[3]=C[4]; P[4]=C[3]; P[5]=C[2]
-    elseif isB and isR then P[2]=C[2]; P[3]=C[1]; P[4]=C[4]; P[5]=C[3]
-    elseif isB and isL then P[2]=C[1]; P[3]=C[2]; P[4]=C[3]; P[5]=C[4]
+    if     isA and isL then P[2]=C[2]; P[3]=C[3]; P[4]=C[4]
+    elseif isA and isR then P[2]=C[1]; P[3]=C[4]; P[4]=C[3]
+    elseif isB and isR then P[2]=C[2]; P[3]=C[1]; P[4]=C[4]
+    elseif isB and isL then P[2]=C[1]; P[3]=C[2]; P[4]=C[3]
     elseif isA         then P[2]=C[1]; P[3]=C[4]; P[4]=C[3]; P[5]=C[2]
     elseif isB         then P[2]=C[4]; P[3]=C[1]; P[4]=C[2]; P[5]=C[3]
     elseif isL         then P[2]=C[1]; P[3]=C[2]; P[4]=C[3]; P[5]=C[4]
