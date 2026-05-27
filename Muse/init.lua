@@ -781,30 +781,83 @@ local function hintStyled()
     return styledSegments(segments, size, "right")
 end
 
--- Place the text cursor at the visual end of the buffer's wrapped text inside
--- the input region. Multi-line aware: measures the whole buffer's bounding
--- size at the input frame's width, then walks the last visible line to find
--- where the cursor should sit.
+-- Place the text cursor at the visual end of the buffer's wrapped text.
+-- Word-wrap simulation: walk word-by-word, measuring at the actually-rendered
+-- font size (fitText shrinks down to 11), breaking when the next word would
+-- overflow wrapW. Single tokens wider than wrapW fall back to char-wrap, which
+-- mirrors NSAttributedString's behavior closely enough for cursor placement.
 local function rebuildCursor()
     if not state.canv then return end
     local inputFrame = state.canv[2].frame
+    local fontSize   = state.inputFontSize or cfg.layout.userFontSize
+    local wrapW      = (inputFrame.w > 0) and inputFrame.w or 1
+
+    local function styledProbe(text)
+        return hs.styledtext.new(text, { font = { name = cfg.font, size = fontSize } })
+    end
+    local function widthOf(text)
+        if text == "" then return 0 end
+        local sz = state.canv:minimumTextSize(2, styledProbe(text))
+        return (sz and sz.w) or 0
+    end
+
+    -- Single-glyph probe gives a stable line height at the rendered size; the
+    -- cursor's height matches the row instead of always reading userFontSize+4.
+    local hSz     = state.canv:minimumTextSize(2, styledProbe("M"))
+    local lineH   = (hSz and hSz.h) or (fontSize + 4)
+    local cursorH = lineH
+
+    local function charWrap(token, lines)
+        -- UTF-8-safe per-codepoint walk for tokens wider than wrapW (URLs etc).
+        local run = ""
+        for _, cp in utf8.codes(token) do
+            local ch = utf8.char(cp)
+            if run ~= "" and widthOf(run .. ch) > wrapW then
+                lines[#lines + 1] = run
+                run = ch
+            else
+                run = run .. ch
+            end
+        end
+        return run
+    end
+
     local x, y
-    local cursorH = cfg.layout.userFontSize + 4
     if state.buffer ~= "" then
-        local fullSz = state.canv:minimumTextSize(2, state.buffer)
-        local fullH  = (fullSz and fullSz.h) or cursorH
-        -- Last-line width: measure from the final newline to end. If no
-        -- newline, the buffer is a single visual line and last-line == buffer.
-        local lastBreak = state.buffer:find("\n[^\n]*$")
-        local lastLine  = lastBreak and state.buffer:sub(lastBreak + 1) or state.buffer
-        local lineSz    = state.canv:minimumTextSize(2, lastLine)
-        local lineW     = (lineSz and lineSz.w) or 0
-        x = inputFrame.x + lineW
-        y = inputFrame.y + math.max(0, math.floor(fullH - cursorH))
+        local lines = {}
+        -- Paragraphs split on \n. Buffer can't currently contain newlines
+        -- (Enter submits), but handle them anyway in case that changes.
+        for paragraph in (state.buffer .. "\n"):gmatch("([^\n]*)\n") do
+            local current = ""
+            for word, spaces in paragraph:gmatch("(%S+)(%s*)") do
+                local candidate = current .. word
+                if widthOf(candidate) > wrapW then
+                    if current ~= "" then
+                        lines[#lines + 1] = current
+                        current = ""
+                    end
+                    if widthOf(word) > wrapW then
+                        current = charWrap(word, lines) .. spaces
+                    else
+                        current = word .. spaces
+                    end
+                else
+                    current = candidate .. spaces
+                end
+            end
+            lines[#lines + 1] = current
+        end
+
+        local lastVisible = lines[#lines] or ""
+        x = inputFrame.x + widthOf(lastVisible)
+        y = inputFrame.y + (#lines - 1) * lineH
+        local maxY = inputFrame.y + math.max(0, inputFrame.h - cursorH)
+        if y > maxY then y = maxY end
     else
         x = inputFrame.x
         y = inputFrame.y
     end
+
     local visible = state.cursorOn and not (state.task and state.task:isRunning())
     state.canv[7].frame     = { x = x, y = y, w = cfg.layout.cursorWidth, h = cursorH }
     state.canv[7].fillColor = colorAlpha(C.accent, visible and 1.0 or 0)
@@ -849,8 +902,8 @@ local function estimateWrappedH(styled, wrapW, probeIdx)
 end
 
 -- Build a styledtext at the largest font size that fits inside regionH at the
--- probe element's frame width. Returns (styled, wrappedH) so callers can skip
--- a redundant remeasure.
+-- probe element's frame width. Returns (styled, wrappedH, size) so callers can
+-- skip a redundant remeasure and know what size was actually rendered.
 local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, color, alignment)
     local wrapW = state.canv[probeIdx].frame.w
     local size  = maxSize
@@ -862,7 +915,7 @@ local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, c
             paragraphStyle = { alignment = alignment, lineBreak = "wordWrap" },
         })
         local h = estimateWrappedH(s, wrapW, probeIdx)
-        if h <= regionH or size <= minSize then return s, h end
+        if h <= regionH or size <= minSize then return s, h, size end
         size = size - 1
     end
 end
@@ -873,12 +926,12 @@ local function inputText()
         if state.lastSubmittedPrompt and state.lastSubmittedPrompt ~= "" then
             content = state.lastSubmittedPrompt
         else
-            return placeholderForState()
+            return placeholderForState(), cfg.fontSize
         end
     end
-    local s = fitText(content, 2, cfg.layout.inputRegionH, cfg.font,
-                      cfg.layout.userFontSize, 11, C.muted, "left")
-    return s
+    local s, _, size = fitText(content, 2, cfg.layout.inputRegionH, cfg.font,
+                               cfg.layout.userFontSize, 11, C.muted, "left")
+    return s, size
 end
 
 local function outputText()
@@ -898,7 +951,11 @@ end
 
 local function rebuildInput()
     if not state.canv then return end
-    state.canv[2].text = inputText()
+    local styled, size = inputText()
+    state.canv[2].text = styled
+    -- Cache the rendered font size so rebuildCursor can measure word-wrap
+    -- at the size that's actually on screen (fitText shrinks down to 11).
+    state.inputFontSize = size or cfg.layout.userFontSize
 
     -- Image attachments: front (c[11]) shows the newest; alpha dims older cards.
     local n      = #state.attachments
