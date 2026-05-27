@@ -225,7 +225,7 @@ local IDLE_MASK   = mask{ 12 }                                       -- center d
 local CHECK_MASK  = mask{ 4, 8, 10, 12, 16 }
 local SAD_MASK    = mask{ 6, 8, 16, 17, 18, 20, 24 }
 local CROSS_MASK  = mask{ 0, 4, 6, 8, 12, 16, 18, 20, 24 }            -- diagonals
-local RETURN_MASK = mask{ 9, 12, 14, 15, 16, 17, 18, 21 }             -- ↵
+local RETURN_MASK = mask{ 9, 11, 14, 15, 16, 17, 18, 21 }             -- ↵
 local SMILEY_MASK = mask{ 0, 2, 13, 16, 17 }                          -- looking up
 
 Muse.helpers           = {
@@ -671,14 +671,6 @@ local function relayout()
     state.canv[40].textAlignment = "center"
 end
 
-local function inputStyled(text, color)
-    return hs.styledtext.new(text, {
-        font = { name = cfg.font, size = cfg.fontSize },
-        color = color,
-        shadow = textShadow,
-    })
-end
-
 -- Concatenate styled-text segments into a single styledtext object. Each
 -- segment is { text, color, [size] } — size falls back to the row's default.
 -- Optional `alignment` (e.g. "left" | "right" | "center") applies to the
@@ -781,34 +773,36 @@ local function hintStyled()
     return styledSegments(segments, size, "right")
 end
 
--- Place the text cursor at the visual end of the buffer's wrapped text.
--- Word-wrap simulation: walk word-by-word, measuring at the actually-rendered
--- font size (fitText shrinks down to 11), breaking when the next word would
--- overflow wrapW. Single tokens wider than wrapW fall back to char-wrap, which
--- mirrors NSAttributedString's behavior closely enough for cursor placement.
-local function rebuildCursor()
+-- Alpha-only update for the blink timer. Position is owned by rebuildCursor
+-- and stays valid between buffer changes, so the timer doesn't pay for the
+-- word-wrap walk on every tick.
+local function applyCursorVisibility()
     if not state.canv then return end
-    local inputFrame = state.canv[2].frame
-    local fontSize   = state.inputFontSize or cfg.layout.userFontSize
-    local wrapW      = (inputFrame.w > 0) and inputFrame.w or 1
+    local visible = state.cursorOn and not (state.task and state.task:isRunning())
+    state.canv[7].fillColor = colorAlpha(C.accent, visible and 1.0 or 0)
+end
 
-    local function styledProbe(text)
-        return hs.styledtext.new(text, { font = { name = cfg.font, size = fontSize } })
+-- Word-wrap simulation: walk `content` word-by-word at the given font size,
+-- measuring each token via minimumTextSize, and return the list of wrapped
+-- lines together with the line height and a widthOf closure. Single tokens
+-- wider than wrapW fall back to char-wrap (URLs etc). This is the source of
+-- truth shared by fitText (uses #lines for shrink decisions) and rebuildCursor
+-- (places the caret at the visual end of the last line), so the size the HUD
+-- picks always matches what the canvas actually renders.
+local function wrapLines(content, wrapW, fontName, fontSize, probeIdx)
+    if wrapW <= 0 then wrapW = 1 end
+    local function probe(text)
+        return hs.styledtext.new(text, { font = { name = fontName, size = fontSize } })
     end
     local function widthOf(text)
         if text == "" then return 0 end
-        local sz = state.canv:minimumTextSize(2, styledProbe(text))
+        local sz = state.canv:minimumTextSize(probeIdx, probe(text))
         return (sz and sz.w) or 0
     end
-
-    -- Single-glyph probe gives a stable line height at the rendered size; the
-    -- cursor's height matches the row instead of always reading userFontSize+4.
-    local hSz     = state.canv:minimumTextSize(2, styledProbe("M"))
-    local lineH   = (hSz and hSz.h) or (fontSize + 4)
-    local cursorH = lineH
+    local hSz   = state.canv:minimumTextSize(probeIdx, probe("M"))
+    local lineH = (hSz and hSz.h) or (fontSize + 4)
 
     local function charWrap(token, lines)
-        -- UTF-8-safe per-codepoint walk for tokens wider than wrapW (URLs etc).
         local run = ""
         for _, cp in utf8.codes(token) do
             local ch = utf8.char(cp)
@@ -822,45 +816,58 @@ local function rebuildCursor()
         return run
     end
 
-    local x, y
-    if state.buffer ~= "" then
-        local lines = {}
-        -- Paragraphs split on \n. Buffer can't currently contain newlines
-        -- (Enter submits), but handle them anyway in case that changes.
-        for paragraph in (state.buffer .. "\n"):gmatch("([^\n]*)\n") do
-            local current = ""
-            for word, spaces in paragraph:gmatch("(%S+)(%s*)") do
-                local candidate = current .. word
-                if widthOf(candidate) > wrapW then
-                    if current ~= "" then
-                        lines[#lines + 1] = current
-                        current = ""
-                    end
-                    if widthOf(word) > wrapW then
-                        current = charWrap(word, lines) .. spaces
-                    else
-                        current = word .. spaces
-                    end
-                else
-                    current = candidate .. spaces
+    local lines = {}
+    -- Paragraphs split on \n. The input buffer can't currently contain
+    -- newlines (Enter submits), but assistant replies can.
+    for paragraph in (content .. "\n"):gmatch("([^\n]*)\n") do
+        local current = ""
+        for word, spaces in paragraph:gmatch("(%S+)(%s*)") do
+            local candidate = current .. word
+            if widthOf(candidate) > wrapW then
+                if current ~= "" then
+                    lines[#lines + 1] = current
+                    current = ""
                 end
+                if widthOf(word) > wrapW then
+                    current = charWrap(word, lines) .. spaces
+                else
+                    current = word .. spaces
+                end
+            else
+                current = candidate .. spaces
             end
-            lines[#lines + 1] = current
         end
+        lines[#lines + 1] = current
+    end
+    return lines, lineH, widthOf
+end
 
+-- Place the text cursor at the visual end of the buffer's wrapped text.
+local function rebuildCursor(fontSize)
+    if not state.canv then return end
+    local inputFrame = state.canv[2].frame
+    fontSize         = fontSize or cfg.layout.userFontSize
+    local wrapW      = (inputFrame.w > 0) and inputFrame.w or 1
+
+    local x, y, lineH
+    if state.buffer ~= "" then
+        local lines, lh, widthOf = wrapLines(state.buffer, wrapW, cfg.font, fontSize, 2)
+        lineH = lh
         local lastVisible = lines[#lines] or ""
         x = inputFrame.x + widthOf(lastVisible)
         y = inputFrame.y + (#lines - 1) * lineH
-        local maxY = inputFrame.y + math.max(0, inputFrame.h - cursorH)
+        local maxY = inputFrame.y + math.max(0, inputFrame.h - lineH)
         if y > maxY then y = maxY end
     else
+        local probe = hs.styledtext.new("M", { font = { name = cfg.font, size = fontSize } })
+        local hSz   = state.canv:minimumTextSize(2, probe)
+        lineH = (hSz and hSz.h) or (fontSize + 4)
         x = inputFrame.x
         y = inputFrame.y
     end
 
-    local visible = state.cursorOn and not (state.task and state.task:isRunning())
-    state.canv[7].frame     = { x = x, y = y, w = cfg.layout.cursorWidth, h = cursorH }
-    state.canv[7].fillColor = colorAlpha(C.accent, visible and 1.0 or 0)
+    state.canv[7].frame = { x = x, y = y, w = cfg.layout.cursorWidth, h = lineH }
+    applyCursorVisibility()
 end
 
 -- Force the cursor on and restart the blink phase. Called from open() and from
@@ -870,10 +877,10 @@ end
 local function startCursorBlink()
     if state.cursorTimer then state.cursorTimer:stop() end
     state.cursorOn = true
-    rebuildCursor()
+    applyCursorVisibility()
     state.cursorTimer = timer.doEvery(cfg.timings.cursorBlinkS, function()
         state.cursorOn = not state.cursorOn
-        rebuildCursor()
+        applyCursorVisibility()
     end)
 end
 
@@ -887,35 +894,28 @@ local function outputRegionH()
          - cfg.layout.matrixRegionH
 end
 
--- Estimate the wrapped height of a styledtext at wrapW. hs.canvas's
--- minimumTextSize ignores wrap (returns natural single-line dimensions), so
--- we approximate: lines ≈ ceil(naturalW / wrapW), wrappedH = naturalH × lines.
--- Conservative for multi-paragraph text. Measurement reads the probe element's
--- frame attrs but does NOT assign the text — that's the caller's job once.
-local function estimateWrappedH(styled, wrapW, probeIdx)
-    if wrapW <= 0 then wrapW = 1 end
-    local sz       = state.canv:minimumTextSize(probeIdx, styled)
-    local naturalW = (sz and sz.w) or 0
-    local naturalH = (sz and sz.h) or 0
-    local lines    = math.max(1, math.ceil(naturalW / wrapW))
-    return naturalH * lines
-end
-
--- Build a styledtext at the largest font size that fits inside regionH at the
--- probe element's frame width. Returns (styled, wrappedH, size) so callers can
--- skip a redundant remeasure and know what size was actually rendered.
+-- Build a styledtext at the largest font size that actually fits inside
+-- regionH at the probe element's frame width. Uses wrapLines to count lines
+-- at each candidate size — the previous ceil(naturalW/wrapW) heuristic
+-- under-estimated when word-wrap left ragged right edges, so the HUD could
+-- decide a size "fit" when its last wrapped line actually clipped past the
+-- region's bottom.
 local function fitText(content, probeIdx, regionH, fontName, maxSize, minSize, color, alignment)
     local wrapW = state.canv[probeIdx].frame.w
+    if wrapW <= 0 then wrapW = 1 end
     local size  = maxSize
     while true do
-        local s = hs.styledtext.new(content, {
-            font           = { name = fontName, size = size },
-            color          = color,
-            shadow         = textShadow,
-            paragraphStyle = { alignment = alignment, lineBreak = "wordWrap" },
-        })
-        local h = estimateWrappedH(s, wrapW, probeIdx)
-        if h <= regionH or size <= minSize then return s, h, size end
+        local lines, lineH = wrapLines(content, wrapW, fontName, size, probeIdx)
+        local h = #lines * lineH
+        if h <= regionH or size <= minSize then
+            local s = hs.styledtext.new(content, {
+                font           = { name = fontName, size = size },
+                color          = color,
+                shadow         = textShadow,
+                paragraphStyle = { alignment = alignment, lineBreak = "wordWrap" },
+            })
+            return s, h, size
+        end
         size = size - 1
     end
 end
@@ -953,9 +953,6 @@ local function rebuildInput()
     if not state.canv then return end
     local styled, size = inputText()
     state.canv[2].text = styled
-    -- Cache the rendered font size so rebuildCursor can measure word-wrap
-    -- at the size that's actually on screen (fitText shrinks down to 11).
-    state.inputFontSize = size or cfg.layout.userFontSize
 
     -- Image attachments: front (c[11]) shows the newest; alpha dims older cards.
     local n      = #state.attachments
@@ -1009,7 +1006,7 @@ local function rebuildInput()
     -- bottom-anchored y is computed in rebuildResponse, so re-apply it after
     -- every input rebuild — otherwise the reply jumps to the top of the region.
     rebuildResponse()
-    rebuildCursor()
+    rebuildCursor(size)
 end
 
 local function captureRegion()
