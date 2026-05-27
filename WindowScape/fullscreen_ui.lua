@@ -21,9 +21,8 @@ local function FM() return require("FrameMaster") end
 
 local MAX_CLICK_DISTANCE     = 32
 local MAX_HOVER_DISTANCE     = 28
-local CONE_PADDING           = 4
-local BOX_PADDING            = 6
-local BOX_CORNER_RADIUS      = 6
+local CONE_PADDING_MIN       = 0
+local CONE_PADDING_MAX       = 8
 local STROKE_WIDTH           = 1.5
 local CANVAS_SLACK           = 4
 -- Debounced full refresh during cursor activity. Catches AX rect drift that
@@ -196,16 +195,6 @@ local function ensureSharedOverlay()
     if sharedOverlay then return end
     sharedOverlay = canvas.new({ x = 0, y = 0, w = 1, h = 1 })
     sharedOverlay:appendElements({
-        id = "focusBox",
-        type = "rectangle",
-        action = "strokeAndFill",
-        roundedRectRadii = { xRadius = BOX_CORNER_RADIUS, yRadius = BOX_CORNER_RADIUS },
-        fillColor   = { alpha = 0 },
-        strokeColor = { alpha = 0 },
-        strokeWidth = STROKE_WIDTH,
-        frame = { x = 0, y = 0, w = 0, h = 0 },
-    })
-    sharedOverlay:appendElements({
         id = "cone",
         type = "segments",
         action = "strokeAndFill",
@@ -259,18 +248,11 @@ local function updateOverlay(cx, cy)
     local ox, oy = cFrame.x, cFrame.y
 
     local colors = kindColors[target.kind] or kindColors.zoom
-    sharedOverlay["focusBox"].fillColor   = colors.fill
-    sharedOverlay["focusBox"].strokeColor = colors.stroke
-    sharedOverlay["focusBox"].frame = {
-        x = f.x - BOX_PADDING - ox,
-        y = f.y - BOX_PADDING - oy,
-        w = f.w + BOX_PADDING * 2,
-        h = f.h + BOX_PADDING * 2,
-    }
-
+    local t = 1 - math.min(1, sqrt(nearSq) / MAX_HOVER_DISTANCE)
+    local conePad = CONE_PADDING_MIN + (CONE_PADDING_MAX - CONE_PADDING_MIN) * t
     sharedOverlay["cone"].fillColor   = colors.fill
     sharedOverlay["cone"].strokeColor = colors.stroke
-    local poly = buildPolygon(cx, cy, f, CONE_PADDING)
+    local poly = buildPolygon(cx, cy, f, conePad)
     local coords = {}
     for i, pt in ipairs(poly) do
         coords[i] = { x = pt.x - ox, y = pt.y - oy }
@@ -388,7 +370,7 @@ function M.updateButtonOverlays()
         if not included then goto continue end
         if callbacks.isAXSlow and callbacks.isAXSlow(app) then goto continue end
 
-        if isStandard and not isCollapsed and winId == focusedWinId then
+        if cfg.showPinButton and isStandard and not isCollapsed and winId == focusedWinId then
             local pf = pinFrameForWin(win)
             if pf then
                 pinFrame = pf

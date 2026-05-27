@@ -16,6 +16,7 @@ local cfg = {
     enableAnimations      = true,
     animationDuration     = 0.15, -- seconds
     animationFPS          = 60,
+    showPinButton         = false, -- pin button (right of traffic lights) toggles app in/out of tiling
     debugLogging          = true,  -- toggle with Ctrl+Cmd+D
 }
 
