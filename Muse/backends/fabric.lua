@@ -20,9 +20,7 @@ return {
   guidance = "Install fabric CLI (https://github.com/danielmiessler/fabric)",
 
   available = function()
-    local out = hs.execute("command -v fabric 2>/dev/null")
-    if not out or out == "" then return false, "fabric not on PATH" end
-    return true
+    return h.commandOnPath("fabric")
   end,
 
   stream = function(_, prompt, _, _, onChunk, onDone, onError)

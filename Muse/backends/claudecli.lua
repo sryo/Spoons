@@ -9,12 +9,10 @@ M.config.backends.claudecli = M.config.backends.claudecli or {}
 
 return {
   name = "claudecli",
-  guidance = "Install Claude Code CLI (claude on PATH)",
+  guidance = "Install: brew install --cask claude-code (or npm i -g @anthropic-ai/claude-code), then run `claude` once to log in",
 
   available = function()
-    local out = hs.execute("command -v claude 2>/dev/null")
-    if not out or out == "" then return false, "claude CLI not on PATH" end
-    return true
+    return h.commandOnPath("claude")
   end,
 
   stream = function(_, prompt, history, _, onChunk, onDone, onError)

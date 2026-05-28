@@ -249,6 +249,16 @@ Muse.helpers           = {
     shellQuote = function(s)
         return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
     end,
+    -- `command -v <bin>` via the user's interactive shell PATH. hs.execute's
+    -- default is a non-interactive shell with a minimal system PATH (no
+    -- /opt/homebrew/bin etc.), which produces false negatives for any tool
+    -- installed by Homebrew, Cargo, volta, nvm, etc. with_user_env=true is
+    -- what backends actually want.
+    commandOnPath = function(name)
+        local out = hs.execute("command -v " .. name .. " 2>/dev/null", true)
+        if not out or out == "" then return false, name .. " not on PATH" end
+        return true, (out:gsub("%s+$", ""))
+    end,
     newTask  = function(cmd, args, stdin, onLine, onDone, onError)
         local t = taskmod.new(cmd,
             function(code, _, stderr)
@@ -321,7 +331,11 @@ local function chooseBackend(opts)
     if ok(primary) then return primary end
     if primary and not needsVision then
         local _, why = primary.available()
-        print("Muse: " .. cfg.backend .. " unavailable (" .. (why or "?") .. "), trying fallbacks")
+        local msg = "Muse: " .. cfg.backend .. " unavailable (" .. (why or "?") .. ")"
+        if primary.guidance and primary.guidance ~= "" then
+            msg = msg .. ". " .. primary.guidance .. "."
+        end
+        print(msg .. " Trying fallbacks.")
     end
     for _, n in ipairs(cfg.fallbackOrder) do
         local b = Muse.backends[n]
@@ -1475,18 +1489,23 @@ submitPrompt = function()
         backend = chooseBackend()
     end
     if not backend then
-        local lines = { "No backend configured. Set up one of:" }
-        local seen = {}
-        local function addBackend(name)
-            if seen[name] then return end
-            seen[name] = true
-            local b = Muse.backends[name]
-            if not b then return end
-            local hint = b.guidance or "(no setup hint provided)"
-            lines[#lines + 1] = "  • " .. name .. " — " .. hint
+        -- Surface ONE actionable setup path (the primary backend's). Listing all
+        -- six guidance strings overflows the output region and gets clipped, and
+        -- the user almost always wants the configured primary anyway. Alternative
+        -- backends are discoverable in Muse/backends/.
+        local primary = Muse.backends[cfg.backend]
+        local why = "no backend named " .. cfg.backend
+        if primary then
+            local _, reason = primary.available()
+            why = reason or "unavailable"
         end
-        for _, n in ipairs(cfg.fallbackOrder) do addBackend(n) end
-        for n in pairs(Muse.backends) do addBackend(n) end
+        local hint = (primary and primary.guidance) or "(no setup hint)"
+        local lines = {
+            "Set up " .. cfg.backend .. " (" .. why .. "):",
+            hint .. ".",
+            "",
+            "Other options in Muse/backends/.",
+        }
         state.response = table.concat(lines, "\n")
         rebuildResponse()
         setStatus("softError")

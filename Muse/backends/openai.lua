@@ -12,7 +12,7 @@ M.config.backends.openai = M.config.backends.openai or {
 return {
   name = "openai",
   multimodal = true,
-  guidance = "Set OPENAI_API_KEY in your shell env",
+  guidance = "Get key at platform.openai.com/api-keys, then export OPENAI_API_KEY=… in ~/.zshrc",
 
   available = function()
     if not os.getenv("OPENAI_API_KEY") then

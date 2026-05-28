@@ -16,7 +16,7 @@ end
 return {
   name = "gemini",
   multimodal = true,
-  guidance = "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in your shell env",
+  guidance = "Get key at aistudio.google.com/apikey, then export GEMINI_API_KEY=… in ~/.zshrc",
 
   available = function()
     if not apiKey() then

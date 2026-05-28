@@ -13,7 +13,7 @@ M.config.backends.claude = M.config.backends.claude or {
 return {
   name = "claude",
   multimodal = true,
-  guidance = "Set ANTHROPIC_API_KEY in your shell env",
+  guidance = "Get key at console.anthropic.com/settings/keys, then export ANTHROPIC_API_KEY=… in ~/.zshrc",
 
   available = function()
     if not os.getenv("ANTHROPIC_API_KEY") then
