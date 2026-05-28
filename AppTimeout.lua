@@ -64,3 +64,5 @@ end
 
 checkAppsTimer = hs.timer.new(checkInterval, checkApps):start()
 print("AppTimeout is running")
+
+return { windowlessApps = windowlessApps }
