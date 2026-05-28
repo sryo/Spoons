@@ -83,11 +83,19 @@ end
 local function shortcutToString(modifiers, shortcut)
     if not shortcut or shortcut == "" then return "" end
 
+    -- Menu shortcut characters use NSEvent function-key codepoints in the
+    -- Private Use Area (NSUpArrowFunctionKey = U+F700, etc).
     local keyMap = {
-        cmd = "⌘",
-        ctrl = "⌃",
-        alt = "⌥",
+        cmd   = "⌘",
+        ctrl  = "⌃",
+        alt   = "⌥",
         shift = "⇧",
+        -- Arrows (U+F700..U+F703)
+        ["\xEF\x9C\x80"] = "Up",
+        ["\xEF\x9C\x81"] = "Down",
+        ["\xEF\x9C\x82"] = "Left",
+        ["\xEF\x9C\x83"] = "Right",
+        -- F1..F12 (U+F704..U+F70F)
         ["\xEF\x9C\x84"] = "F1",
         ["\xEF\x9C\x85"] = "F2",
         ["\xEF\x9C\x86"] = "F3",
@@ -100,28 +108,46 @@ local function shortcutToString(modifiers, shortcut)
         ["\xEF\x9C\x8D"] = "F10",
         ["\xEF\x9C\x8E"] = "F11",
         ["\xEF\x9C\x8F"] = "F12",
-        ["\xEF\x9C\x80"] = "▶",
-        ["\xEF\x9C\x81"] = "◀",
-        ["\xEF\x9C\x82"] = "▲",
-        ["\xEF\x9C\x83"] = "▼",
-        ["\x1B"] = "⎋",
-        ["\x0D"] = "↩",
-        ["\x08"] = "⌫",
-        ["\x7F"] = "⌦",
-        ["\x09"] = "⇥",
-        ["\xE2\x84\xAA"] = "⇪",
-        ["\xE2\x87\x9E"] = "⇞",
-        ["\xE2\x87\x9F"] = "⇟",
-        ["\xE2\x86\x96"] = "↖",
-        ["\xE2\x86\x98"] = "↘"
+        -- Navigation cluster (U+F728..U+F72D)
+        ["\xEF\x9C\xA8"] = "⌦",     -- Forward Delete
+        ["\xEF\x9C\xA9"] = "Home",  -- Home
+        ["\xEF\x9C\xAB"] = "End",   -- End
+        ["\xEF\x9C\xAC"] = "PgUp",  -- Page Up
+        ["\xEF\x9C\xAD"] = "PgDn",  -- Page Down
+        -- Clear / Num Lock and Help
+        ["\xE2\x8C\xA7"] = "Clear",  -- Clear / Num Lock (literal glyph from macOS)
+        ["\xEF\x9C\xB9"] = "Clear",  -- Clear / Num Lock (function-key form, defensive)
+        ["\xEF\x9D\x86"] = "?",      -- Help
+        -- ASCII control characters
+        ["\x1B"] = "⎋",   -- Escape
+        ["\x0D"] = "↩",   -- Return
+        ["\x08"] = "⌫",   -- Backspace
+        ["\x7F"] = "⌦",   -- DEL (defensive fallback)
+        ["\x09"] = "⇥",   -- Tab
+        -- Caps Lock (U+21EA)
+        ["\xE2\x87\xAA"] = "Caps",
     }
 
-    local str = ""
+    local modStr = ""
     for _, modifier in pairs(modifiers) do
-        str = str .. (keyMap[modifier] or "")
+        modStr = modStr .. (keyMap[modifier] or "")
     end
-    str = str .. (keyMap[shortcut] or shortcut)
-    return str
+    local keyStr = keyMap[shortcut] or shortcut
+    -- Wrap onto two lines only when the combined string would clip the 40px
+    -- canvas. Single-glyph shortcuts (⌘O, ⌘↩, ⌘F1, ⌘Up) stay one-line.
+    local function estW(s)
+        local w = 0
+        for i = 1, #s do
+            local b = s:byte(i)
+            if b < 0x80 then w = w + 6
+            elseif b >= 0xC0 then w = w + 9 end
+        end
+        return w
+    end
+    if modStr ~= "" and keyStr ~= "" and estW(modStr .. keyStr) > 30 then
+        return modStr .. "\n" .. keyStr
+    end
+    return modStr .. keyStr
 end
 
 local function getBlankImage()
