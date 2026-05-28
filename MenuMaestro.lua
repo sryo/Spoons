@@ -152,7 +152,7 @@ end
 
 local function getBlankImage()
     if blankImage then return blankImage end
-    local c = canvas.new { x = 0, y = 0, w = 40, h = 32 }
+    local c = canvas.new { x = 0, y = 0, w = 32, h = 32 }
     blankImage = c:imageFromCanvas()
     c:delete()
     return blankImage
@@ -175,7 +175,7 @@ local function shortcutToImage(modifiers, shortcut)
         textColor = { red = 1, green = 1, blue = 1, alpha = 0.8 }
     end
 
-    local textCanvas = canvas.new { x = 0, y = 0, w = 40, h = 32 }
+    local textCanvas = canvas.new { x = 0, y = 0, w = 32, h = 32 }
     textCanvas[1] = {
         type = "text",
         text = text,
