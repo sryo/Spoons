@@ -101,6 +101,25 @@ If <context>...</context> appears, that is the text the user wants to discuss. D
 
 local cfg              = Muse.config
 
+-- Append-only error log. The on-screen alert that surfaces backend failures
+-- vanishes after 2s and truncates at 100 chars; this file keeps the full
+-- message + which backend + the prompt, so failures can be reviewed after the
+-- fact. Created on first write; never rotated.
+local LOG_PATH         = os.getenv("HOME") .. "/.hammerspoon/Muse/muse.log"
+local function log(level, msg)
+    local line = string.format("[%s] %s: %s\n",
+        os.date("%Y-%m-%d %H:%M:%S"), level, tostring(msg))
+    local f, err = io.open(LOG_PATH, "a")
+    if not f then
+        print("Muse: cannot write " .. LOG_PATH .. " (" .. tostring(err) .. "): " .. line)
+        return
+    end
+    f:write(line)
+    f:close()
+end
+Muse.log = log
+Muse.logPath = LOG_PATH
+
 -- Mutated in place by loadAppearance(); don't replace tables — canvas elements
 -- capture these refs at creation and re-read on next render.
 local C                = {
@@ -1567,6 +1586,7 @@ submitPrompt = function()
         state.response = table.concat(lines, "\n")
         rebuildResponse()
         setStatus("softError")
+        log("ERROR", "no backend available: " .. why)
         return
     end
 
@@ -1602,7 +1622,10 @@ submitPrompt = function()
 
     local function onError(msg)
         setStatus("error")
-        alert.show("Muse [" .. backend.name .. "]: " .. tostring(msg):sub(1, 100), 2)
+        log("ERROR", string.format("backend=%s prompt=%q err=%s",
+            backend.name, finalPrompt:sub(1, 500), tostring(msg)))
+        alert.show("Muse [" .. backend.name .. "]: " .. tostring(msg):sub(1, 100)
+            .. "\n(see " .. LOG_PATH .. ")", 3)
     end
 
     state.task = backend:stream(finalPrompt, state.history, atts, onChunk, onDone, onError)
