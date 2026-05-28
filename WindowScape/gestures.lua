@@ -9,19 +9,30 @@ local ttTaps = nil
 -- Gesture state
 local initialFingerCount         = 0
 local gestureStartTime           = 0
-local gestureStartThreshold      = 0.08 -- Time to let all initial fingers settle before detecting +1
-local clusterGap                 = 0.00 -- Normalized x distance for "outside cluster" (fires +1 mid-settle)
-local initialTouchIdentities     = {}   -- Store touch identities instead of positions
+local gestureStartThreshold      = 0.15  -- Cluster is still settling for this long after a finger arrives
+local initialTouchIdentities     = {}    -- Identities of fingers in the settled cluster
+local initialTouchPositions      = {}    -- Snapshot positions of cluster fingers
+local gestureDragged             = false -- True if any cluster finger moved past dragThreshold; blocks dispatch
+local ambiguousInitTime          = nil   -- Time of a 3+ finger landing in one event; lift within 200ms = +1
+local plusOneActive              = false -- True after a +1 dispatched; cleared when touchCount drops back to the cluster
+local lastNonZeroTouchTime       = nil   -- Time of last event with touchCount > 0; used for phantom/stale checks
+local phantomLiftWindow          = 0.20  -- A touchCount=0 event within this much of the last real touch is treated as phantom
+local pendingPhantomLift         = false -- True after we debounced an n=0 event; if the gap grows we treat it as real
+local staleStateWindow           = 0.30  -- A non-zero event after this much silence with a pending phantom resets state
+local dragThreshold              = 0.15  -- Normalized distance: cluster finger moved this far ⇒ drag, not tap
 
-local actionPerformedThisGesture = false -- Track if +1 action was performed
-local pendingSide                = nil   -- Queued tap side ("left"/"right"); dispatched on +1 lift
-local speculativeBumpFrom        = nil   -- Pre-bump initialFingerCount; non-nil while speculative absorb is in effect
-local ambiguousInitTime          = nil   -- Time of initial 3+/4-finger landing; lift within 200ms = +1 tap
-local fingersAddedDuringSettling = false -- Track if more fingers were added during settling (indicates failed +1)
-local initialTouchPositions      = {}    -- Track initial positions to detect drag vs tap
-local dragThreshold              = 0.15  -- Normalized distance threshold for drag detection (15% of trackpad)
-local gestureDragged             = false -- Track if fingers moved significantly (drag, not tap)
-local lastLiftTime               = 0     -- Time of last processed lift (to ignore rapid phantom lifts)
+-- Diagnostic logging. Set true to print every gesture event to the console.
+local debugLog                   = false
+
+local function resetState()
+    initialFingerCount         = 0
+    gestureStartTime           = 0
+    initialTouchIdentities     = {}
+    initialTouchPositions      = {}
+    gestureDragged             = false
+    ambiguousInitTime          = nil
+    plusOneActive              = false
+end
 
 local function handleTTTaps(event)
     local eventType = event:getType(true)
@@ -37,36 +48,72 @@ local function handleTTTaps(event)
     if not touchDetails then return false end
     if touchDetails.pressure then return false end
 
+    if debugLog then
+        local parts = {}
+        for i = 1, touchCount do
+            local t = touches[i]
+            local p = t.normalizedPosition or {}
+            parts[#parts + 1] = string.format(
+                "[id=%s ph=%s touch=%s x=%.2f y=%.2f]",
+                tostring(t.identity),
+                tostring(t.phase),
+                tostring(t.touching),
+                p.x or -1, p.y or -1
+            )
+        end
+        print(string.format(
+            "[ws.gestures] t=%.3f n=%d init=%d pOA=%s amb=%s drag=%s :: %s",
+            currentTime,
+            touchCount,
+            initialFingerCount,
+            tostring(plusOneActive),
+            tostring(ambiguousInitTime),
+            tostring(gestureDragged),
+            table.concat(parts, " ")
+        ))
+    end
+
+    -- Full release: reset, but reject phantom n=0 events that arrive while a
+    -- real touch is still on the trackpad. macOS occasionally sends a spurious
+    -- empty event mid-gesture (observed in the diagnostic trace).
     if touchCount == 0 then
-        -- Ignore rapid phantom lifts from system gestures (require 0.3s between lifts)
-        if currentTime - lastLiftTime < 0.3 then
+        if lastNonZeroTouchTime and currentTime - lastNonZeroTouchTime < phantomLiftWindow then
+            pendingPhantomLift = true
             return false
         end
-        lastLiftTime = currentTime
-
-        if initialFingerCount > 0 then
-            initialFingerCount     = 0
-            gestureStartTime       = 0
-            initialTouchIdentities = {}
-        end
-        actionPerformedThisGesture = false
-        fingersAddedDuringSettling = false
-        gestureDragged             = false
-        pendingSide                = nil
-        speculativeBumpFrom        = nil
-        ambiguousInitTime          = nil
-        initialTouchPositions      = {}
+        resetState()
+        lastNonZeroTouchTime = nil
+        pendingPhantomLift   = false
         return false
+    end
+
+    -- If we debounced an n=0 and then nothing came back for a long time, the
+    -- "phantom" was actually a real lift. Reset state on the first non-zero
+    -- event after the staleStateWindow.
+    if pendingPhantomLift and lastNonZeroTouchTime
+       and currentTime - lastNonZeroTouchTime > staleStateWindow then
+        resetState()
+    end
+    pendingPhantomLift   = false
+    lastNonZeroTouchTime = currentTime
+
+    -- Count-based +1 re-arm. macOS reassigns touch identities mid-tap on some
+    -- hardware (observed in the diagnostic trace), so identity- and phase-based
+    -- dedup are unreliable. A single physical tap keeps touchCount at
+    -- initialFingerCount + 1 from start to finish, so we only re-arm when the
+    -- count actually drops back to the cluster.
+    if plusOneActive and touchCount <= initialFingerCount then
+        plusOneActive = false
     end
 
     local function snapshotInitial()
         initialTouchIdentities = {}
-        initialTouchPositions = {}
+        initialTouchPositions  = {}
         for i = 1, touchCount do
             initialTouchIdentities[touches[i].identity] = true
             initialTouchPositions[touches[i].identity] = {
                 x = touches[i].normalizedPosition.x,
-                y = touches[i].normalizedPosition.y
+                y = touches[i].normalizedPosition.y,
             }
         end
     end
@@ -80,24 +127,12 @@ local function handleTTTaps(event)
         return nil
     end
 
-    local function isOutsideCluster(pos)
-        if not pos then return false end
-        local minX, maxX = math.huge, -math.huge
-        for _, p in pairs(initialTouchPositions) do
-            if p.x < minX then minX = p.x end
-            if p.x > maxX then maxX = p.x end
+    local function dispatch(extraX)
+        local side = extraX <= 0.5 and "left" or "right"
+        if debugLog then
+            print(string.format("[ws.gestures]   >>> DISPATCH initial=%d side=%s",
+                initialFingerCount, side))
         end
-        return pos.x < (minX - clusterGap) or pos.x > (maxX + clusterGap)
-    end
-
-    local function queueAction(side)
-        pendingSide = side
-    end
-
-    local function dispatchPending()
-        local side = pendingSide
-        if not side then return end
-        pendingSide = nil
         if initialFingerCount == 2 then
             if callbacks.focusAdjacentWindow then
                 callbacks.focusAdjacentWindow(side == "left" and "backward" or "forward")
@@ -111,117 +146,98 @@ local function handleTTTaps(event)
                 callbacks.moveWindowToAdjacentScreen(side == "left" and "previous" or "next")
             end
         end
-        actionPerformedThisGesture = true
     end
 
+    -- Settle: first 2/3/4-finger cluster.
     if initialFingerCount == 0 then
         if touchCount == 2 or touchCount == 3 or touchCount == 4 then
             initialFingerCount = touchCount
-            gestureStartTime = currentTime
+            gestureStartTime   = currentTime
             snapshotInitial()
-            -- If 3+ fingers landed in one frame, mark as ambiguous: a finger lifting
-            -- within 200ms is likely a +1 tap whose down event was merged by the OS.
             if touchCount >= 3 then
                 ambiguousInitTime = currentTime
             end
         end
-    elseif touchCount > initialFingerCount and touchCount <= 4 and gestureStartTime and (currentTime - gestureStartTime < gestureStartThreshold) then
-        -- More fingers arrived during the settling window.
-        local extraPos = (touchCount == initialFingerCount + 1) and newFingerPos() or nil
-        if extraPos then
-            if isOutsideCluster(extraPos) then
-                queueAction(extraPos.x <= 0.5 and "left" or "right")
-            else
-                queueAction(extraPos.x <= 0.5 and "left" or "right")
-                if not speculativeBumpFrom then
-                    speculativeBumpFrom = initialFingerCount
-                end
-                if initialFingerCount == 2 and touchCount == 3 then
-                    fingersAddedDuringSettling = true
-                end
+        return false
+    end
+
+    -- More fingers than the settled cluster.
+    if touchCount > initialFingerCount then
+        if gestureDragged or plusOneActive then return false end
+        local age = currentTime - gestureStartTime
+        if age < gestureStartThreshold then
+            -- Still settling: treat additional fingers as part of the cluster.
+            if touchCount <= 4 then
                 initialFingerCount = touchCount
-                gestureStartTime = currentTime
+                gestureStartTime   = currentTime
                 snapshotInitial()
+                ambiguousInitTime  = currentTime
             end
-        else
-            initialFingerCount = touchCount
-            gestureStartTime = currentTime
-            snapshotInitial()
-            speculativeBumpFrom = nil
-            pendingSide = nil
+            return false
         end
-    elseif touchCount < initialFingerCount and gestureStartTime then
-        if speculativeBumpFrom then
-            initialFingerCount = speculativeBumpFrom
-            speculativeBumpFrom = nil
-            snapshotInitial()
-            dispatchPending()
-        elseif ambiguousInitTime and currentTime - ambiguousInitTime < 0.20 then
-            -- Initial set was ambiguous and a finger lifted in the tap window:
-            -- the missing finger was the +1 tap. Use its position to pick side.
+        -- Past settling: a +1 tap. Fire on touchdown; re-arm via the
+        -- count-based check at the top of the next event.
+        if touchCount == initialFingerCount + 1 then
+            local pos = newFingerPos()
+            if pos then
+                plusOneActive = true
+                dispatch(pos.x)
+            end
+        end
+        return false
+    end
+
+    -- A finger lifted from the cluster.
+    if touchCount < initialFingerCount then
+        -- Ambiguous-init: 3+ landed together, one lifted within 200 ms.
+        -- The lifted finger was the +1; use its snapshotted X to pick the side.
+        if ambiguousInitTime and currentTime - ambiguousInitTime < 0.20
+           and not gestureDragged and not plusOneActive then
             local presentIds = {}
             for i = 1, touchCount do presentIds[touches[i].identity] = true end
-            local liftedX = nil
+            local liftedX
             for id, pos in pairs(initialTouchPositions) do
                 if not presentIds[id] then liftedX = pos.x; break end
             end
             if liftedX then
+                plusOneActive      = true
                 initialFingerCount = touchCount
                 snapshotInitial()
-                queueAction(liftedX <= 0.5 and "left" or "right")
-                dispatchPending()
-            end
-            ambiguousInitTime = nil
-        end
-        if touchCount < initialFingerCount then
-            initialFingerCount = touchCount
-            gestureStartTime = currentTime
-            snapshotInitial()
-            pendingSide = nil
-        end
-    elseif touchCount >= initialFingerCount and gestureStartTime then
-        if touchCount == initialFingerCount then
-            -- If a speculative bump has been sitting for long enough, confirm as rest
-            -- (cancel the queued action and commit to the bumped initialFingerCount).
-            if speculativeBumpFrom and currentTime - gestureStartTime > 0.20 then
-                speculativeBumpFrom = nil
-                pendingSide = nil
-            end
-            -- If the ambiguous-init window expired, commit to the multi-finger initial.
-            if ambiguousInitTime and currentTime - ambiguousInitTime > 0.20 then
+                dispatch(liftedX)
                 ambiguousInitTime = nil
-            end
-            -- Only dispatch outside speculative mode; lift in partial-lift branch decides otherwise.
-            if not speculativeBumpFrom then
-                dispatchPending()
+                return false
             end
         end
-        -- Check if any finger has moved beyond drag threshold
-        if not gestureDragged and touchCount == initialFingerCount then
-            for i = 1, touchCount do
-                local identity = touches[i].identity
-                local initPos = initialTouchPositions[identity]
-                if initPos then
-                    local dx = touches[i].normalizedPosition.x - initPos.x
-                    local dy = touches[i].normalizedPosition.y - initPos.y
-                    local dist = math.sqrt(dx * dx + dy * dy)
-                    if dist > dragThreshold then
-                        gestureDragged = true
-                        break
-                    end
-                end
-            end
-        end
+        -- Held finger left: re-settle to the new cluster size.
+        ambiguousInitTime  = nil
+        initialFingerCount = touchCount
+        gestureStartTime   = currentTime
+        snapshotInitial()
+        return false
+    end
 
-        if touchCount == initialFingerCount + 1 and currentTime - gestureStartTime > gestureStartThreshold then
-            local extraPos = newFingerPos()
-            if extraPos then
-                queueAction(extraPos.x <= 0.5 and "left" or "right")
+    -- Steady at the cluster size.
+    if ambiguousInitTime and currentTime - ambiguousInitTime > 0.20 then
+        ambiguousInitTime = nil
+    end
+
+    -- Drag detection: any cluster finger moved past threshold ⇒ taint, suppress future taps.
+    if not gestureDragged then
+        for i = 1, touchCount do
+            local id = touches[i].identity
+            local initPos = initialTouchPositions[id]
+            if initPos then
+                local dx = touches[i].normalizedPosition.x - initPos.x
+                local dy = touches[i].normalizedPosition.y - initPos.y
+                if (dx * dx + dy * dy) > (dragThreshold * dragThreshold) then
+                    gestureDragged = true
+                    break
+                end
             end
         end
     end
 
-    return false -- Don't consume event
+    return false
 end
 
 local function start()
