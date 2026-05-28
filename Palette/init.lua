@@ -14,8 +14,9 @@ local matcher  = require("Palette.matcher")
 local recents  = require("Palette.recents")
 local textbuf  = require("Palette.textbuffer")
 
-local menuitems = require("Palette.sources.menuitems")
-local apps      = require("Palette.sources.apps")
+local menuitems     = require("Palette.sources.menuitems")
+local apps          = require("Palette.sources.apps")
+local installedapps = require("Palette.sources.installedapps")
 
 -- Auto-load every *.lua under Palette/verbs/ and key by the module's own id.
 -- pcall'd so a broken verb file degrades to "this verb is missing" instead of
@@ -39,10 +40,15 @@ end
 
 Palette.config = {
     hotkey  = { { "ctrl", "cmd" }, "space" },
-    sources = { menuitems, apps },
+    sources = { menuitems, apps, installedapps },
 }
 
 local dismissTap = nil
+
+-- Trackpad pixel-delta accumulator: trips +/-1 row step per scrollStepPx.
+-- Reset on close / stage push/pop so sub-threshold deltas don't carry across.
+local scrollAccum  = 0
+local scrollStepPx = 24
 
 -- Keep the focused item inside the visible window by sliding state.scrollOffset.
 local function clampScroll()
@@ -104,23 +110,7 @@ local function close()
     keys.stop()
     canvas.hide()
     state.reset()
-end
-
-local function startDismissTap()
-    if dismissTap then dismissTap:stop() end
-    dismissTap = hs.eventtap.new(
-        { hs.eventtap.event.types.leftMouseDown, hs.eventtap.event.types.rightMouseDown },
-        function(e)
-            if not state.open then return false end
-            local f = canvas.frame()
-            if not f then return false end
-            local p = e:location()
-            local inside = p.x >= f.x and p.x <= f.x + f.w
-                and p.y >= f.y and p.y <= f.y + f.h
-            if not inside then close() end
-            return false
-        end
-    ):start()
+    scrollAccum = 0
 end
 
 -- Push current stage frame onto history; replace with the new stage.
@@ -145,6 +135,7 @@ local function pushStage(newStage, newRaw, opts)
     state.scrollOffset = 0
     if opts.selectedItem ~= nil then state.selectedItem = opts.selectedItem end
     if opts.selectedVerb ~= nil then state.selectedVerb = opts.selectedVerb end
+    scrollAccum = 0
     refresh()
 end
 
@@ -160,6 +151,7 @@ local function popStage()
     state.scrollOffset = prev.scrollOffset or 0
     state.selectedItem = prev.selectedItem
     state.selectedVerb = prev.selectedVerb
+    scrollAccum        = 0
     canvas.draw(state)
     return true
 end
@@ -240,6 +232,80 @@ local function activateFocused()
         if not verb then return end
         runVerb(verb, state.selectedItem)
     end
+end
+
+-- Momentum scroll events are consumed but not stepped so a flick moves one
+-- row, not thirty.
+local function startDismissTap()
+    if dismissTap then dismissTap:stop() end
+    local etypes = hs.eventtap.event.types
+    local props  = hs.eventtap.event.properties
+    dismissTap = hs.eventtap.new(
+        { etypes.leftMouseDown, etypes.rightMouseDown, etypes.scrollWheel },
+        function(e)
+            if not state.open then return false end
+            local f = canvas.frame()
+            if not f then return false end
+            local p = e:location()
+            local inside = p.x >= f.x and p.x <= f.x + f.w
+                and p.y >= f.y and p.y <= f.y + f.h
+            local etype = e:getType()
+
+            if etype == etypes.scrollWheel then
+                if not inside then return false end
+                local n = #state.items
+                if n == 0 then return true end
+                local momentum = e:getProperty(props.scrollWheelEventMomentumPhase) or 0
+                if momentum ~= 0 then return true end
+                local isContinuous = e:getProperty(props.scrollWheelEventIsContinuous) or 0
+                local step = 0
+                if isContinuous == 0 then
+                    step = -(e:getProperty(props.scrollWheelEventDeltaAxis1) or 0)
+                else
+                    local d = e:getProperty(props.scrollWheelEventPointDeltaAxis1) or 0
+                    scrollAccum = scrollAccum + d
+                    while scrollAccum >= scrollStepPx do
+                        step = step - 1
+                        scrollAccum = scrollAccum - scrollStepPx
+                    end
+                    while scrollAccum <= -scrollStepPx do
+                        step = step + 1
+                        scrollAccum = scrollAccum + scrollStepPx
+                    end
+                end
+                if step ~= 0 then
+                    local newFocus = math.max(1, math.min(n, state.focused + step))
+                    if newFocus ~= state.focused then
+                        state.focused = newFocus
+                        clampScroll()
+                        canvas.draw(state, hotkeyListForFocused())
+                    end
+                    -- Drop overshoot at the ends so reversing direction feels immediate.
+                    if state.focused == 1 or state.focused == n then
+                        scrollAccum = 0
+                    end
+                end
+                return true
+            end
+
+            -- Left / right mouseDown from here on.
+            if not inside then
+                close()
+                return false
+            end
+            local fp  = { x = p.x - f.x, y = p.y - f.y }
+            local idx = canvas.hitTestRow(fp)
+            if not idx then return true end
+            state.focused = idx
+            clampScroll()
+            if etype == etypes.rightMouseDown then
+                canvas.draw(state, hotkeyListForFocused())
+                return true
+            end
+            activateFocused()
+            return true
+        end
+    ):start()
 end
 
 local function open()

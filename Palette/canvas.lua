@@ -13,12 +13,15 @@ local textbuf   = require("Palette.textbuffer")
 
 local M = {}
 
+-- Set by drawLeftBox so M.hitTestRow can answer clicks without re-deriving
+-- listY (which depends on the wrapped input height).
+local lastListLayout = nil
+
 local cfg = {
     width             = 500,
-    height            = 320,
+    height            = 330,
     boxGap            = 8,
 
-    -- Left box is intentionally square (matches Muse's 320×320 panel edge).
     leftBoxW          = 320,
     -- rightBoxW = width - leftBoxW - boxGap = 172
 
@@ -29,8 +32,8 @@ local cfg = {
     font              = ".AppleSystemUIFontMedium",
     inputFontSize     = 20,
     inputMinFontSize  = 12,
-    titleFontSize     = 14,
-    subtitleFontSize  = 11,
+    titleFontSize     = 16,
+    subtitleFontSize  = 12,
     accessoryFontSize = 14,
     crumbFontSize     = 11,
     footerFontSize    = 11,
@@ -50,7 +53,7 @@ local cfg = {
     inputHCompact     = 36,
 
     rows              = 5,
-    rowH              = 42,
+    rowH              = 48,
     iconSize          = 28,
     accentBarW        = 3,
 
@@ -227,6 +230,22 @@ function M.hide()
     stopCursorBlink()
     if card then card:delete(); card = nil end
     cursorElemIdx = nil
+    lastListLayout = nil
+end
+
+-- The 4px row gap is a dead zone so clicks match the visual.
+function M.hitTestRow(p)
+    local L = lastListLayout
+    if not L then return nil end
+    if p.x < L.innerX or p.x > L.innerX + L.innerW then return nil end
+    for i = 1, L.rowsToShow do
+        local rowTop = L.listY + (i - 1) * L.rowH
+        local rowBot = rowTop + L.rowH - 4
+        if p.y >= rowTop and p.y <= rowBot then
+            return L.scroll + i
+        end
+    end
+    return nil
 end
 
 function M.isShown()
@@ -245,12 +264,12 @@ local function clear()
     while #card > 0 do card:removeElement(#card) end
 end
 
-local function styled(text, color, size)
+local function styled(text, color, size, lineBreak)
     return styledtxt.new(text or "", {
         font           = { name = cfg.font, size = size },
         color          = color,
         shadow         = textShadow,
-        paragraphStyle = { lineBreak = "truncateTail" },
+        paragraphStyle = { lineBreak = lineBreak or "truncateTail" },
     })
 end
 
@@ -460,7 +479,7 @@ local function drawLeftBox(state)
                 type          = "text",
                 text          = styled(it.markChar, C.accent, 14),
                 textAlignment = "left",
-                frame         = { x = textLeft, y = rowY + 4, w = 14, h = 20 },
+                frame         = { x = textLeft, y = rowY + 5, w = 14, h = 22 },
             }
             textLeft = textLeft + 14 + 4
         end
@@ -472,7 +491,7 @@ local function drawLeftBox(state)
                 type          = "text",
                 text          = styled("↺", C.accent, 14),
                 textAlignment = "center",
-                frame         = { x = innerX + innerW - 18, y = rowY + 10, w = 16, h = 20 },
+                frame         = { x = innerX + innerW - 18, y = rowY + 14, w = 16, h = 20 },
             }
             trailingReserved = 22
         end
@@ -481,18 +500,26 @@ local function drawLeftBox(state)
         local titleColor = (it.enabled == false) and C.muted or C.fg
         card[#card + 1] = {
             type  = "text",
-            text  = styled(it.title or "", titleColor, cfg.titleFontSize),
-            frame = { x = textLeft, y = rowY + 4, w = textW, h = 18 },
+            text  = styled(it.title or "", titleColor, cfg.titleFontSize, "truncateMiddle"),
+            frame = { x = textLeft, y = rowY + 5, w = textW, h = 22 },
         }
         if it.subtitle and it.subtitle ~= "" then
             card[#card + 1] = {
                 type  = "text",
                 text  = styled(it.subtitle, C.muted, cfg.subtitleFontSize),
-                frame = { x = textLeft, y = rowY + 22, w = textW, h = 14 },
+                frame = { x = textLeft, y = rowY + 27, w = textW, h = 16 },
             }
         end
     end
 
+    lastListLayout = {
+        innerX     = innerX,
+        innerW     = innerW,
+        listY      = listY,
+        rowsToShow = rowsToShow,
+        scroll     = scroll,
+        rowH       = cfg.rowH,
+    }
 end
 
 -- Right box: focused item preview + hotkeys (default verb on ⏎, others on
