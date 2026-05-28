@@ -97,8 +97,10 @@ local function mouseAnchorFrame()
     local sf          = mouseScreen:frame()
     local m           = hs.mouse.absolutePosition()
     local margin      = 8
-    local x = m.x - cfg.width / 2
-    local y = m.y + 12
+    -- Land the cursor on row 1's center so scroll / click work without
+    -- moving the mouse. Mirrors the empty-query listY math in drawLeftBox.
+    local x = m.x - cfg.leftBoxW / 2
+    local y = m.y - (cfg.pad + 4 + cfg.inputHCompact + 10 + cfg.rowH / 2)
     if x < sf.x + margin then x = sf.x + margin end
     if x + cfg.width > sf.x + sf.w - margin then x = sf.x + sf.w - cfg.width - margin end
     if y + cfg.height > sf.y + sf.h - margin then y = sf.y + sf.h - cfg.height - margin end
