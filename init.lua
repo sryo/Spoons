@@ -23,6 +23,8 @@ local MenuMaestro = require("MenuMaestro")
 
 local Muse = require("Muse")
 
+local Palette = require("Palette")
+
 
 
 --local ChoiceBox = require("ChoiceBox")
