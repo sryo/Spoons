@@ -19,11 +19,12 @@ local function FM() return require("FrameMaster") end
 
 -- ─── Tunables ────────────────────────────────────────────────
 
-local MAX_CLICK_DISTANCE     = 32
 local MAX_HOVER_DISTANCE     = 28
+local MAX_CLICK_DISTANCE     = MAX_HOVER_DISTANCE
 local CONE_PADDING_MIN       = 0
 local CONE_PADDING_MAX       = 8
 local STROKE_WIDTH           = 1.5
+local CORNER_RADIUS          = 10
 local CANVAS_SLACK           = 4
 -- Debounced full refresh during cursor activity. Catches AX rect drift that
 -- doesn't fire focus events (e.g. Arc's autohiding sidebar).
@@ -89,7 +90,7 @@ local function buildPolygon(cx, cy, rect, padding)
         { x = R.x,       y = R.y + R.h },
     }
     if cx >= R.x and cx <= R.x + R.w and cy >= R.y and cy <= R.y + R.h then
-        return C
+        return C, nil
     end
     local isL = cx < R.x
     local isR = cx > R.x + R.w
@@ -105,7 +106,70 @@ local function buildPolygon(cx, cy, rect, padding)
     elseif isL         then P[2]=C[1]; P[3]=C[2]; P[4]=C[3]; P[5]=C[4]
     else                    P[2]=C[2]; P[3]=C[1]; P[4]=C[4]; P[5]=C[3]
     end
-    return P
+    return P, 1
+end
+
+-- Rounds convex polygon corners with circular arcs approximated by cubic
+-- beziers (CSS `polygon(round Rpx, ...)` semantics). The apex vertex stays
+-- sharp. Per-corner radius is clamped to half the shorter adjacent edge,
+-- except on the side touching the apex where the full edge is available.
+-- Output coords are already offset by (ox, oy) for the canvas frame.
+local function roundPolygonCorners(poly, radius, sharpIdx, ox, oy)
+    local N = #poly
+    local coords = {}
+    local eps = 1e-6
+    local sqrtf, acos, tan, pi, min = math.sqrt, math.acos, math.tan, math.pi, math.min
+
+    for i = 1, N do
+        local prevIdx = (i - 2) % N + 1
+        local nextIdx = i % N + 1
+        local V = poly[i]
+
+        if i == sharpIdx or radius < 0.5 then
+            coords[#coords + 1] = { x = V.x - ox, y = V.y - oy }
+        else
+            local prev, nxt = poly[prevIdx], poly[nextIdx]
+            local vAx, vAy = prev.x - V.x, prev.y - V.y
+            local vBx, vBy = nxt.x  - V.x, nxt.y  - V.y
+            local lenA = sqrtf(vAx*vAx + vAy*vAy)
+            local lenB = sqrtf(vBx*vBx + vBy*vBy)
+
+            if lenA < eps or lenB < eps then
+                coords[#coords + 1] = { x = V.x - ox, y = V.y - oy }
+            else
+                local uAx, uAy = vAx / lenA, vAy / lenA
+                local uBx, uBy = vBx / lenB, vBy / lenB
+                local dot = uAx * uBx + uAy * uBy
+                if dot < -1 then dot = -1 elseif dot > 1 then dot = 1 end
+                local theta = acos(dot)
+
+                if theta < eps or theta > pi - eps then
+                    coords[#coords + 1] = { x = V.x - ox, y = V.y - oy }
+                else
+                    local maxA = (prevIdx == sharpIdx) and lenA or lenA / 2
+                    local maxB = (nextIdx == sharpIdx) and lenB or lenB / 2
+                    local halfTheta = theta / 2
+                    local t = min(radius / tan(halfTheta), maxA, maxB)
+                    local rEff = t * tan(halfTheta)
+
+                    local P1x, P1y = V.x + uAx * t, V.y + uAy * t
+                    local P2x, P2y = V.x + uBx * t, V.y + uBy * t
+                    local k = rEff * (4 / 3) * tan((pi - theta) / 4)
+                    local CP1x, CP1y = P1x - uAx * k, P1y - uAy * k
+                    local CP2x, CP2y = P2x - uBx * k, P2y - uBy * k
+
+                    coords[#coords + 1] = { x = P1x - ox, y = P1y - oy }
+                    coords[#coords + 1] = {
+                        x = P2x - ox, y = P2y - oy,
+                        c1x = CP1x - ox, c1y = CP1y - oy,
+                        c2x = CP2x - ox, c2y = CP2y - oy,
+                    }
+                end
+            end
+        end
+    end
+
+    return coords
 end
 
 -- ─── AX rect resolution ──────────────────────────────────────
@@ -252,12 +316,8 @@ local function updateOverlay(cx, cy)
     local conePad = CONE_PADDING_MIN + (CONE_PADDING_MAX - CONE_PADDING_MIN) * t
     sharedOverlay["cone"].fillColor   = colors.fill
     sharedOverlay["cone"].strokeColor = colors.stroke
-    local poly = buildPolygon(cx, cy, f, conePad)
-    local coords = {}
-    for i, pt in ipairs(poly) do
-        coords[i] = { x = pt.x - ox, y = pt.y - oy }
-    end
-    sharedOverlay["cone"].coordinates = coords
+    local poly, apexIdx = buildPolygon(cx, cy, f, conePad)
+    sharedOverlay["cone"].coordinates = roundPolygonCorners(poly, CORNER_RADIUS, apexIdx, ox, oy)
 
     if not overlayVisible then sharedOverlay:show(); overlayVisible = true end
     if target ~= lastNearestTarget then
@@ -368,9 +428,10 @@ function M.updateButtonOverlays()
         local isCollapsed = sz and sz.h <= cfg.collapsedWindowHeight
         local included = app and callbacks.isAppIncluded and callbacks.isAppIncluded(app, win)
         if not included then goto continue end
+        if isCollapsed then goto continue end
         if callbacks.isAXSlow and callbacks.isAXSlow(app) then goto continue end
 
-        if cfg.showPinButton and isStandard and not isCollapsed and winId == focusedWinId then
+        if cfg.showPinButton and isStandard and winId == focusedWinId then
             local pf = pinFrameForWin(win)
             if pf then
                 pinFrame = pf
