@@ -344,3 +344,5 @@ end
 downloadsFolderWatcher = hs.pathwatcher.new(downloadsFolder, onFsEvent):start()
 scanDownloadsFolder()
 hs.console.printStyledtext("AutoDMG (Images + PKGs) Ready")
+
+return { handledFiles = handledFiles, fileStates = fileStates }
