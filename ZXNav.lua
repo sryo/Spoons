@@ -37,7 +37,7 @@ local config = {
     modifierKey = "space",
     outerRadius = 240,
     middleRadius = 170,
-    innerRadius = 50,
+    innerRadius = 140,
     fontSize = 14,
     showDelay = 0
 }
@@ -141,7 +141,7 @@ local function drawRing(keyBar, mappings, outerR, innerR, size, colors, isDark, 
 end
 
 local function setupKeyBar()
-    local screenFrame = hs.screen.primaryScreen():frame()
+    local screenFrame = hs.screen.primaryScreen():fullFrame()
     if keyBar then
         keyBar:delete()
     end
@@ -151,7 +151,7 @@ local function setupKeyBar()
 
     keyBar = hs.canvas.new({
         x = screenFrame.x + centerX - size / 2,
-        y = screenFrame.h - config.outerRadius - 20,
+        y = screenFrame.y + screenFrame.h - config.outerRadius - 10,
         w = size,
         h = config.outerRadius + 20
     })
@@ -381,6 +381,9 @@ local function handleKeyDown(event)
                 return STOP
             end
         end
+
+        -- Any non-mapped key consumed during the chord cancels the lone-space-on-release.
+        produceModifier = false
     end
 
     return GO
