@@ -17,7 +17,7 @@ local cfg = {
     animationDuration     = 0.15, -- seconds
     animationFPS          = 60,
     showPinButton         = false, -- pin button (right of traffic lights) toggles app in/out of tiling
-    debugLogging          = true,  -- toggle with Ctrl+Cmd+D
+    debugLogging          = false, -- verbose tier; toggle with Ctrl+Cmd+D
 }
 
 local CONST = {

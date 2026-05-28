@@ -626,7 +626,7 @@ local function setupWindowFilterSubscriptions()
             if not winId then return end
 
             if not snapshots.isMinimized(winId) then
-                core.log("Recovering accidentally minimized window: " .. (win:title() or "untitled"))
+                core.warn("Recovering accidentally minimized window: " .. (win:title() or "untitled"))
                 timer.doAfter(0.1, function()
                     if win and win:isMinimized() then
                         win:unminimize()
@@ -658,21 +658,21 @@ local function preventGC()
     local stuckThreshold = 5
 
     if core.tilingCount > 0 and (now - core.tilingStartTime) > stuckThreshold then
-        core.log("Watchdog: tilingCount stuck at " .. core.tilingCount ..
-                 " for " .. math.floor(now - core.tilingStartTime) .. "s, resetting")
+        core.warn("Watchdog: tilingCount stuck at " .. core.tilingCount ..
+                  " for " .. math.floor(now - core.tilingStartTime) .. "s, resetting")
         core.tilingCount = 0
     end
 
     local snapshotsState = core.snapshotsState
     if snapshotsState and snapshotsState.isCreating and
        (now - snapshotsState.isCreatingStart) > stuckThreshold then
-        core.log("Watchdog: isCreating stuck for " ..
-                 math.floor(now - snapshotsState.isCreatingStart) .. "s, resetting")
+        core.warn("Watchdog: isCreating stuck for " ..
+                  math.floor(now - snapshotsState.isCreatingStart) .. "s, resetting")
         snapshotsState.isCreating = false
     end
 
     if focusPollTimer and not focusPollTimer:running() then
-        core.log("Focus poll timer stopped, restarting...")
+        core.warn("Focus poll timer stopped, restarting...")
         startFocusPollTimer()
     end
 end
@@ -694,7 +694,7 @@ function M.start()
         if screenChangeDebounce then screenChangeDebounce:stop() end
         screenChangeDebounce = timer.doAfter(0.25, function()
             screenChangeDebounce = nil
-            core.log("Screen configuration changed, repositioning")
+            core.warn("Screen configuration changed, repositioning")
 
             if core.tilingDelayTimer then core.tilingDelayTimer:stop(); core.tilingDelayTimer = nil end
             if core.pendingReposition then core.pendingReposition:stop(); core.pendingReposition = nil end

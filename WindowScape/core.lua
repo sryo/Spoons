@@ -87,14 +87,14 @@ function M.measureAX(app, fn)
         M.measuredApps[bundleID] = true
         if elapsedMs > SLOW_AX_THRESHOLD_MS then
             M.slowAXApps[bundleID] = true
-            M.log(string.format("AX SLOW: %s took %.0fms — skipping overlays for this app", bundleID, elapsedMs))
+            M.warn(string.format("AX SLOW: %s took %.0fms, skipping overlays for this app", bundleID, elapsedMs))
         else
             M.log(string.format("AX ok:   %s took %.0fms", bundleID, elapsedMs))
         end
     elseif bundleID and elapsedMs > SLOW_AX_THRESHOLD_MS then
-        -- Already-measured app suddenly spiked — mark it.
+        -- Already-measured app suddenly spiked, mark it.
         M.slowAXApps[bundleID] = true
-        M.log(string.format("AX SLOW: %s spiked to %.0fms — skipping overlays for this app", bundleID, elapsedMs))
+        M.warn(string.format("AX SLOW: %s spiked to %.0fms, skipping overlays for this app", bundleID, elapsedMs))
     end
     return table.unpack(results)
 end
@@ -110,14 +110,21 @@ function M.markSetFrameSlow(app, elapsedMs)
     if not bundleID or M.slowSetFrameApps[bundleID] then return end
     if elapsedMs > SLOW_SETFRAME_THRESHOLD_MS then
         M.slowSetFrameApps[bundleID] = true
-        M.log(string.format("setFrame SLOW: %s took %.0fms — skipping animation for this app", bundleID, elapsedMs))
+        M.warn(string.format("setFrame SLOW: %s took %.0fms, skipping animation for this app", bundleID, elapsedMs))
     end
 end
 
+-- Two-tier logging:
+--   M.log : verbose per-event diagnostic, gated by cfg.debugLogging (default off)
+--   M.warn: errors, perf warnings, rare-but-meaningful events (always prints)
 function M.log(message)
     if M.cfg and M.cfg.debugLogging then
         print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
     end
+end
+
+function M.warn(message)
+    print(os.date("%Y-%m-%d %H:%M:%S") .. " [WindowScape] " .. message)
 end
 
 -- Safe wrapper for win:application() — avoids "Unable to fetch NSRunningApplication"
@@ -147,7 +154,7 @@ function M.pruneStaleSpaces()
     for spaceId in pairs(M.windowOrderBySpace) do
         if not valid[spaceId] then
             M.windowOrderBySpace[spaceId] = nil
-            M.log("Pruned stale space: " .. tostring(spaceId))
+            M.warn("Pruned stale space: " .. tostring(spaceId))
         end
     end
 end
@@ -157,12 +164,12 @@ function M.saveList()
     local tmpPath = M.listPath .. ".tmp"
     local ok, err = json.write(M.listedApps, tmpPath, true, true)
     if not ok then
-        M.log("Failed to write temp app list: " .. tostring(err))
+        M.warn("Failed to write temp app list: " .. tostring(err))
         return
     end
     local renamed, renameErr = os.rename(tmpPath, M.listPath)
     if not renamed then
-        M.log("Failed to rename temp app list: " .. tostring(renameErr))
+        M.warn("Failed to rename temp app list: " .. tostring(renameErr))
         os.remove(tmpPath)
     end
 end

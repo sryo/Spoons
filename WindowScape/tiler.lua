@@ -138,7 +138,7 @@ function M.tileWindows()
     core.tilingStartTime = timer.secondsSinceEpoch()
     local ok, err = pcall(tileWindowsInternal)
     if not ok then
-        core.log("Error in tileWindowsInternal: " .. tostring(err))
+        core.warn("Error in tileWindowsInternal: " .. tostring(err))
     end
     local delay = cfg.enableAnimations and (cfg.animationDuration + 0.1) or 0.15
     core.tilingDelayTimer = timer.doAfter(delay, function()

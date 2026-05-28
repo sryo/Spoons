@@ -34,8 +34,11 @@ local appliedCornerRadius = nil
 local function getCornerRadius(win)
     if not win then return 0 end
     if not win:isStandard() then return 0 end
-    -- Skip AX for known-slow apps (Catalyst etc.) — use the more-common 16.
-    if isAXSlow and isAXSlow(win:application()) then return 16 end
+    -- Skip AX for known-slow apps (Catalyst etc.); use the more-common 16.
+    -- pcall guards against a window whose process has died (NSRunningApplication
+    -- fetch raises a LuaSkin error otherwise).
+    local ok, app = pcall(function() return win:application() end)
+    if isAXSlow and ok and app and isAXSlow(app) then return 16 end
     local axWin = axuielement.windowElement(win)
     local children = axWin:attributeValue("AXChildren")
     if children then

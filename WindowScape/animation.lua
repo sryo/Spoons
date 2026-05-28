@@ -7,6 +7,16 @@ local activeAnimations = {}
 local cfg = nil
 local callbacks = {}
 
+-- win:application() can throw "Unable to fetch NSRunningApplication" if the
+-- window's process has died mid-animation (common when a tile-eligible window
+-- is closed during a setFrame batch). Swallow with pcall.
+local function safeApp(win)
+    if not win then return nil end
+    local ok, app = pcall(function() return win:application() end)
+    if ok then return app end
+    return nil
+end
+
 -- Time win:setFrame, hand the elapsed value to core's slow-setFrame detector.
 -- Apps that exceed the threshold are marked and bypass the animation loop on
 -- subsequent calls (see animatedSetFrame).
@@ -15,7 +25,8 @@ local function timedSetFrame(win, rect)
     win:setFrame(rect, 0)
     if callbacks.markSetFrameSlow then
         local elapsed = (timer.secondsSinceEpoch() - t0) * 1000
-        callbacks.markSetFrameSlow(win:application(), elapsed)
+        local app = safeApp(win)
+        if app then callbacks.markSetFrameSlow(app, elapsed) end
     end
 end
 
@@ -68,8 +79,9 @@ local function animatedSetFrame(win, targetFrame, onComplete)
 
     -- Skip the 9-frame animation loop for apps with slow setFrame
     -- (Catalyst apps like WhatsApp/Messages). One direct setFrame instead.
+    local app = safeApp(win)
     if not cfg or not cfg.enableAnimations or
-       (callbacks.isSetFrameSlow and callbacks.isSetFrameSlow(win:application())) then
+       (callbacks.isSetFrameSlow and app and callbacks.isSetFrameSlow(app)) then
         timedSetFrame(win, geometry.rect(targetFrame))
         if onComplete then onComplete() end
         return

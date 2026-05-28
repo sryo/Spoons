@@ -12,6 +12,10 @@ local function log(msg)
     if callbacks.log then callbacks.log(msg) end
 end
 
+local function warn(msg)
+    if callbacks.warn then callbacks.warn(msg) else log(msg) end
+end
+
 -- Move mouse to maintain relative position when window moves
 local function moveMouseWithWindow(oldFrame, newFrame)
     if not (oldFrame and newFrame) then return end
@@ -144,20 +148,20 @@ end
 local function moveWindowToAdjacentScreen(direction)
     local focusedWindow = window.focusedWindow()
     if not focusedWindow then
-        log("No focused window; cannot move to adjacent screen")
+        warn("No focused window; cannot move to adjacent screen")
         return
     end
 
     local oldFrame = focusedWindow:frame()
     local currentScreen = focusedWindow:screen()
     if not currentScreen then
-        log("No screen for focused window; cannot move to adjacent screen")
+        warn("No screen for focused window; cannot move to adjacent screen")
         return
     end
 
     local allScreens = screen.allScreens()
     if #allScreens < 2 then
-        log("Only one screen available; cannot move window")
+        warn("Only one screen available; cannot move window")
         return
     end
 
@@ -170,7 +174,7 @@ local function moveWindowToAdjacentScreen(direction)
     end
 
     if not currentScreenIndex then
-        log("Current screen not found in screen list")
+        warn("Current screen not found in screen list")
         return
     end
 
@@ -183,7 +187,7 @@ local function moveWindowToAdjacentScreen(direction)
 
     local targetScreen = allScreens[targetScreenIndex]
     if not targetScreen then
-        log("Target screen not resolved; aborting move")
+        warn("Target screen not resolved; aborting move")
         return
     end
 

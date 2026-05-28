@@ -72,6 +72,7 @@ snapshotCreate.init(cfg, CONST, {
 
 operations.init(cfg, {
     log              = core.log,
+    warn             = core.warn,
     getCurrentSpace  = core.getCurrentSpace,
     getWindowOrder   = function(space) return core.windowOrderBySpace[space] or {} end,
     setWindowOrder   = function(space, order) core.windowOrderBySpace[space] = order end,
@@ -145,7 +146,7 @@ keybinds.bind()
 tiler.tileWindows()
 fullscreen.updateButtonOverlays()
 
-core.log("WindowScape initialized" ..
+core.warn("WindowScape initialized" ..
     (cfg.enableAnimations and " [animations]" or "") ..
     (cfg.enableTTTaps and " [TTTaps]" or ""))
 
@@ -202,7 +203,7 @@ local function cleanup()
     outline.cleanup()
     if cfg.enableTTTaps then gestures.stop() end
     fullscreen.cleanup()
-    core.log("WindowScape cleanup complete")
+    core.warn("WindowScape cleanup complete")
 end
 
 return {
