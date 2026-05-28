@@ -9,6 +9,7 @@ local screen    = hs.screen
 local timer     = hs.timer
 local styledtxt = hs.styledtext
 local drawing   = hs.drawing
+local textbuf   = require("Palette.textbuffer")
 
 local M = {}
 
@@ -351,7 +352,7 @@ local function drawLeftBox(state)
             frame = { x = innerX, y = inputY, w = innerW, h = math.max(inputH, cfg.inputHCompact) },
         }
     else
-        local lines, lineH, size, _widthOf = fitText(
+        local lines, lineH, size, widthOf = fitText(
             state.query, innerW, inputMaxH, cfg.font,
             cfg.inputFontSize, cfg.inputMinFontSize
         )
@@ -359,29 +360,12 @@ local function drawLeftBox(state)
         cursorLineH = lineH
         inputH      = math.min(#lines * lineH, inputMaxH)
 
-        -- Cursor position: wrap the prefix of state.query up to state.caret and
-        -- place the cursor at the end of its last wrapped line.
-        local caret = state.caret or 0
-        local n     = utf8.len(state.query) or 0
-        if caret < 0 then caret = 0 end
-        if caret > n then caret = n end
-        local prefixByteEnd
-        if caret <= 0 then
-            prefixByteEnd = 0
-        elseif caret >= n then
-            prefixByteEnd = #state.query
-        else
-            prefixByteEnd = utf8.offset(state.query, caret + 1) - 1
-        end
-        local prefix = state.query:sub(1, prefixByteEnd)
-        if prefix == "" then
-            cursorLastLineW = 0
-            cursorNumLines  = 1
-        else
-            local pLines, _, pWidthOf = wrapLines(prefix, innerW, cfg.font, size)
-            cursorNumLines  = #pLines
-            cursorLastLineW = pWidthOf(pLines[#pLines] or "")
-        end
+        -- Locate the caret inside the *full-buffer* wrap so multi-line wrap
+        -- boundaries snap to the start of the next visible line (the prefix-
+        -- wrap approach put the cursor at end-of-previous-line, which is wrong
+        -- once the buffer wraps).
+        local byteBefore = textbuf.byteOffset(state.query, state.caret or 0) - 1
+        cursorNumLines, cursorLastLineW = textbuf.caretInLines(byteBefore, lines, widthOf)
 
         local inputStyled = styledtxt.new(state.query, {
             font           = { name = cfg.font, size = renderSize },

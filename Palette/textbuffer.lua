@@ -68,6 +68,33 @@ function M.moveLeft(buf, pos, mode)
     return pos - 1
 end
 
+-- Given a 0-based byte count (how many bytes of the original buffer sit BEFORE
+-- the caret) and the wrapped lines + a width-measuring function, return
+-- (lineIdx 1-based, x in pixels). Walks the lines and accounts for the
+-- wrap-boundary ambiguity: when the caret byte lands exactly at the end of
+-- line N AND there is a line N+1, we jump to (N+1, 0) so the caret tracks the
+-- next visible line as the user types past the wrap.
+--
+-- Assumes the concatenation of the `lines` strings reconstructs the buffer
+-- (true for wrapLines on buffers without leading whitespace, which is the
+-- only shape Palette / Muse inputs produce).
+function M.caretInLines(byteCountBefore, lines, widthOf)
+    if #lines == 0 then return 1, 0 end
+    local cum = 0
+    for i = 1, #lines do
+        local line    = lines[i]
+        local lineLen = #line
+        if byteCountBefore < cum + lineLen then
+            return i, widthOf(line:sub(1, byteCountBefore - cum))
+        elseif byteCountBefore == cum + lineLen then
+            if i < #lines then return i + 1, 0 end
+            return i, widthOf(line)
+        end
+        cum = cum + lineLen
+    end
+    return #lines, widthOf(lines[#lines] or "")
+end
+
 function M.moveRight(buf, pos, mode)
     local n = clen(buf)
     pos = math.max(0, math.min(pos, n))

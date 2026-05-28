@@ -860,44 +860,27 @@ local function wrapLines(content, wrapW, fontName, fontSize, probeIdx)
 end
 
 -- Place the text cursor at the visual location of state.caret inside the
--- wrapped buffer. The caret is a 1-based logical char index; we wrap the
--- prefix [1..caret] and put the cursor at the end of that prefix's last
--- wrapped line, which naturally handles both the end-of-buffer case and
--- arbitrary midpoints.
+-- wrapped buffer. Wraps the full buffer once, then asks textbuf.caretInLines
+-- which wrapped line / x-offset the caret byte sits at — that handles the
+-- end-of-line vs start-of-next-line ambiguity, which a "wrap the prefix"
+-- approach gets wrong.
 local function rebuildCursor(fontSize)
     if not state.canv then return end
     local inputFrame = state.canv[2].frame
-    fontSize         = fontSize or cfg.layout.userFontSize
+    -- Fall back to the size most-recently rendered by rebuildInput so caret-
+    -- only moves don't snap back to userFontSize when the buffer has been
+    -- auto-shrunk to fit more lines.
+    fontSize         = fontSize or state.inputSize or cfg.layout.userFontSize
     local wrapW      = (inputFrame.w > 0) and inputFrame.w or 1
 
     local x, y, lineH
     if state.buffer ~= "" then
-        local n     = utf8.len(state.buffer) or 0
-        local caret = state.caret or n
-        if caret < 0 then caret = 0 end
-        if caret > n then caret = n end
-        local prefixByteEnd
-        if caret <= 0 then
-            prefixByteEnd = 0
-        elseif caret >= n then
-            prefixByteEnd = #state.buffer
-        else
-            prefixByteEnd = utf8.offset(state.buffer, caret + 1) - 1
-        end
-        local prefix = state.buffer:sub(1, prefixByteEnd)
-
-        if prefix == "" then
-            local probeLines, lh = wrapLines("M", wrapW, cfg.font, fontSize, 2)
-            lineH = lh
-            x = inputFrame.x
-            y = inputFrame.y
-        else
-            local lines, lh, widthOf = wrapLines(prefix, wrapW, cfg.font, fontSize, 2)
-            lineH = lh
-            local lastVisible = lines[#lines] or ""
-            x = inputFrame.x + widthOf(lastVisible)
-            y = inputFrame.y + (#lines - 1) * lineH
-        end
+        local lines, lh, widthOf = wrapLines(state.buffer, wrapW, cfg.font, fontSize, 2)
+        lineH = lh
+        local byteBefore = textbuf.byteOffset(state.buffer, state.caret or 0) - 1
+        local lineIdx, xInLine = textbuf.caretInLines(byteBefore, lines, widthOf)
+        x = inputFrame.x + xInLine
+        y = inputFrame.y + (lineIdx - 1) * lineH
         local maxY = inputFrame.y + math.max(0, inputFrame.h - lineH)
         if y > maxY then y = maxY end
     else
@@ -1048,6 +1031,7 @@ local function rebuildInput()
     -- bottom-anchored y is computed in rebuildResponse, so re-apply it after
     -- every input rebuild — otherwise the reply jumps to the top of the region.
     rebuildResponse()
+    state.inputSize = size
     rebuildCursor(size)
 end
 

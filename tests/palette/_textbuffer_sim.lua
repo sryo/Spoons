@@ -70,6 +70,35 @@ do
     expect("moveRight edge", tb.moveRight("foo bar", 2, "edge"), 7)
 end
 
+-- caretInLines: byte-walking into wrapped lines + wrap-boundary snap.
+do
+    -- Stub widthOf = byte count, so x == bytes in the prefix. Keeps the test
+    -- math obvious; the real function uses pixel measurements.
+    local widthOf = function(s) return #s end
+
+    local lines = { "hello ", "world" }  -- 6 + 5 = 11 bytes, no leading ws
+    -- caret at byte 0 → (line 1, col 0)
+    local li, x = tb.caretInLines(0, lines, widthOf); expectPair("caretInLines at start", li, x, 1, 0)
+    -- caret in middle of line 1
+    local li, x = tb.caretInLines(3, lines, widthOf); expectPair("caretInLines mid line1", li, x, 1, 3)
+    -- caret AT wrap boundary (byte 6 = end of line1 = start of line2). Must snap to line 2.
+    local li, x = tb.caretInLines(6, lines, widthOf); expectPair("caretInLines wrap boundary snaps to next", li, x, 2, 0)
+    -- caret inside line 2
+    local li, x = tb.caretInLines(8, lines, widthOf); expectPair("caretInLines mid line2", li, x, 2, 2)
+    -- caret at end of buffer (last line, end)
+    local li, x = tb.caretInLines(11, lines, widthOf); expectPair("caretInLines at end", li, x, 2, 5)
+    -- caret past end clamps to last line end
+    local li, x = tb.caretInLines(99, lines, widthOf); expectPair("caretInLines past end", li, x, 2, 5)
+
+    -- single line: boundary at end has no next line, so stays at end
+    local one = { "abc" }
+    local li, x = tb.caretInLines(3, one, widthOf); expectPair("caretInLines single-line end", li, x, 1, 3)
+
+    -- three lines, boundary between lines 2 and 3
+    local three = { "abc", "def", "ghi" }
+    local li, x = tb.caretInLines(6, three, widthOf); expectPair("caretInLines boundary mid-stack", li, x, 3, 0)
+end
+
 -- UTF-8: "héllo" (5 chars, but 6 bytes since é is 2 bytes)
 do
     local s = "héllo"
