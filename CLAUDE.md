@@ -37,12 +37,6 @@ Test Lua syntax before reloading:
 - Uses AppleScript via `hs.task` for reopen dialogs
 - Has a `useWindowScape` flag for WindowScape integration
 
-**LiteStep.lua** - LiteStep shell reimplementation
-- Parses `.rc` configuration files (LiteStep syntax)
-- Implements xLabel, xTaskbar, xTray, xPopup via xPaintClass
-- Supports variables, includes, conditionals, math expressions
-- Theme files in `litestep/themes/`
-
 **MenuMaestro.lua** - Fuzzy menu item search
 - Learns usage patterns and prioritizes frequent actions
 - Stores usage data via `hs.settings`
@@ -79,8 +73,17 @@ Most modules follow this structure:
 
 ### Configuration Files
 - `WindowScape_apps.json` - App whitelist/blacklist for tiling
-- `litestep/theme.rc` - LiteStep theme configuration
 - `whitelist.txt` - Legacy app list (unused by WindowScape)
+
+## Testing
+
+End-to-end tests live in `tests/`. They drive the live Hammerspoon runtime via the `hs` CLI and observe macOS UI via `steve`. See `tests/README.md` for setup, helpers, and the list of covered modules.
+
+- Run all: `bash tests/run.sh`
+- Run one module: `bash tests/run.sh -m <module>`
+- Run one test: `bash tests/run.sh tests/<module>/<behavior>.sh`
+
+When adding, changing, or removing a feature, check whether `tests/<module>/` covers it. Add a new test for new behavior, update the existing test for changed behavior, or remove the test alongside the feature.
 
 ## Commits
 
