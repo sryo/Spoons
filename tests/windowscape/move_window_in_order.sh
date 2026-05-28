@@ -21,7 +21,7 @@ seed_windows "$APP" 2
 # 2. Refresh per-space order, capture ids and the current space.
 hsx "require('WindowScape.core').updateWindowOrder(); return 'ok'" >/dev/null
 space="$(hsx "return require('WindowScape.core').getCurrentSpace()")"
-ids="$(hsx "local s=require('WindowScape.core').getCurrentSpace(); local o=require('WindowScape.core').windowOrderBySpace[s]; return o[1] .. ',' .. o[2]")"
+ids="$(hsx "local s=require('WindowScape.core').getCurrentSpace(); local o=require('WindowScape.core').windowOrderBySpace[s]; return o[1]:id() .. ',' .. o[2]:id()")"
 id1="${ids%,*}"
 id2="${ids#*,}"
 
@@ -31,11 +31,11 @@ wait_until "[ \"\$(hsx \"return hs.window.focusedWindow():id()\")\" = \"$id1\" ]
 
 # 4. Forward: window1 should swap into slot 2, window2 takes slot 1.
 hsx "require('WindowScape.operations').moveWindowInOrder('forward'); return 'ok'" >/dev/null
-wait_until "[ \"\$(hsx \"return require('WindowScape.core').windowOrderBySpace[$space][1]\")\" = \"$id2\" ]" 3 "order[1] is now window2"
+wait_until "[ \"\$(hsx \"return require('WindowScape.core').windowOrderBySpace[$space][1]:id()\")\" = \"$id2\" ]" 3 "order[1] is now window2"
 expect_eq "$(hsx "return hs.window.focusedWindow():id()")" "$id1" "focused window unchanged (still window1)"
 
 # 5. Backward: order restored.
 hsx "require('WindowScape.operations').moveWindowInOrder('backward'); return 'ok'" >/dev/null
-wait_until "[ \"\$(hsx \"return require('WindowScape.core').windowOrderBySpace[$space][1]\")\" = \"$id1\" ]" 3 "order restored"
+wait_until "[ \"\$(hsx \"return require('WindowScape.core').windowOrderBySpace[$space][1]:id()\")\" = \"$id1\" ]" 3 "order restored"
 
 echo "PASS: windowscape_move_window_in_order"

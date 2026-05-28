@@ -29,7 +29,11 @@ local function moveMouseWithWindow(oldFrame, newFrame)
     end
 end
 
--- Move focused window forward/backward in tiling order
+-- Move focused window forward/backward in tiling order.
+-- Orientation-aware: on landscape, "forward" swaps with the window to the right
+-- and "backward" with the one to the left. On portrait, "forward" swaps with the
+-- window below and "backward" with the one above. Wraps at edges. Only swaps
+-- within the focused window's screen.
 local function moveWindowInOrder(direction)
     local currentSpace = callbacks.getCurrentSpace()
     local focusedWindow = window.focusedWindow()
@@ -38,48 +42,70 @@ local function moveWindowInOrder(direction)
         return
     end
 
-    local windowOrder = callbacks.getWindowOrder(currentSpace)
-    local focusedIndex
-    local nonCollapsedWindows = {}
+    local focusedScreen = focusedWindow:screen()
+    if not focusedScreen then
+        callbacks.updateWindowOrder()
+        return
+    end
 
+    local screenFrame = focusedScreen:frame()
+    local screenId = focusedScreen:id()
+    local horizontal = (screenFrame.w > screenFrame.h)
+
+    local windowOrder = callbacks.getWindowOrder(currentSpace)
+
+    local sorted = {}
     for _, win in ipairs(windowOrder) do
         local sz = win:size()
-        if sz and sz.h > cfg.collapsedWindowHeight then
-            table.insert(nonCollapsedWindows, win)
+        local s = win:screen()
+        if sz and sz.h > cfg.collapsedWindowHeight and s and s:id() == screenId then
+            table.insert(sorted, win)
         end
     end
 
-    for i, win in ipairs(nonCollapsedWindows) do
+    table.sort(sorted, function(a, b)
+        local fa, fb = a:frame(), b:frame()
+        if horizontal then
+            return (fa.x + fa.w / 2) < (fb.x + fb.w / 2)
+        else
+            return (fa.y + fa.h / 2) < (fb.y + fb.h / 2)
+        end
+    end)
+
+    local focusedIndex
+    for i, win in ipairs(sorted) do
         if win:id() == focusedWindow:id() then
             focusedIndex = i
             break
         end
     end
 
-    if not focusedIndex then
+    if not focusedIndex or #sorted < 2 then
         callbacks.updateWindowOrder()
         return
     end
 
-    local newIndex
+    local targetIndex
     if direction == "forward" then
-        newIndex = (focusedIndex < #nonCollapsedWindows) and (focusedIndex + 1) or 1
+        targetIndex = (focusedIndex < #sorted) and (focusedIndex + 1) or 1
     else
-        newIndex = (focusedIndex > 1) and (focusedIndex - 1) or #nonCollapsedWindows
+        targetIndex = (focusedIndex > 1) and (focusedIndex - 1) or #sorted
     end
 
-    table.remove(nonCollapsedWindows, focusedIndex)
-    table.insert(nonCollapsedWindows, newIndex, focusedWindow)
+    sorted[focusedIndex], sorted[targetIndex] = sorted[targetIndex], sorted[focusedIndex]
 
     local newOrder = {}
-    local ncIdx = 1
+    local sIdx = 1
     for _, win in ipairs(windowOrder) do
         local sz = win:size()
-        if sz and sz.h <= cfg.collapsedWindowHeight then
-            table.insert(newOrder, win)
+        local s = win:screen()
+        local onScreen = s and s:id() == screenId
+        local nonCollapsed = sz and sz.h > cfg.collapsedWindowHeight
+        if onScreen and nonCollapsed then
+            table.insert(newOrder, sorted[sIdx])
+            sIdx = sIdx + 1
         else
-            table.insert(newOrder, nonCollapsedWindows[ncIdx])
-            ncIdx = ncIdx + 1
+            table.insert(newOrder, win)
         end
     end
 
