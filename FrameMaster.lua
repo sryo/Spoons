@@ -32,6 +32,16 @@ end
 local focusedWindowName = windowName
 local frontmostAppName  = appNameOf
 
+local function hasActionableWindow(win)
+    win = win or hs.window.focusedWindow()
+    if not win then return false end
+    local subrole = win.subrole and win:subrole()
+    if subrole and subrole ~= "AXStandardWindow" and subrole ~= "AXDialog" then
+        return false
+    end
+    return true
+end
+
 local function getDockPosition()
     local handle = io.popen("defaults read com.apple.dock orientation")
     if not handle then return "bottom" end
@@ -75,6 +85,7 @@ end
 local hotCorners = {
     topLeft = {
         action = function()
+            if not hasActionableWindow() then return "" end
             local app = hs.application.frontmostApplication()
             local window = app and app:focusedWindow()
             if not window then return "" end
@@ -119,7 +130,7 @@ local hotCorners = {
         end,
         message = function(win)
             win = win or hs.window.focusedWindow()
-            if not win then return "" end
+            if not hasActionableWindow(win) then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
                 return "Kill " .. appNameOf(win)
             end
@@ -129,7 +140,7 @@ local hotCorners = {
     topRight = {
         action = function()
             local window = hs.window.focusedWindow()
-            if not window then return "" end
+            if not hasActionableWindow(window) then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
                 window:toggleZoom()
                 return "Zoomed " .. focusedWindowName()
@@ -142,7 +153,7 @@ local hotCorners = {
         end,
         message = function(win)
             win = win or hs.window.focusedWindow()
-            if not win then return "" end
+            if not hasActionableWindow(win) then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
                 return "Zoom " .. windowName(win)
             end
@@ -155,7 +166,7 @@ local hotCorners = {
     bottomRight = {
         action = function()
             local window = hs.window.focusedWindow()
-            if not window or window:isFullScreen() then return "" end
+            if not hasActionableWindow(window) or window:isFullScreen() then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
                 local app = window:application()
                 if app then app:hide() end
@@ -169,7 +180,7 @@ local hotCorners = {
         end,
         message = function(win)
             win = win or hs.window.focusedWindow()
-            if not win or win:isFullScreen() then return "" end
+            if not hasActionableWindow(win) or win:isFullScreen() then return "" end
             if hs.eventtap.checkKeyboardModifiers().shift then
                 return "Hide " .. windowName(win)
             end
