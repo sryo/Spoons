@@ -110,6 +110,13 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 
 Note: Actions may vary depending on the active application. Default actions include scrolling down, scrolling up, and pressing Shift+Space.
 
+### TTTaps
+[`TTTaps.lua`](https://github.com/sryo/Spoons/blob/main/TTTaps.lua) - Shared trackpad gesture recognizer used by Palette and WindowScape.
+
+#### Gestures
+- N-finger tap: all N fingers land together, then release. Powers Palette's 5-finger trigger.
+- N+1 tap: a settled cluster of 2, 3, or 4 fingers with an extra tap to the left or right of the cluster's center. Powers WindowScape's window navigation.
+
 ### 🪄🖱️ TrackpadKeys
 [`TrackpadKeys.lua`](https://github.com/sryo/Spoons/blob/main/TrackpadKeys.lua) adds a row of keys to the top of the trackpad.
 

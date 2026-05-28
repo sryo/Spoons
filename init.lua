@@ -2,7 +2,7 @@ require("hs.ipc")
 --require "TrackpadKeys"
 --require "HyperlinkHijacker"
 require "Sssssssscroll"
-require "WindowScape"
+local WindowScape = require "WindowScape"
 require "FrameMaster"
 --require "EdgeHopper"
 --require "WanderFocus"
@@ -24,7 +24,20 @@ local Muse = require("Muse")
 
 local Palette = require("Palette")
 
-
+local TTTaps = require("TTTaps")
+TTTaps.onTap(5, function()
+    if not Palette.isOpen() then Palette.open() end
+end)
+TTTaps.onPlusOne(2, function(side)
+    WindowScape.focusAdjacent(side == "left" and "backward" or "forward")
+end)
+TTTaps.onPlusOne(3, function(side)
+    WindowScape.moveInOrder(side == "left" and "backward" or "forward")
+end)
+TTTaps.onPlusOne(4, function(side)
+    WindowScape.moveToAdjacentScreen(side == "left" and "previous" or "next")
+end)
+TTTaps.start()
 
 --local ChoiceBox = require("ChoiceBox")
 

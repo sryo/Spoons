@@ -7,7 +7,7 @@ local window = require("hs.window")
 local M = {}
 
 local cfg
-local core, tiler, fullscreen, outline, operations, gestures
+local core, tiler, fullscreen, outline, operations
 
 local drawActiveWindowOutline
 
@@ -18,7 +18,6 @@ function M.init(config, deps)
     fullscreen = deps.fullscreen
     outline    = deps.outline
     operations = deps.operations
-    gestures   = deps.gestures
 
     drawActiveWindowOutline = outline.draw
 end
@@ -115,10 +114,6 @@ function M.bind()
         cfg.debugLogging = not cfg.debugLogging
         print("[WindowScape] Debug logging: " .. (cfg.debugLogging and "ON" or "OFF"))
     end)
-
-    if cfg.enableTTTaps then
-        gestures.start()
-    end
 end
 
 return M

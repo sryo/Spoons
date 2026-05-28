@@ -14,7 +14,6 @@ local snapshots      = require("WindowScape.snapshots")
 local fullscreen     = require("WindowScape.fullscreen")
 local layouts        = require("WindowScape.layouts")
 local operations     = require("WindowScape.operations")
-local gestures       = require("WindowScape.gestures")
 local tiler          = require("WindowScape.tiler")
 local snapshotCreate = require("WindowScape.snapshot_create")
 local events         = require("WindowScape.events")
@@ -82,12 +81,6 @@ operations.init(cfg, {
     hideOutline      = function() outline.stopRefresh(); outline.hide() end,
 })
 
-gestures.init(cfg, {
-    focusAdjacentWindow        = operations.focusAdjacentWindow,
-    moveWindowInOrder          = operations.moveWindowInOrder,
-    moveWindowToAdjacentScreen = operations.moveWindowToAdjacentScreen,
-})
-
 -- The earlier inits captured these callback tables by reference, so backfilling
 -- now reaches the consumer modules. Required because of the dependency cycle
 -- between snapshots/fullscreen/tiler/snapshotCreate.
@@ -138,7 +131,6 @@ keybinds.init(cfg, {
     fullscreen = fullscreen,
     outline    = outline,
     operations = operations,
-    gestures   = gestures,
 })
 
 events.start()
@@ -147,17 +139,9 @@ tiler.tileWindows()
 fullscreen.updateButtonOverlays()
 
 core.warn("WindowScape initialized" ..
-    (cfg.enableAnimations and " [animations]" or "") ..
-    (cfg.enableTTTaps and " [TTTaps]" or ""))
+    (cfg.enableAnimations and " [animations]" or ""))
 
 -- Globals below are consumed by FrameMaster and the menubar.
-
-function restartWindowScapeTTTaps()
-    if cfg.enableTTTaps then
-        gestures.stop()
-        gestures.start()
-    end
-end
 
 function windowScapeToggleFullscreen()
     local win = window.focusedWindow()
@@ -201,18 +185,19 @@ local function cleanup()
     events.stop()
     animation.cancelAllAnimations()
     outline.cleanup()
-    if cfg.enableTTTaps then gestures.stop() end
     fullscreen.cleanup()
     core.warn("WindowScape cleanup complete")
 end
 
 return {
-    cleanup          = cleanup,
-    tileWindows      = tiler.tileWindows,
-    toggleFullscreen = windowScapeToggleFullscreen,
-    minimize         = windowScapeMinimize,
-    isFullscreen     = windowScapeIsFullscreen,
-    isMinimized      = windowScapeIsMinimized,
-    getConfig        = function() return cfg end,
-    restartTTTaps    = restartWindowScapeTTTaps,
+    cleanup              = cleanup,
+    tileWindows          = tiler.tileWindows,
+    toggleFullscreen     = windowScapeToggleFullscreen,
+    minimize             = windowScapeMinimize,
+    isFullscreen         = windowScapeIsFullscreen,
+    isMinimized          = windowScapeIsMinimized,
+    getConfig            = function() return cfg end,
+    focusAdjacent        = operations.focusAdjacentWindow,
+    moveInOrder          = operations.moveWindowInOrder,
+    moveToAdjacentScreen = operations.moveWindowToAdjacentScreen,
 }

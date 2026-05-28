@@ -8,7 +8,6 @@ local cfg = {
     collapsedWindowHeight = 12,  -- windows this height or less stack at bottom
     mods                  = { "ctrl", "cmd" },          -- window operation hotkeys
     screenMods            = { "ctrl", "cmd", "option" }, -- move window between screens
-    enableTTTaps          = true,
     -- true = apps in list are EXCLUDED from tiling (deny list)
     -- false = apps in list are INCLUDED for tiling (allow list)
     exclusionMode         = true,
