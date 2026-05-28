@@ -705,6 +705,7 @@ function M.start()
             if not (core.fullscreenState and core.fullscreenState.active) then
                 tiler.tileWindows()
             end
+            fullscreen.updateButtonOverlaysWithRetry()
         end)
     end)
     screenWatcher:start()
