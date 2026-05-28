@@ -1,22 +1,41 @@
--- Shared mutable session state for the Palette. One global instance, mutated
--- on each open/close. Modules import this and read/write directly.
+-- Shared session state. One stage at a time is active; advancing to verb /
+-- prep pushes the current frame onto state.history so escape / shift-tab can
+-- walk back.
 
 local M = {}
 
 M.open         = false
-M.query        = ""
-M.items        = {}    -- ranked items for the current query (after matcher)
-M.focusedIndex = 1     -- 1-based selection within state.items
-M.appName      = ""    -- frontmost app name at open time, for placeholder
-M.openedAt     = 0     -- timestamp of last open (for animation timing later)
+M.appName      = ""
+M.openedAt     = 0
+
+-- Current stage frame.
+M.stage        = "noun"   -- "noun" | "verb" | "prep"
+M.query        = ""        -- this stage's input buffer
+M.raw          = {}        -- unfiltered items for this stage
+M.items        = {}        -- ranked items for state.query
+M.focused      = 1         -- 1-based index into items
+
+-- Set when stage > "noun". The chosen noun for the verb stage.
+M.selectedItem = nil
+-- Set when stage == "prep". The chosen verb.
+M.selectedVerb = nil
+
+-- Stack of {stage, query, raw, items, focused, selectedItem, selectedVerb}
+-- pushed on advance, popped on back.
+M.history      = {}
 
 function M.reset()
     M.open         = false
-    M.query        = ""
-    M.items        = {}
-    M.focusedIndex = 1
     M.appName      = ""
     M.openedAt     = 0
+    M.stage        = "noun"
+    M.query        = ""
+    M.raw          = {}
+    M.items        = {}
+    M.focused      = 1
+    M.selectedItem = nil
+    M.selectedVerb = nil
+    M.history      = {}
 end
 
 return M

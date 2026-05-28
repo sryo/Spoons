@@ -17,6 +17,13 @@ handlers.menuitems = function(item)
     return ok, ok and nil or "menu item not selectable"
 end
 
+handlers.apps = function(item)
+    local p = item.payload or {}
+    local app = p.bundleID and hs.application.find(p.bundleID) or nil
+    if not app then return false, "app not found" end
+    return app:activate(), nil
+end
+
 function M.run(item, _prep)
     if not item then return false, "no item" end
     local h = handlers[item.source]

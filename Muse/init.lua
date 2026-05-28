@@ -1599,6 +1599,20 @@ function Muse:stop()
     close()
 end
 
+-- Programmatic open with pre-attached text context. Used by Palette's
+-- "Ask Muse" verb to hand an item into Muse without forcing the user to
+-- paste anything. Idempotent: re-calling while open just swaps the context.
+function Muse.openWithContext(contextText)
+    if state.open then
+        state.textContext = contextText
+        rebuildInput()
+        return
+    end
+    open({ continued = false })
+    state.textContext = contextText
+    rebuildInput()
+end
+
 autoloadBackends()
 reportBackendStatus()
 Muse:start()

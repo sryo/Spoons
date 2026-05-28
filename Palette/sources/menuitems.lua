@@ -128,6 +128,7 @@ local function collect(menuPath, path, list, items, depth)
                     source      = M.id,
                     payload     = { path = pathList, appName = nil }, -- appName filled in list()
                     defaultVerb = "activate",
+                    verbs       = { "activate", "askmuse" },
                 }
             end
         end
