@@ -10,6 +10,9 @@ M.needsPrep = false
 local handlers = {}
 
 handlers.menuitems = function(item)
+    if item.enabled == false then
+        return false, "menu item is disabled"
+    end
     local p = item.payload or {}
     local app = p.appName and hs.application.find(p.appName) or hs.application.frontmostApplication()
     if not app then return false, "app not found" end

@@ -1,19 +1,9 @@
 -- Menu items source. Walks the frontmost app's menu tree and emits one
--- Palette item per leaf. The shortcut-glyph renderer is lifted from
--- MenuMaestro (debugged against the macOS keycap quirks).
-
-local canvas = hs.canvas
+-- Palette item per leaf. The shortcut is exposed as a plain text accessory
+-- (right-aligned in the canvas) rather than a pre-rendered image.
 
 local M = {}
 M.id = "menuitems"
-
-local cfg = {
-    showShortcutImages = true,
-    iconSize           = 32,
-}
-
-local imageCache = {}
-local blankImage = nil
 
 local keyMap = {
     cmd = "⌘", ctrl = "⌃", alt = "⌥", shift = "⇧",
@@ -43,16 +33,6 @@ local keyMap = {
     ["\xE2\x87\xAA"] = "Caps",
 }
 
-local function estW(s)
-    local w = 0
-    for i = 1, #s do
-        local b = s:byte(i)
-        if b < 0x80 then w = w + 6
-        elseif b >= 0xC0 then w = w + 9 end
-    end
-    return w
-end
-
 local function shortcutToString(modifiers, shortcut)
     if not shortcut or shortcut == "" then return "" end
     local modStr = ""
@@ -60,51 +40,14 @@ local function shortcutToString(modifiers, shortcut)
         modStr = modStr .. (keyMap[m] or "")
     end
     local keyStr = keyMap[shortcut] or shortcut
-    if modStr ~= "" and keyStr ~= "" and estW(modStr .. keyStr) > 30 then
-        return modStr .. "\n" .. keyStr
-    end
     return modStr .. keyStr
-end
-
-local function getBlankImage()
-    if blankImage then return blankImage end
-    local c = canvas.new { x = 0, y = 0, w = cfg.iconSize, h = cfg.iconSize }
-    blankImage = c:imageFromCanvas()
-    c:delete()
-    return blankImage
-end
-
-local function shortcutToImage(modifiers, shortcut)
-    if not cfg.showShortcutImages then return nil end
-    local text = shortcutToString(modifiers, shortcut)
-    if not text or text == "" then return getBlankImage() end
-    if imageCache[text] then return imageCache[text] end
-
-    local textColor = { white = 0, alpha = 0.8 }
-    if hs.host.interfaceStyle() == "Dark" then
-        textColor = { white = 1, alpha = 0.8 }
-    end
-
-    local c = canvas.new { x = 0, y = 0, w = cfg.iconSize, h = cfg.iconSize }
-    c[1] = {
-        type          = "text",
-        text          = text,
-        frame         = { x = "0%", y = "12%", h = "100%", w = "100%" },
-        textAlignment = "right",
-        textColor     = textColor,
-        textSize      = 11,
-    }
-    local img = c:imageFromCanvas()
-    imageCache[text] = img
-    c:delete()
-    return img
 end
 
 local function collect(menuPath, path, list, items, depth)
     depth = depth or 0
     if depth > 10 or not list then return end
     for _, item in pairs(list) do
-        if item.AXEnabled and item.AXTitle and item.AXTitle ~= "" then
+        if item.AXTitle and item.AXTitle ~= "" then
             local title       = item.AXTitle
             local currentPath = menuPath and (menuPath .. " > " .. title) or title
             local pathList    = {}
@@ -119,12 +62,18 @@ local function collect(menuPath, path, list, items, depth)
                         modifiers[#modifiers + 1] = m
                     end
                 end
-                local shortcut = item.AXMenuItemCmdChar or ""
+                local shortcut  = item.AXMenuItemCmdChar or ""
+                local accessory = shortcutToString(modifiers, shortcut)
+                local mark      = item.AXMenuItemMarkChar
+                if mark == "" then mark = nil end
                 items[#items + 1] = {
                     id          = currentPath,
                     title       = title,
                     subtitle    = currentPath,
-                    icon        = shortcutToImage(modifiers, shortcut),
+                    icon        = nil,
+                    accessory   = accessory ~= "" and accessory or nil,
+                    enabled     = item.AXEnabled and true or false,
+                    markChar    = mark,
                     source      = M.id,
                     payload     = { path = pathList, appName = nil }, -- appName filled in list()
                     defaultVerb = "activate",
@@ -145,6 +94,9 @@ function M.list()
     local appName = app:name()
     for _, it in ipairs(items) do
         it.payload.appName = appName
+        -- Per-app learning: the same "File > Save" in Safari and in Terminal
+        -- have separate usage counts so each app ranks its own frequents.
+        it.id = appName .. " :: " .. it.id
     end
     return items, appName
 end

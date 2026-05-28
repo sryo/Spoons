@@ -37,10 +37,12 @@ Test Lua syntax before reloading:
 - Uses AppleScript via `hs.task` for reopen dialogs
 - Has a `useWindowScape` flag for WindowScape integration
 
-**MenuMaestro.lua** - Fuzzy menu item search
-- Learns usage patterns and prioritizes frequent actions
-- Stores usage data via `hs.settings`
-- Activated via keyboard shortcut or 5-finger trackpad tap
+**Palette/** - Quicksilver-style command palette
+- Two-stage selection (noun → verb): pick an item, then Tab for a verb or Enter for the default
+- Sources: frontmost-app menu items (with shortcut glyphs, ✓ / • marks, disabled state), running apps with per-app verbs (Activate / Hide / Quit / Ask Muse)
+- Bare digits 1–9 quick-pick visible rows; ⌘1–⌘9 fire non-default verbs; ⌘⌫ forgets history
+- Empty-result Enter ships the query to Muse via `Muse.openWithContext`
+- Trigger: `Ctrl+Cmd+Space` or 5-finger trackpad tap; card anchors at the mouse
 
 **CloudPad.lua** - Phone as keyboard/trackpad
 - Runs local HTTP server on port 1984

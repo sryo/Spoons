@@ -18,6 +18,9 @@ local SPECIAL = {
     [53]  = "escape",
     [51]  = "backspace",
     [48]  = "tab",
+    [115] = "home",
+    [119] = "end_",
+    [117] = "fwddel", -- Fn+Delete / Forward Delete
 }
 
 local tap      = nil
@@ -37,7 +40,29 @@ function M.start(callbacks)
             return true
         end
 
-        -- Don't treat cmd / ctrl combinations as character input (they're shortcuts).
+        -- Cmd+Backspace is a destructive shortcut (Palette uses it to forget
+        -- the focused item from history). Keycode 51 is handled above via the
+        -- "backspace" handler — fall through; the handler can inspect flags.
+
+        -- Cmd+digit is a quick-pick into the focused item's verb list.
+        if flags.cmd and not flags.ctrl and not flags.alt then
+            local c = event:getCharacters() or ""
+            if #c == 1 and c:match("[1-9]") then
+                if handlers.verbQuickPick then handlers.verbQuickPick(tonumber(c)) end
+                return true
+            end
+        end
+
+        -- Bare digit is a quick-pick into the visible item list (Nth visible row).
+        if not flags.cmd and not flags.ctrl and not flags.alt then
+            local c = event:getCharacters() or ""
+            if #c == 1 and c:match("[1-9]") then
+                if handlers.itemQuickPick then handlers.itemQuickPick(tonumber(c)) end
+                return true
+            end
+        end
+
+        -- Don't treat other cmd / ctrl combinations as character input (they're shortcuts).
         if flags.cmd or flags.ctrl then return true end
 
         local char = event:getCharacters() -- respects shift; capital letters come through correctly

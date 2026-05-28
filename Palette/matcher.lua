@@ -28,12 +28,14 @@ function M.rank(items, query)
         local hit = (query == "") or (matchVal > 0) or (tScore == 0 and sScore == 0)
         if hit then
             local boost = recents.score(item.source, item.id)
-            -- For empty query, recency dominates. For non-empty, recency is a tiebreaker.
+            item.fromHistory = boost > 0
+            -- For empty query, recency dominates. For non-empty, recency is a
+            -- strong tiebreaker (boost / 10 keeps recent items near the top).
             local total
             if query == "" then
                 total = boost
             else
-                total = matchVal + boost / 1000
+                total = matchVal + boost / 10
             end
             matches[#matches + 1] = { item = item, score = total }
         end

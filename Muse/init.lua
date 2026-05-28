@@ -460,11 +460,14 @@ local function pasteText(text)
     timer.doAfter(cfg.timings.pasteRestoreS, function() if saved then pb.setContents(saved) end end)
 end
 
+local textbuf = require("Palette.textbuffer")
+
 local state = {
     open         = false,
     canv         = nil,
     inputTap     = nil,
     buffer       = "",
+    caret        = 0,
     response     = "",
     history      = {},
     attachments  = {},
@@ -856,7 +859,11 @@ local function wrapLines(content, wrapW, fontName, fontSize, probeIdx)
     return lines, lineH, widthOf
 end
 
--- Place the text cursor at the visual end of the buffer's wrapped text.
+-- Place the text cursor at the visual location of state.caret inside the
+-- wrapped buffer. The caret is a 1-based logical char index; we wrap the
+-- prefix [1..caret] and put the cursor at the end of that prefix's last
+-- wrapped line, which naturally handles both the end-of-buffer case and
+-- arbitrary midpoints.
 local function rebuildCursor(fontSize)
     if not state.canv then return end
     local inputFrame = state.canv[2].frame
@@ -865,11 +872,32 @@ local function rebuildCursor(fontSize)
 
     local x, y, lineH
     if state.buffer ~= "" then
-        local lines, lh, widthOf = wrapLines(state.buffer, wrapW, cfg.font, fontSize, 2)
-        lineH = lh
-        local lastVisible = lines[#lines] or ""
-        x = inputFrame.x + widthOf(lastVisible)
-        y = inputFrame.y + (#lines - 1) * lineH
+        local n     = utf8.len(state.buffer) or 0
+        local caret = state.caret or n
+        if caret < 0 then caret = 0 end
+        if caret > n then caret = n end
+        local prefixByteEnd
+        if caret <= 0 then
+            prefixByteEnd = 0
+        elseif caret >= n then
+            prefixByteEnd = #state.buffer
+        else
+            prefixByteEnd = utf8.offset(state.buffer, caret + 1) - 1
+        end
+        local prefix = state.buffer:sub(1, prefixByteEnd)
+
+        if prefix == "" then
+            local probeLines, lh = wrapLines("M", wrapW, cfg.font, fontSize, 2)
+            lineH = lh
+            x = inputFrame.x
+            y = inputFrame.y
+        else
+            local lines, lh, widthOf = wrapLines(prefix, wrapW, cfg.font, fontSize, 2)
+            lineH = lh
+            local lastVisible = lines[#lines] or ""
+            x = inputFrame.x + widthOf(lastVisible)
+            y = inputFrame.y + (#lines - 1) * lineH
+        end
         local maxY = inputFrame.y + math.max(0, inputFrame.h - lineH)
         if y > maxY then y = maxY end
     else
@@ -1279,10 +1307,13 @@ end
 -- NSEvent reports these as Private-Use Area characters (F700–F7FF) whose UTF-8
 -- encoding starts with 0xEF (239) — that passes the b >= 32 printable filter
 -- below, so without an explicit denylist arrow keys appear in the buffer.
+-- Keys to swallow so they never insert as text. Arrows, Home/End, and
+-- forwarddelete are handled below as caret navigation; up/down/page* stay
+-- here since the card has no vertical caret movement or transcript scroll.
 local NON_TEXT_KEYS = {
-    up = true, down = true, left = true, right = true,
-    pageup = true, pagedown = true, home = true, ["end"] = true,
-    forwarddelete = true, help = true,
+    up = true, down = true,
+    pageup = true, pagedown = true,
+    help = true,
     f1 = true, f2 = true, f3 = true, f4 = true, f5 = true, f6 = true,
     f7 = true, f8 = true, f9 = true, f10 = true, f11 = true, f12 = true,
     f13 = true, f14 = true, f15 = true, f16 = true, f17 = true, f18 = true,
@@ -1345,10 +1376,52 @@ local function onInputKey(event)
     end
 
     if key == "delete" then
-        state.buffer = state.buffer:sub(1, -2)
-        rebuildInput()
-        startCursorBlink()
-        updateReadyState()
+        if state.caret > 0 then
+            state.buffer, state.caret = textbuf.deleteBefore(state.buffer, state.caret)
+            rebuildInput()
+            startCursorBlink()
+            updateReadyState()
+        end
+        return true
+    end
+
+    if key == "forwarddelete" then
+        if state.caret < (utf8.len(state.buffer) or 0) then
+            state.buffer, state.caret = textbuf.deleteAfter(state.buffer, state.caret)
+            rebuildInput()
+            startCursorBlink()
+            updateReadyState()
+        end
+        return true
+    end
+
+    local function caretMode()
+        if flags.cmd then return "edge" end
+        if flags.alt then return "word" end
+        return "char"
+    end
+
+    if key == "left" then
+        state.caret = textbuf.moveLeft(state.buffer, state.caret, caretMode())
+        rebuildCursor(); startCursorBlink()
+        return true
+    end
+
+    if key == "right" then
+        state.caret = textbuf.moveRight(state.buffer, state.caret, caretMode())
+        rebuildCursor(); startCursorBlink()
+        return true
+    end
+
+    if key == "home" then
+        state.caret = 0
+        rebuildCursor(); startCursorBlink()
+        return true
+    end
+
+    if key == "end" then
+        state.caret = utf8.len(state.buffer) or 0
+        rebuildCursor(); startCursorBlink()
         return true
     end
 
@@ -1356,7 +1429,7 @@ local function onInputKey(event)
     if chars and #chars > 0 and not flags.cmd and not flags.ctrl then
         local b = chars:byte(1)
         if b and b >= 32 and b ~= 127 then
-            state.buffer = state.buffer .. chars
+            state.buffer, state.caret = textbuf.insert(state.buffer, state.caret, chars)
             rebuildInput()
             startCursorBlink()
             updateReadyState()
@@ -1381,6 +1454,7 @@ local function open(opts)
 
     state.open               = true
     state.buffer             = ""
+    state.caret              = 0
     state.response           = ""
     state.attachments        = {}
     state.textContext        = nil
@@ -1516,6 +1590,7 @@ submitPrompt = function()
     state.pendingPrompt          = userText ~= "" and userText or finalPrompt
     state.lastSubmittedPrompt = userText
     state.buffer              = ""
+    state.caret               = 0
     rebuildInput()
     rebuildResponse()
     setStatus("thinking")
@@ -1536,6 +1611,7 @@ submitPrompt = function()
         state.response   = ""
         state.pendingPrompt = nil
         state.buffer     = ""
+        state.caret      = 0
         rebuildInput()
         rebuildResponse()
     end
@@ -1602,7 +1678,10 @@ end
 -- Programmatic open with pre-attached text context. Used by Palette's
 -- "Ask Muse" verb to hand an item into Muse without forcing the user to
 -- paste anything. Idempotent: re-calling while open just swaps the context.
-function Muse.openWithContext(contextText)
+-- opts may carry { x, y } to override the default near-caret placement
+-- (Palette passes its own frame so Muse appears in the same spot).
+function Muse.openWithContext(contextText, opts)
+    opts = opts or {}
     if state.open then
         state.textContext = contextText
         rebuildInput()
@@ -1611,6 +1690,11 @@ function Muse.openWithContext(contextText)
     open({ continued = false })
     state.textContext = contextText
     rebuildInput()
+    if opts.x and opts.y and state.canv then
+        state.anchorX  = opts.x
+        state.inputTop = opts.y
+        state.canv:topLeft({ x = opts.x, y = opts.y })
+    end
 end
 
 autoloadBackends()

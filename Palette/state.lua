@@ -11,9 +11,11 @@ M.openedAt     = 0
 -- Current stage frame.
 M.stage        = "noun"   -- "noun" | "verb" | "prep"
 M.query        = ""        -- this stage's input buffer
+M.caret        = 0         -- caret position inside query (0..utf8.len(query))
 M.raw          = {}        -- unfiltered items for this stage
 M.items        = {}        -- ranked items for state.query
 M.focused      = 1         -- 1-based index into items
+M.scrollOffset = 0         -- how many items at the top are scrolled off-screen
 
 -- Set when stage > "noun". The chosen noun for the verb stage.
 M.selectedItem = nil
@@ -30,9 +32,11 @@ function M.reset()
     M.openedAt     = 0
     M.stage        = "noun"
     M.query        = ""
+    M.caret        = 0
     M.raw          = {}
     M.items        = {}
     M.focused      = 1
+    M.scrollOffset = 0
     M.selectedItem = nil
     M.selectedVerb = nil
     M.history      = {}

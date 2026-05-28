@@ -79,15 +79,21 @@ These Hammerspoon scripts are designed to enhance the usability and productivity
 | Copy link to clipboard         | Select "Copy to Clipboard" from the list |
 
 
-### 🗂️🔍 MenuMaestro
-[`MenuMaestro.lua`](https://github.com/sryo/Spoons/blob/main/MenuMaestro.lua) - Easily access menu items and shortcuts with a visually appealing interface.
+### 🎨 Palette
+[`Palette/`](https://github.com/sryo/Spoons/blob/main/Palette) - Quicksilver-style command palette. Two-stage selection over the frontmost app's menu items and running apps; Ask Muse fallback when nothing matches.
 
 #### How to Use
 
 | Action               | Shortcut                                  |
 |----------------------|---------------------------------------------|
-| Activate menu chooser | <kbd>^ CTRL</kbd><kbd>⌥ ALT</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
-| Search and select menu item    | Type and choose with keyboard/mouse |
+| Open the palette | <kbd>^ CTRL</kbd><kbd>⌘ CMD</kbd><kbd>SPACE</kbd> or tap with 5 fingers on trackpad |
+| Filter results | Type — fuzzy match across title and path |
+| Pick a visible result | Bare digit <kbd>1</kbd>–<kbd>9</kbd> |
+| Run default action | <kbd>↩</kbd> |
+| Pick a non-default verb | <kbd>⌘</kbd><kbd>1</kbd>–<kbd>9</kbd>, or <kbd>⇥</kbd> to browse verbs |
+| Forget the focused item from history | <kbd>⌘</kbd><kbd>⌫</kbd> |
+| Ask Muse with the current query | <kbd>↩</kbd> when no results match |
+| Close the palette | <kbd>⎋</kbd> or click outside |
 
 
 ![sssssssscroll](https://github.com/user-attachments/assets/fa3450ea-c3ef-4f77-bf99-958cfb570fc9)

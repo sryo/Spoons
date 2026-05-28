@@ -1,5 +1,4 @@
 -- Per-source frequency + recency learning, persisted via hs.settings.
--- Mirrors MenuMaestro's usage table generalised by source id.
 -- Schema: data[sourceId][itemId] = { count, lastUsed }
 
 local M = {}
@@ -37,6 +36,16 @@ function M.score(sourceId, itemId)
     if not entry then return 0 end
     local recency = os.time() - entry.lastUsed
     return entry.count * 1000000 / (recency + 1)
+end
+
+function M.forget(sourceId, itemId)
+    if not sourceId or not itemId then return end
+    load()
+    if data[sourceId] and data[sourceId][itemId] then
+        data[sourceId][itemId] = nil
+        if next(data[sourceId]) == nil then data[sourceId] = nil end
+        save()
+    end
 end
 
 function M.cleanup()
