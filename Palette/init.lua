@@ -17,17 +17,29 @@ local textbuf  = require("Palette.textbuffer")
 local menuitems = require("Palette.sources.menuitems")
 local apps      = require("Palette.sources.apps")
 
-local verbs = {
-    activate = require("Palette.verbs.activate"),
-    hide     = require("Palette.verbs.hide"),
-    quit     = require("Palette.verbs.quit"),
-    askmuse  = require("Palette.verbs.askmuse"),
-}
+-- Auto-load every *.lua under Palette/verbs/ and key by the module's own id.
+-- pcall'd so a broken verb file degrades to "this verb is missing" instead of
+-- preventing the palette from loading at all.
+local verbs = {}
+do
+    local dir = hs.configdir .. "/Palette/verbs"
+    for name in hs.fs.dir(dir) do
+        local stem = name:match("^(.+)%.lua$")
+        if stem then
+            local ok, mod = pcall(require, "Palette.verbs." .. stem)
+            if ok and type(mod) == "table" and mod.id then
+                verbs[mod.id] = mod
+            else
+                hs.printf("Palette: skipped verb %s (%s)", name,
+                    ok and "missing .id" or tostring(mod))
+            end
+        end
+    end
+end
 
 Palette.config = {
-    hotkey                = { { "ctrl", "cmd" }, "space" },
-    sources               = { menuitems, apps },
-    numberOfFingersToOpen = 5,  -- 5-finger trackpad tap. Set to 0 to disable.
+    hotkey  = { { "ctrl", "cmd" }, "space" },
+    sources = { menuitems, apps },
 }
 
 local dismissTap = nil
@@ -384,7 +396,5 @@ Palette.isOpen  = function() return state.open end
 Palette.verbs   = verbs
 Palette._state  = state
 Palette._hotkey = hotkeyBinding
-
-require("Palette.gesture").start(Palette.config, Palette)
 
 return Palette
