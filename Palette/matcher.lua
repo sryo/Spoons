@@ -21,24 +21,29 @@ end
 
 function M.rank(items, query)
     local matches = {}
+    local emptyQuery = query == ""
     for _, item in ipairs(items) do
-        local tScore = matchScore(query, item.title)
-        local sScore = matchScore(query, item.subtitle or "")
-        local matchVal = math.max(tScore, sScore * 0.6)
-        local hit = (query == "") or (matchVal > 0) or (tScore == 0 and sScore == 0)
-        if hit then
-            local boost = recents.score(item.source, item.id)
-            item.fromHistory = boost > 0
-            -- For empty query, recency dominates. For non-empty, recency is a
-            -- strong tiebreaker (boost / 10 keeps recent items near the top).
-            local total
-            if query == "" then
-                total = boost
-            else
-                total = matchVal + boost / 10
+        if emptyQuery and item.hideOnEmptyQuery then goto continue end
+        do
+            local tScore = matchScore(query, item.title)
+            local sScore = matchScore(query, item.subtitle or "")
+            local matchVal = math.max(tScore, sScore * 0.6)
+            local hit = emptyQuery or (matchVal > 0) or (tScore == 0 and sScore == 0)
+            if hit then
+                local boost = recents.score(item.source, item.id)
+                item.fromHistory = boost > 0
+                -- For empty query, recency dominates. For non-empty, recency is a
+                -- strong tiebreaker (boost / 10 keeps recent items near the top).
+                local total
+                if emptyQuery then
+                    total = boost
+                else
+                    total = matchVal + boost / 10
+                end
+                matches[#matches + 1] = { item = item, score = total }
             end
-            matches[#matches + 1] = { item = item, score = total }
         end
+        ::continue::
     end
     table.sort(matches, function(a, b) return a.score > b.score end)
     local out = {}

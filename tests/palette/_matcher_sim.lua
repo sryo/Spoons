@@ -18,6 +18,10 @@ local function item(id, title, subtitle)
     return { id = id, title = title, subtitle = subtitle or "", source = "test" }
 end
 
+local function hiddenItem(id, title)
+    return { id = id, title = title, subtitle = "", source = "test", hideOnEmptyQuery = true }
+end
+
 local results = {}
 
 local function ids(list)
@@ -86,6 +90,18 @@ scenario("earlier substring position scores higher",
     { item("a", "xxxxxFoo"), item("b", "Foobar"), item("c", "xxFoo") },
     "foo",
     "b,c,a"
+)
+
+scenario("hideOnEmptyQuery items are skipped when query is empty",
+    { item("a", "Visible"), hiddenItem("b", "Hidden"), item("c", "Visible 2") },
+    "",
+    "a,c"
+)
+
+scenario("hideOnEmptyQuery items appear once the user types",
+    { item("a", "Apple"), hiddenItem("b", "Banana") },
+    "ban",
+    "b"
 )
 
 -- ---------- Cleanup ----------
