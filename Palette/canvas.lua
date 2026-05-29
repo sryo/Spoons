@@ -30,6 +30,7 @@ local cfg = {
     strokeWidth       = 2,
 
     font              = ".AppleSystemUIFontMedium",
+    boldFont          = ".AppleSystemUIFontBold",
     inputFontSize     = 20,
     inputMinFontSize  = 12,
     titleFontSize     = 16,
@@ -275,6 +276,22 @@ local function styled(text, color, size, lineBreak)
     })
 end
 
+-- Bolds the glyphs at the 1-based character indices in `positions`, leaving
+-- the rest at the regular weight. Used to highlight fuzzy match hits in
+-- result row titles and the right-pane preview title.
+local function styledWithMatches(text, color, size, lineBreak, positions)
+    local st = styled(text, color, size, lineBreak)
+    if not positions or #positions == 0 or not text or text == "" then return st end
+    local boldAttrs = { font = { name = cfg.boldFont, size = size } }
+    local len = #text
+    for _, pos in ipairs(positions) do
+        if pos >= 1 and pos <= len then
+            st = st:setStyle(boldAttrs, pos, pos)
+        end
+    end
+    return st
+end
+
 local function placeholderFor(state)
     if state.stage == "noun" then
         return state.appName ~= "" and ("Search " .. state.appName) or "Search…"
@@ -502,7 +519,8 @@ local function drawLeftBox(state)
         local titleColor = (it.enabled == false) and C.muted or C.fg
         card[#card + 1] = {
             type  = "text",
-            text  = styled(it.title or "", titleColor, cfg.titleFontSize, "truncateMiddle"),
+            text  = styledWithMatches(it.title or "", titleColor, cfg.titleFontSize,
+                "truncateMiddle", it.matchPositions),
             frame = { x = textLeft, y = rowY + 5, w = textW, h = 22 },
         }
         if it.subtitle and it.subtitle ~= "" then
@@ -583,11 +601,12 @@ local function drawRightBox(state, hotkeyList)
         cursorY = cursorY + 8
     end
 
-    -- Title only — the subtitle (menu path / window count / etc) is already
+    -- Title only. The subtitle (menu path / window count / etc) is already
     -- shown in the left row, no need to repeat it.
     card[#card + 1] = {
         type          = "text",
-        text          = styled(focusedItem.title or "", C.fg, cfg.previewTitleSize),
+        text          = styledWithMatches(focusedItem.title or "", C.fg,
+            cfg.previewTitleSize, nil, focusedItem.matchPositions),
         textAlignment = "center",
         frame         = { x = innerX, y = cursorY, w = innerW, h = 22 },
     }

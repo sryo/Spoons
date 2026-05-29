@@ -48,6 +48,13 @@ function M.forget(sourceId, itemId)
     end
 end
 
+-- Returns the live { itemId = entry } table for a given source. Mutating it
+-- won't persist; treat as read-only.
+function M.entries(sourceId)
+    load()
+    return data[sourceId] or {}
+end
+
 function M.cleanup()
     load()
     local cutoff = os.time() - (cfg.daysToRemember * 86400)

@@ -17,6 +17,9 @@ local textbuf  = require("Palette.textbuffer")
 local menuitems     = require("Palette.sources.menuitems")
 local apps          = require("Palette.sources.apps")
 local installedapps = require("Palette.sources.installedapps")
+local calc          = require("Palette.sources.calc")
+local shellrunner   = require("Palette.sources.shellrunner")
+local files         = require("Palette.sources.files")
 
 -- Auto-load every *.lua under Palette/verbs/ and key by the module's own id.
 -- pcall'd so a broken verb file degrades to "this verb is missing" instead of
@@ -40,7 +43,7 @@ end
 
 Palette.config = {
     hotkey  = { { "ctrl", "cmd" }, "space" },
-    sources = { menuitems, apps, installedapps },
+    sources = { menuitems, apps, installedapps, calc, shellrunner, files },
 }
 
 local dismissTap = nil
@@ -98,8 +101,27 @@ local function draw()
     canvas.draw(state, hotkeyListForFocused())
 end
 
+-- Dynamic sources (.dynamic = true) emit synthetic items per query and are
+-- re-evaluated on every refresh. Static sources are scanned once on open and
+-- live in state.raw. Both pools merge before ranking so dynamic results
+-- compete on the same scale as the rest.
+local function buildPool()
+    if state.stage ~= "noun" then return state.raw end
+    local pool = {}
+    for i = 1, #state.raw do pool[#pool + 1] = state.raw[i] end
+    for _, src in ipairs(Palette.config.sources) do
+        if src.dynamic then
+            local ok, items = pcall(src.list, state.query)
+            if ok and items then
+                for _, it in ipairs(items) do pool[#pool + 1] = it end
+            end
+        end
+    end
+    return pool
+end
+
 local function refresh()
-    state.items = matcher.rank(state.raw, state.query)
+    state.items = matcher.rank(buildPool(), state.query)
     state.focused = math.min(math.max(1, state.focused), math.max(1, #state.items))
     clampScroll()
     draw()
@@ -192,6 +214,25 @@ local function runVerb(verb, item)
     -- Snapshot the Palette's frame BEFORE close() destroys the canvas, so verbs
     -- that summon another overlay (Ask Muse) can position it at the same spot.
     local context = { paletteFrame = canvas.frame() }
+    -- keepOpen verbs run inline and may return a directive table that mutates
+    -- the live palette state (e.g. enter directory rewrites the query).
+    if verb.keepOpen then
+        local ok, err, directive = verb.run(item, nil, context)
+        if ok then
+            recents.record(item.source, item.id)
+            recents.record("verb:" .. item.source, verb.id)
+        elseif err then
+            hs.alert.show("Palette: " .. tostring(err))
+        end
+        if directive and directive.rewriteQuery then
+            state.query        = directive.rewriteQuery
+            state.caret        = textbuf.charLen(state.query)
+            state.focused      = 1
+            state.scrollOffset = 0
+            refresh()
+        end
+        return
+    end
     close()
     hs.timer.doAfter(0.02, function()
         local ok, err = verb.run(item, nil, context)
@@ -316,10 +357,12 @@ local function open()
 
     local raw = {}
     for _, src in ipairs(Palette.config.sources) do
-        local ok, items, name = pcall(src.list)
-        if ok and items then
-            if name and state.appName == "" then state.appName = name end
-            for _, it in ipairs(items) do raw[#raw + 1] = it end
+        if not src.dynamic then
+            local ok, items, name = pcall(src.list)
+            if ok and items then
+                if name and state.appName == "" then state.appName = name end
+                for _, it in ipairs(items) do raw[#raw + 1] = it end
+            end
         end
     end
     state.stage        = "noun"
@@ -405,9 +448,29 @@ local function open()
             local flags = event and event:getFlags() or {}
             if flags.shift then
                 if not popStage() then close() end
-            else
-                if state.stage == "noun" then advanceFromNoun() end
+                return
             end
+            if state.stage ~= "noun" then return end
+            -- Files-source items autocomplete the query on Tab: rewrite to the
+            -- focused row's full path, with a trailing slash on directories so
+            -- the listing immediately descends.
+            local item = state.items[state.focused]
+            if item and item.source == files.id
+                and item.payload and item.payload.path then
+                local path = item.payload.path
+                local newQuery = files.abbreviatePath(path)
+                if item.payload.isDir then
+                    newQuery = newQuery .. "/"
+                    recents.record(files.id, path)
+                end
+                state.query        = newQuery
+                state.caret        = textbuf.charLen(state.query)
+                state.focused      = 1
+                state.scrollOffset = 0
+                refresh()
+                return
+            end
+            advanceFromNoun()
         end,
         escape = function()
             if not popStage() then close() end
