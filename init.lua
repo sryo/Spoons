@@ -28,14 +28,26 @@ local TTTaps = require("TTTaps")
 TTTaps.onTap(5, function()
     if not Palette.isOpen() then Palette.open() end
 end)
-TTTaps.onPlusOne(2, function(side)
-    WindowScape.focusAdjacent(side == "left" and "backward" or "forward")
-end)
-TTTaps.onPlusOne(3, function(side)
-    WindowScape.moveInOrder(side == "left" and "backward" or "forward")
-end)
 TTTaps.onPlusOne(4, function(side)
     WindowScape.moveToAdjacentScreen(side == "left" and "previous" or "next")
+end)
+TTTaps.onDrag(3, function(direction)
+    if direction == "left" then
+        WindowScape.focusAdjacent("backward")
+    elseif direction == "right" then
+        WindowScape.focusAdjacent("forward")
+    end
+end)
+TTTaps.onDrag(4, function(direction)
+    if direction == "left" then
+        WindowScape.moveInOrder("backward")
+    elseif direction == "right" then
+        WindowScape.moveInOrder("forward")
+    elseif direction == "up" then
+        WindowScape.toggleFullscreen()
+    elseif direction == "down" then
+        WindowScape.minimize()
+    end
 end)
 TTTaps.start()
 

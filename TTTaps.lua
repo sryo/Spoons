@@ -1,10 +1,15 @@
 -- TTTaps: shared trackpad gesture recognizer.
 --
--- Two recognizers feed off one hs.eventtap subscription:
---   TTTaps.onTap(n, fn)         fn() when exactly n fingers land and one lifts.
+-- Three recognizers feed off one hs.eventtap subscription:
+--   TTTaps.onTap(n, fn)            fn() when exactly n fingers land and one lifts.
 --   TTTaps.onPlusOne(cluster, fn)  fn(side) when a settled 2/3/4 cluster gets a
 --                                  +1 tap. side is "left" or "right" based on
 --                                  the extra finger's normalized x.
+--   TTTaps.onDrag(n, fn)           fn(direction) when n fingers slide together
+--                                  past a commit threshold. direction is one
+--                                  of "left", "right", "up", "down". Fires
+--                                  once per drag; further motion is ignored
+--                                  until all fingers lift.
 --
 -- Lifecycle: TTTaps.start / stop / check / restart. Register handlers before
 -- start; re-registration is idempotent (last fn wins per n / cluster).
@@ -15,15 +20,18 @@ local timer    = require("hs.timer")
 local M = {}
 
 M.config = {
-    gestureStartThreshold = 0.15, -- Cluster is still settling for this long after a finger arrives
-    ambiguousInitWindow   = 0.20, -- 3+ landed together; a lift within this window is treated as the +1
-    dragThreshold         = 0.15, -- Normalized distance: cluster finger moved this far means drag, taint dispatch
-    phantomLiftWindow     = 0.20, -- A touchCount=0 within this much of the last real touch is treated as phantom
-    staleStateWindow      = 0.30, -- A non-zero event after this much silence with a pending phantom resets state
-    debugLog              = false,
+    gestureStartThreshold   = 0.15, -- Cluster is still settling for this long after a finger arrives
+    ambiguousInitWindow     = 0.20, -- 3+ landed together; a lift within this window is treated as the +1
+    dragThreshold           = 0.15, -- Normalized distance: cluster finger moved this far means drag, taint dispatch
+    phantomLiftWindow       = 0.20, -- A touchCount=0 within this much of the last real touch is treated as phantom
+    staleStateWindow        = 0.30, -- A non-zero event after this much silence with a pending phantom resets state
+    dragArmThreshold        = 0.02, -- Centroid travel on the dominant axis that arms direction lock
+    dragCommitThreshold     = 0.12, -- Locked-axis cumulative travel that fires onDrag once
+    directionFlipMultiplier = 2.0,  -- Orthogonal axis must exceed armThreshold * this before lock flips
+    debugLog                = false,
 }
 
-local handlers = { tap = {}, plusOne = {} }
+local handlers = { tap = {}, plusOne = {}, drag = {} }
 local clusterCap = 4
 
 local tap = nil
@@ -40,6 +48,9 @@ local pendingPhantomLift     = false
 local peakCount              = 0
 local plusOneFired           = false
 local onTapFiredThisCycle    = false
+local dragArmed              = false
+local dragDirection          = nil
+local dragFired              = false
 
 local function resetState()
     initialFingerCount     = 0
@@ -52,6 +63,9 @@ local function resetState()
     peakCount              = 0
     plusOneFired           = false
     onTapFiredThisCycle    = false
+    dragArmed              = false
+    dragDirection          = nil
+    dragFired              = false
 end
 
 local function snapshotInitial(touches, touchCount)
@@ -239,6 +253,73 @@ local function onGesture(event)
         ambiguousInitTime = nil
     end
 
+    if not dragFired and handlers.drag[initialFingerCount] then
+        -- Average per-finger delta, then require fingers to agree on the sign
+        -- of motion on the candidate axis. Centroid alone is too forgiving
+        -- (pinches cancel to zero but mixed signs would still pass a magnitude
+        -- check on a wobbly cluster). A small noise floor on the per-finger
+        -- sign tally keeps one slow-moving finger from killing a real drag.
+        local signNoise = 0.005
+        local sumDx, sumDy, count = 0, 0, 0
+        local posX, negX, posY, negY = 0, 0, 0, 0
+        for i = 1, touchCount do
+            local id = touches[i].identity
+            local initPos = initialTouchPositions[id]
+            if initPos then
+                local dx = touches[i].normalizedPosition.x - initPos.x
+                local dy = touches[i].normalizedPosition.y - initPos.y
+                sumDx = sumDx + dx
+                sumDy = sumDy + dy
+                count = count + 1
+                if dx > signNoise then posX = posX + 1
+                elseif dx < -signNoise then negX = negX + 1 end
+                if dy > signNoise then posY = posY + 1
+                elseif dy < -signNoise then negY = negY + 1 end
+            end
+        end
+        if count > 0 then
+            local avgDx  = sumDx / count
+            local avgDy  = sumDy / count
+            local absX   = math.abs(avgDx)
+            local absY   = math.abs(avgDy)
+            local agreeX = (posX == 0) or (negX == 0)
+            local agreeY = (posY == 0) or (negY == 0)
+            if not dragArmed then
+                if absX >= M.config.dragArmThreshold and absX > absY and agreeX then
+                    dragArmed     = true
+                    dragDirection = avgDx > 0 and "right" or "left"
+                elseif absY >= M.config.dragArmThreshold and absY > absX and agreeY then
+                    dragArmed     = true
+                    dragDirection = avgDy > 0 and "up" or "down"
+                end
+            else
+                local flipThresh = M.config.dragArmThreshold * M.config.directionFlipMultiplier
+                if dragDirection == "left" or dragDirection == "right" then
+                    if absY > flipThresh and absY > absX and agreeY then
+                        dragDirection = avgDy > 0 and "up" or "down"
+                    end
+                else
+                    if absX > flipThresh and absX > absY and agreeX then
+                        dragDirection = avgDx > 0 and "right" or "left"
+                    end
+                end
+            end
+            if dragArmed then
+                local onAxis = (dragDirection == "left" or dragDirection == "right") and absX or absY
+                if onAxis >= M.config.dragCommitThreshold then
+                    if M.config.debugLog then
+                        print(string.format("[tttaps]   >>> DRAG cluster=%d dir=%s (dx=%.3f dy=%.3f)",
+                            initialFingerCount, dragDirection, avgDx, avgDy))
+                    end
+                    dragFired      = true
+                    gestureDragged = true
+                    local fn = handlers.drag[initialFingerCount]
+                    if fn then fn(dragDirection) end
+                end
+            end
+        end
+    end
+
     if not gestureDragged then
         for i = 1, touchCount do
             local id = touches[i].identity
@@ -266,6 +347,12 @@ end
 function M.onPlusOne(cluster, fn)
     if type(cluster) ~= "number" or cluster < 2 or cluster > 4 then return end
     handlers.plusOne[cluster] = fn
+end
+
+function M.onDrag(n, fn)
+    if type(n) ~= "number" or n < 2 then return end
+    handlers.drag[n] = fn
+    if n > clusterCap then clusterCap = n end
 end
 
 function M.start()
