@@ -7,7 +7,7 @@
 --   -  0 pt for borderless windows
 -- Inferred via AXUIElement toolbar detection (AXChildren → AXRole=="AXToolbar").
 
-local drawing     = require("hs.drawing")
+local canvas      = require("hs.canvas")
 local geometry    = require("hs.geometry")
 local timer       = require("hs.timer")
 local window      = require("hs.window")
@@ -95,7 +95,7 @@ local function animateColor(newTargetColor)
     if not currentColor then
         currentColor = newTargetColor
         targetColor = newTargetColor
-        activeOutline:setStrokeColor(currentColor)
+        activeOutline[1].strokeColor = currentColor
         return
     end
 
@@ -105,7 +105,7 @@ local function animateColor(newTargetColor)
     if colorDiff < 0.01 then
         currentColor = newTargetColor
         targetColor = newTargetColor
-        activeOutline:setStrokeColor(currentColor)
+        activeOutline[1].strokeColor = currentColor
         return
     end
 
@@ -126,7 +126,7 @@ local function animateColor(newTargetColor)
 
         currentColor = animation.lerpColor(startColor, targetColor, ease)
         if activeOutline then
-            activeOutline:setStrokeColor(currentColor)
+            activeOutline[1].strokeColor = currentColor
         end
 
         if t >= 1 then
@@ -148,13 +148,17 @@ local function updateFrame(frame, win)
 
     if not activeOutline then
         if log then log("CREATE outline at " .. adjustedFrame.x .. "," .. adjustedFrame.y) end
-        activeOutline = drawing.rectangle(geometry.rect(adjustedFrame))
+        activeOutline = canvas.new(geometry.rect(adjustedFrame))
+        activeOutline[1] = {
+            type = "rectangle",
+            action = "stroke",
+            strokeColor = color,
+            strokeWidth = cfg.outlineThickness,
+            roundedRectRadii = { xRadius = radius, yRadius = radius },
+        }
+        activeOutline:level(canvas.windowLevels.floating)
         currentColor = color
-        activeOutline:setStrokeColor(currentColor)
-        activeOutline:setFill(false)
-        activeOutline:setStrokeWidth(cfg.outlineThickness)
-        activeOutline:setRoundedRectRadii(radius, radius)
-        activeOutline:setLevel(drawing.windowLevels.floating)
+        targetColor = color
         appliedCornerRadius = radius
     else
         local framesMatch = framesEqual(adjustedFrame, lastFrame)
@@ -164,11 +168,10 @@ local function updateFrame(frame, win)
                 log("MOVING outline from " .. math.floor(currentFrame.x) .. "," .. math.floor(currentFrame.y) ..
                     " to " .. math.floor(adjustedFrame.x) .. "," .. math.floor(adjustedFrame.y))
             end
-            activeOutline:hide()
-            activeOutline:setFrame(geometry.rect(adjustedFrame))
+            activeOutline:frame(geometry.rect(adjustedFrame))
         end
         if radius ~= appliedCornerRadius then
-            activeOutline:setRoundedRectRadii(radius, radius)
+            activeOutline[1].roundedRectRadii = { xRadius = radius, yRadius = radius }
             appliedCornerRadius = radius
         end
         animateColor(color)
