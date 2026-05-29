@@ -3,25 +3,10 @@
 --   local i = dofile('/Users/.../tests/outline/_introspect.lua')
 --   i.showing(), i.frame(), i.strokeColor(), i.radius(), i.refreshInterval(), ...
 
+local L = dofile(hs.configdir .. "/tests/_test_lib.lua")
+
 local function up(name)
-    -- Walk every exported function. Upvalues are by-reference cells: any
-    -- function that closes over `name` returns its current value. Different
-    -- exports close over different subsets — `draw` has trackedWinId/
-    -- trackedColor, `stopRefresh` has refreshTimer/refreshInterval,
-    -- `cleanup` has appliedCornerRadius, etc. — so we try them all.
-    local outline = require("WindowScape.outline")
-    for _, fn in pairs(outline) do
-        if type(fn) == "function" then
-            local i = 1
-            while true do
-                local n, v = debug.getupvalue(fn, i)
-                if not n then break end
-                if n == name then return v end
-                i = i + 1
-            end
-        end
-    end
-    return nil
+    return L.deepUpvals(require("WindowScape.outline").draw)[name]
 end
 
 local M = {}

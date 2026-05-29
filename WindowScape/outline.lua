@@ -75,34 +75,24 @@ local function stopRefresh()
     refreshInterval = nil
 end
 
+local function colorsClose(a, b)
+    return math.abs((a.red or 0) - (b.red or 0)) +
+        math.abs((a.green or 0) - (b.green or 0)) +
+        math.abs((a.blue or 0) - (b.blue or 0)) < 0.01
+end
+
 local function animateColor(newTargetColor)
     if not activeOutline then return end
     if not newTargetColor then return end
 
-    -- check if already animating to this color
-    if targetColor then
-        local diff = math.abs((targetColor.red or 0) - (newTargetColor.red or 0)) +
-            math.abs((targetColor.green or 0) - (newTargetColor.green or 0)) +
-            math.abs((targetColor.blue or 0) - (newTargetColor.blue or 0))
-        if diff < 0.01 then return end
-    end
+    if targetColor and colorsClose(targetColor, newTargetColor) then return end
 
     if colorAnimTimer then
         colorAnimTimer:stop()
         colorAnimTimer = nil
     end
 
-    if not currentColor then
-        currentColor = newTargetColor
-        targetColor = newTargetColor
-        activeOutline[1].strokeColor = currentColor
-        return
-    end
-
-    local colorDiff = math.abs((currentColor.red or 0) - (newTargetColor.red or 0)) +
-        math.abs((currentColor.green or 0) - (newTargetColor.green or 0)) +
-        math.abs((currentColor.blue or 0) - (newTargetColor.blue or 0))
-    if colorDiff < 0.01 then
+    if not currentColor or colorsClose(currentColor, newTargetColor) then
         currentColor = newTargetColor
         targetColor = newTargetColor
         activeOutline[1].strokeColor = currentColor
@@ -147,14 +137,14 @@ local function innerElementFrame(f)
     return { x = pad, y = pad, w = f.w - cfg.outlineThickness, h = f.h - cfg.outlineThickness }
 end
 
-local function updateFrame(frame, win)
+-- Invariant: draw() sets trackedColor and trackedCornerRadius before any
+-- updateFrame / refresh call reads them, so refresh() never has to re-resolve
+-- color via AX.
+local function updateFrame(frame)
     if not frame then return end
 
     local adjustedFrame = { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
-    -- trackedColor and trackedCornerRadius are computed once per focus change
-    -- in draw(); reuse them so the 30 fps refresh doesn't call back into
-    -- getColorForWindow or AX on every tick.
-    local color = trackedColor or getColorForWindow(win)
+    local color = trackedColor
     local radius = trackedCornerRadius or 16
 
     if not activeOutline then
@@ -238,7 +228,7 @@ local function refresh()
         stableTickCount = 0
     end
 
-    updateFrame(frame, win)
+    updateFrame(frame)
 
     -- Idle backoff: after IDLE_TICKS of stillness, slow the polling rate.
     -- Any frame change while slow brings us straight back to fast.
@@ -278,7 +268,7 @@ local function draw(win)
         trackedCornerRadius = getCornerRadius(win)
         trackedColor = getColorForWindow(win)
         if log then log("outline frame: " .. frame.x .. "," .. frame.y .. " " .. frame.w .. "x" .. frame.h) end
-        updateFrame(frame, win)
+        updateFrame(frame)
         startRefresh(win)
     else
         clearTracked()
