@@ -407,6 +407,7 @@ local function open()
             state.focused      = 1
             state.scrollOffset = 0
             refresh()
+            canvas.resetCursorBlink()
         end,
         backspace = function(event)
             local flags = event and event:getFlags() or {}
@@ -423,6 +424,7 @@ local function open()
                 state.focused      = 1
                 state.scrollOffset = 0
                 refresh()
+                canvas.resetCursorBlink()
             end
         end,
         fwddel = function()
@@ -431,25 +433,30 @@ local function open()
                 state.focused      = 1
                 state.scrollOffset = 0
                 refresh()
+                canvas.resetCursorBlink()
             end
         end,
         left = function(event)
             local flags = event and event:getFlags() or {}
             state.caret = textbuf.moveLeft(state.query, state.caret, moveMode(flags))
             draw()
+            canvas.resetCursorBlink()
         end,
         right = function(event)
             local flags = event and event:getFlags() or {}
             state.caret = textbuf.moveRight(state.query, state.caret, moveMode(flags))
             draw()
+            canvas.resetCursorBlink()
         end,
         home = function()
             state.caret = 0
             draw()
+            canvas.resetCursorBlink()
         end,
         end_ = function()
             state.caret = textbuf.charLen(state.query)
             draw()
+            canvas.resetCursorBlink()
         end,
         up = function()
             if state.focused > 1 then

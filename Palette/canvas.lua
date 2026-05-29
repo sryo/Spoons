@@ -202,8 +202,16 @@ local function fitText(content, wrapW, regionH, fontName, maxSize, minSize)
 end
 
 local function startCursorBlink()
-    if cursorTimer then return end
+    if cursorTimer then cursorTimer:stop() end
     cursorAlpha = 1.0
+    if card and cursorElemIdx and card[cursorElemIdx] then
+        card[cursorElemIdx].fillColor = {
+            red   = C.accent.red,
+            green = C.accent.green,
+            blue  = C.accent.blue,
+            alpha = 1.0,
+        }
+    end
     cursorTimer = timer.doEvery(0.53, function()
         cursorAlpha = (cursorAlpha > 0.5) and 0.0 or 1.0
         if card and cursorElemIdx and card[cursorElemIdx] then
@@ -216,6 +224,7 @@ local function startCursorBlink()
         end
     end)
 end
+M.resetCursorBlink = startCursorBlink
 
 local function stopCursorBlink()
     if cursorTimer then cursorTimer:stop(); cursorTimer = nil end
