@@ -86,8 +86,8 @@ function M.enter(win)
                     table.insert(state.hiddenWindows, { win = otherWin, frame = originalFrame })
                     otherWin:setFrame(
                         geometry.rect({
-                            x = screenFrame.x + screenFrame.w + 100,
-                            y = screenFrame.y + screenFrame.h + 100,
+                            x = screenFrame.x + screenFrame.w - 1,
+                            y = screenFrame.y + screenFrame.h - 1,
                             w = 1, h = 1,
                         }),
                         0)
@@ -143,8 +143,8 @@ function M.reframeToCurrentScreen()
         if data.win and callbacks.safeGetApplication(data.win) then
             data.win:setFrame(
                 geometry.rect({
-                    x = screenFrame.x + screenFrame.w + 100,
-                    y = screenFrame.y + screenFrame.h + 100,
+                    x = screenFrame.x + screenFrame.w - 1,
+                    y = screenFrame.y + screenFrame.h - 1,
                     w = 1, h = 1,
                 }),
                 0)

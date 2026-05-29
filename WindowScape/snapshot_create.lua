@@ -65,10 +65,12 @@ function M.createSnapshot(win)
     table.insert(windowSnapshots.order, winId)
 
     -- Hide window off-screen immediately so retile reclaims its space before animation.
+    -- Anchor with a 1px overlap on the source display so macOS doesn't relocate the
+    -- window to a neighboring display (it forcibly relocates fully off-screen frames).
     win:setFrame(
         geometry.rect({
-            x = scrFrame.x + scrFrame.w + 100,
-            y = scrFrame.y + scrFrame.h + 100,
+            x = scrFrame.x + scrFrame.w - 1,
+            y = scrFrame.y + scrFrame.h - 1,
             w = winFrame.w,
             h = winFrame.h,
         }),
