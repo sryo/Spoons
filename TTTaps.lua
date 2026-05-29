@@ -31,9 +31,9 @@ M.config = {
     dragThreshold           = 0.15, -- Normalized distance: cluster finger moved this far means drag, taint dispatch
     phantomLiftWindow       = 0.20, -- A touchCount=0 within this much of the last real touch is treated as phantom
     staleStateWindow        = 0.30, -- A non-zero event after this much silence with a pending phantom resets state
-    dragArmThreshold        = 0.02, -- Centroid travel on the dominant axis that arms direction lock
-    dragCommitThreshold     = 0.12, -- Locked-axis cumulative travel that fires onDrag once
-    directionFlipMultiplier = 2.0,  -- Orthogonal axis must exceed armThreshold * this before lock flips
+    dragArmThreshold        = 0.04, -- Centroid travel on the dominant axis that arms direction lock
+    dragCommitThreshold     = 0.08, -- Locked-axis cumulative travel that fires onDrag once
+    directionFlipMultiplier = 1.5,  -- Orthogonal axis must exceed armThreshold * this before lock flips
     debugLog                = false,
 }
 
