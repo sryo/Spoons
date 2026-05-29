@@ -136,19 +136,15 @@ local function animateColor(newTargetColor)
     end)
 end
 
--- The stroke is centered on the path, so half of it would lie outside the
--- window frame. Inflate the canvas by half the thickness on every edge and
--- inset the rectangle element by the same amount, so the path sits on the
--- window's edge and the full stroke renders without clipping the outer half
--- of the rounded corners.
-local function outerRect(f)
-    local pad = cfg.outlineThickness / 2
-    return { x = f.x - pad, y = f.y - pad, w = f.w + cfg.outlineThickness, h = f.h + cfg.outlineThickness }
-end
-
+-- The canvas matches the window's frame exactly, and the stroked rectangle
+-- element is inset by half the stroke width on every edge. With the path
+-- inset by half-stroke, the outer half of the stroke lands on the window's
+-- outer edge and the inner half overlays window content -- the outline is
+-- fully inside the window. The corner curves don't get clipped at the
+-- canvas edge as long as the configured corner radius is >= half-stroke.
 local function innerElementFrame(f)
     local pad = cfg.outlineThickness / 2
-    return { x = pad, y = pad, w = f.w, h = f.h }
+    return { x = pad, y = pad, w = f.w - cfg.outlineThickness, h = f.h - cfg.outlineThickness }
 end
 
 local function updateFrame(frame, win)
@@ -163,7 +159,7 @@ local function updateFrame(frame, win)
 
     if not activeOutline then
         if log then log("CREATE outline at " .. adjustedFrame.x .. "," .. adjustedFrame.y) end
-        activeOutline = canvas.new(geometry.rect(outerRect(adjustedFrame)))
+        activeOutline = canvas.new(geometry.rect(adjustedFrame))
         activeOutline[1] = {
             type = "rectangle",
             action = "stroke",
@@ -184,7 +180,7 @@ local function updateFrame(frame, win)
                 log("MOVING outline from " .. math.floor(currentFrame.x) .. "," .. math.floor(currentFrame.y) ..
                     " to " .. math.floor(adjustedFrame.x) .. "," .. math.floor(adjustedFrame.y))
             end
-            activeOutline:frame(geometry.rect(outerRect(adjustedFrame)))
+            activeOutline:frame(geometry.rect(adjustedFrame))
             activeOutline[1].frame = innerElementFrame(adjustedFrame)
         end
         if radius ~= appliedCornerRadius then
