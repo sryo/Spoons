@@ -17,8 +17,8 @@ local CloudPad = require("CloudPad"); CloudPad.start()
 --require "TimeTrail"
 
 
-local ZXNav = require("ZXNav")
-ZXNav:start()
+--local ZXNav = require("ZXNav")
+--ZXNav:start()
 
 local Muse = require("Muse")
 
