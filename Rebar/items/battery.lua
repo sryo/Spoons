@@ -1,7 +1,7 @@
 return {
     id       = "battery",
     side     = "right",
-    order    = 80,
+    order    = 50,
     update   = function()
         local pct = hs.battery.percentage()
         if not pct then return "" end

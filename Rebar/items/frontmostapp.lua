@@ -3,6 +3,7 @@ local M = {
     side     = "left",
     order    = 10,
     interval = 0,
+    bold     = true,
 }
 
 local watcher

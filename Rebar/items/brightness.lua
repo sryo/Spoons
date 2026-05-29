@@ -3,7 +3,7 @@
 return {
     id        = "brightness",
     side      = "right",
-    order     = 75,
+    order     = 70,
     perScreen = true,
     interval  = 0.5,
     update    = function(scr)

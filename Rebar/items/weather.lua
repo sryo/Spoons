@@ -3,8 +3,8 @@
 
 return {
     id             = "weather",
-    side           = "center-right",
-    order          = 60,
+    side           = "left",
+    order          = 40,
     defaultEnabled = false,
     command        = [[curl -s --max-time 5 "wttr.in/?format=%t+%c" 2>/dev/null | tr -d '\n']],
     interval       = 600,

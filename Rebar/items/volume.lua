@@ -7,7 +7,7 @@
 local M = {
     id       = "volume",
     side     = "right",
-    order    = 70,
+    order    = 65,
     interval = 0,
 }
 

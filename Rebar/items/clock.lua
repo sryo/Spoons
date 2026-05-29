@@ -4,8 +4,8 @@ pcall(os.setlocale, "", "time")
 
 return {
     id       = "clock",
-    side     = "right",
-    order    = 90,
+    side     = "left",
+    order    = 30,
     update   = function() return os.date("%a %b %d  %H:%M") end,
     interval = 30,
     onClick  = "open /System/Applications/Calendar.app",

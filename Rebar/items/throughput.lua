@@ -3,7 +3,7 @@
 local M = {
     id             = "throughput",
     side           = "right",
-    order          = 55,
+    order          = 60,
     interval       = 0,
     defaultEnabled = false,
 }

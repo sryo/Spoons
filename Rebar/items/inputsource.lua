@@ -4,7 +4,7 @@
 local M = {
     id       = "inputsource",
     side     = "right",
-    order    = 65,
+    order    = 75,
     interval = 0,
 }
 

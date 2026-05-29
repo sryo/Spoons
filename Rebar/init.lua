@@ -116,9 +116,12 @@ local function labelFor(item, uuid)
     return item.icon or ""
 end
 
-local function styledLabel(str)
+local function styledLabel(str, bold)
+    local font = bold
+        and { name = ".AppleSystemUIFontBold", size = cfg.fontSize }
+        or  { size = cfg.fontSize }
     return hs.styledtext.new(str, {
-        font  = { size = cfg.fontSize },
+        font  = font,
         color = cfg.fgColor,
     })
 end
@@ -128,7 +131,7 @@ end
 local function prepareItem(item, uuid)
     local label = labelFor(item, uuid)
     if label == "" then return nil end
-    local styled = styledLabel(label)
+    local styled = styledLabel(label, item.bold)
     local sz = hs.drawing.getTextDrawingSize(styled)
     local w = ((sz and sz.w) or (#label * cfg.fontSize * 0.6)) + 16
     return { item = item, styled = styled, w = w }

@@ -5,7 +5,7 @@
 local M = {
     id       = "network",
     side     = "right",
-    order    = 60,
+    order    = 55,
     interval = 0,
 }
 
