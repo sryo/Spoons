@@ -53,6 +53,12 @@ local dismissTap = nil
 local scrollAccum  = 0
 local scrollStepPx = 24
 
+-- The system sends a momentum tail of scrollWheel events after fingers lift;
+-- we feed them through the same row-step accumulator so a flick keeps
+-- gliding. momentumCanceled gates the tail so a keypress or click during the
+-- glide stops it.
+local momentumCanceled = false
+
 -- Keep the focused item inside the visible window by sliding state.scrollOffset.
 local function clampScroll()
     local rows = canvas.visibleRows()
@@ -101,6 +107,14 @@ local function draw()
     canvas.draw(state, hotkeyListForFocused())
 end
 
+-- Called by any input that should abort the in-flight glide: keypress, click
+-- inside or outside the palette, new active scroll. Subsequent momentum
+-- events are dropped until a fresh finger-down scroll re-arms.
+local function cancelGlide()
+    momentumCanceled = true
+    scrollAccum = 0
+end
+
 -- Dynamic sources (.dynamic = true) emit synthetic items per query and are
 -- re-evaluated on every refresh. Static sources are scanned once on open and
 -- live in state.raw. Both pools merge before ranking so dynamic results
@@ -135,7 +149,8 @@ local function close()
     keys.stop()
     canvas.hide()
     state.reset()
-    scrollAccum = 0
+    scrollAccum      = 0
+    momentumCanceled = false
 end
 
 -- Push current stage frame onto history; replace with the new stage.
@@ -279,8 +294,10 @@ local function activateFocused()
     end
 end
 
--- Momentum scroll events are consumed but not stepped so a flick moves one
--- row, not thirty.
+-- Trackpad scrolls feed a pixel accumulator; momentum events from the system
+-- (the decaying tail after fingers lift) ride the same path so a flick keeps
+-- gliding. Any keypress or click cancels the in-flight glide via
+-- momentumCanceled; surplus momentum at the wall is dropped.
 local function startDismissTap()
     if dismissTap then dismissTap:stop() end
     local etypes = hs.eventtap.event.types
@@ -313,7 +330,13 @@ local function startDismissTap()
                 local n = #state.items
                 if n == 0 then return true end
                 local momentum = e:getProperty(props.scrollWheelEventMomentumPhase) or 0
-                if momentum ~= 0 then return true end
+                if momentum == 0 then
+                    -- New finger interaction (or wheel detent). Re-arm so a
+                    -- prior canceled glide doesn't gate this new scroll.
+                    momentumCanceled = false
+                elseif momentumCanceled then
+                    return true
+                end
                 local isContinuous = e:getProperty(props.scrollWheelEventIsContinuous) or 0
                 local step = 0
                 if isContinuous == 0 then
@@ -343,7 +366,6 @@ local function startDismissTap()
                         end
                         canvas.draw(state, hotkeyListForFocused())
                     end
-                    -- Drop overshoot at the ends so reversing direction feels immediate.
                     if state.focused == 1 or state.focused == n then
                         scrollAccum = 0
                     end
@@ -351,7 +373,9 @@ local function startDismissTap()
                 return true
             end
 
-            -- Left / right mouseDown from here on.
+            -- Left / right mouseDown from here on. Click anywhere stops the
+            -- glide so the click lands on what the user sees.
+            cancelGlide()
             if not inside then
                 close()
                 return false
@@ -402,6 +426,7 @@ local function open()
     end
 
     keys.start({
+        onAnyKey = cancelGlide,
         char = function(c)
             state.query, state.caret = textbuf.insert(state.query, state.caret, c)
             state.focused      = 1

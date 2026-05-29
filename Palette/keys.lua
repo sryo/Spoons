@@ -50,6 +50,8 @@ function M.start(callbacks)
         local flags   = event:getFlags()
         local special = SPECIAL[keyCode]
 
+        if handlers.onAnyKey then handlers.onAnyKey() end
+
         if special then
             local fn = handlers[special]
             if fn then fn(event) end
