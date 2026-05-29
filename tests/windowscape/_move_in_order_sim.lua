@@ -104,12 +104,20 @@ scenario("landscape backward from middle: A B C -> B A C", function()
     return { order = { a, b, c }, focus = b, direction = "backward", want = "B,A,C" }
 end)
 
-scenario("landscape forward at right edge wraps to left", function()
+scenario("landscape forward at right edge clamps (no change)", function()
     local scr = makeScreen(1, { x = 0, y = 0, w = 1920, h = 1080 })
     local a = makeWin("A", { x = 0,    y = 0, w = 640, h = 1080 }, scr)
     local b = makeWin("B", { x = 640,  y = 0, w = 640, h = 1080 }, scr)
     local c = makeWin("C", { x = 1280, y = 0, w = 640, h = 1080 }, scr)
-    return { order = { a, b, c }, focus = c, direction = "forward", want = "C,B,A" }
+    return { order = { a, b, c }, focus = c, direction = "forward", want = "A,B,C" }
+end)
+
+scenario("landscape backward at left edge clamps (no change)", function()
+    local scr = makeScreen(1, { x = 0, y = 0, w = 1920, h = 1080 })
+    local a = makeWin("A", { x = 0,    y = 0, w = 640, h = 1080 }, scr)
+    local b = makeWin("B", { x = 640,  y = 0, w = 640, h = 1080 }, scr)
+    local c = makeWin("C", { x = 1280, y = 0, w = 640, h = 1080 }, scr)
+    return { order = { a, b, c }, focus = a, direction = "backward", want = "A,B,C" }
 end)
 
 -- Portrait screen: 1080x1920. Three windows stacked top-to-bottom.
@@ -130,12 +138,20 @@ scenario("portrait backward from middle: A B C -> B A C", function()
     return { order = { a, b, c }, focus = b, direction = "backward", want = "B,A,C" }
 end)
 
-scenario("portrait forward at bottom edge wraps to top", function()
+scenario("portrait forward at bottom edge clamps (no change)", function()
     local scr = makeScreen(1, { x = 0, y = 0, w = 1080, h = 1920 })
     local a = makeWin("A", { x = 0, y = 0,    w = 1080, h = 640 }, scr)
     local b = makeWin("B", { x = 0, y = 640,  w = 1080, h = 640 }, scr)
     local c = makeWin("C", { x = 0, y = 1280, w = 1080, h = 640 }, scr)
-    return { order = { a, b, c }, focus = c, direction = "forward", want = "C,B,A" }
+    return { order = { a, b, c }, focus = c, direction = "forward", want = "A,B,C" }
+end)
+
+scenario("portrait backward at top edge clamps (no change)", function()
+    local scr = makeScreen(1, { x = 0, y = 0, w = 1080, h = 1920 })
+    local a = makeWin("A", { x = 0, y = 0,    w = 1080, h = 640 }, scr)
+    local b = makeWin("B", { x = 0, y = 640,  w = 1080, h = 640 }, scr)
+    local c = makeWin("C", { x = 0, y = 1280, w = 1080, h = 640 }, scr)
+    return { order = { a, b, c }, focus = a, direction = "backward", want = "A,B,C" }
 end)
 
 -- Cached list out of sync with visual order: cached is [C, B, A] but visually

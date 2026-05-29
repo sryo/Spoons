@@ -10,6 +10,12 @@
 --                                  of "left", "right", "up", "down". Fires
 --                                  once per drag; further motion is ignored
 --                                  until all fingers lift.
+--   TTTaps.onDragStep(n, fn)       fn(direction) every commit-threshold of
+--                                  fresh travel within one drag, so the user
+--                                  can step through positions and reverse
+--                                  without lifting. Axis locks on the first
+--                                  step so orthogonal drift can't tip into
+--                                  the perpendicular onDrag handler.
 --
 -- Lifecycle: TTTaps.start / stop / check / restart. Register handlers before
 -- start; re-registration is idempotent (last fn wins per n / cluster).
@@ -31,7 +37,7 @@ M.config = {
     debugLog                = false,
 }
 
-local handlers = { tap = {}, plusOne = {}, drag = {} }
+local handlers = { tap = {}, plusOne = {}, drag = {}, dragStep = {} }
 local clusterCap = 4
 
 local tap = nil
@@ -51,6 +57,7 @@ local onTapFiredThisCycle    = false
 local dragArmed              = false
 local dragDirection          = nil
 local dragFired              = false
+local dragAxisLock           = nil
 
 local function resetState()
     initialFingerCount     = 0
@@ -66,6 +73,7 @@ local function resetState()
     dragArmed              = false
     dragDirection          = nil
     dragFired              = false
+    dragAxisLock           = nil
 end
 
 local function snapshotInitial(touches, touchCount)
@@ -253,7 +261,10 @@ local function onGesture(event)
         ambiguousInitTime = nil
     end
 
-    if not dragFired and handlers.drag[initialFingerCount] then
+    local hasOneShot = handlers.drag[initialFingerCount] ~= nil
+    local hasStep    = handlers.dragStep[initialFingerCount] ~= nil
+    local dragSpent  = dragFired and not hasStep
+    if (hasOneShot or hasStep) and not dragSpent then
         -- Average per-finger delta, then require fingers to agree on the sign
         -- of motion on the candidate axis. Centroid alone is too forgiving
         -- (pinches cancel to zero but mixed signs would still pass a magnitude
@@ -284,15 +295,22 @@ local function onGesture(event)
             local absY   = math.abs(avgDy)
             local agreeX = (posX == 0) or (negX == 0)
             local agreeY = (posY == 0) or (negY == 0)
+            -- Once we've committed a step in a step-enabled drag, the axis is
+            -- locked for the rest of the gesture. That prevents a sideways
+            -- reorder from drifting into a vertical one-shot (e.g. minimize).
+            local lockH = dragAxisLock == "horizontal"
+            local lockV = dragAxisLock == "vertical"
             if not dragArmed then
-                if absX >= M.config.dragArmThreshold and absX > absY and agreeX then
+                if not lockV and absX >= M.config.dragArmThreshold
+                   and (lockH or absX > absY) and agreeX then
                     dragArmed     = true
                     dragDirection = avgDx > 0 and "right" or "left"
-                elseif absY >= M.config.dragArmThreshold and absY > absX and agreeY then
+                elseif not lockH and absY >= M.config.dragArmThreshold
+                       and (lockV or absY > absX) and agreeY then
                     dragArmed     = true
                     dragDirection = avgDy > 0 and "up" or "down"
                 end
-            else
+            elseif not dragAxisLock then
                 local flipThresh = M.config.dragArmThreshold * M.config.directionFlipMultiplier
                 if dragDirection == "left" or dragDirection == "right" then
                     if absY > flipThresh and absY > absX and agreeY then
@@ -311,10 +329,23 @@ local function onGesture(event)
                         print(string.format("[tttaps]   >>> DRAG cluster=%d dir=%s (dx=%.3f dy=%.3f)",
                             initialFingerCount, dragDirection, avgDx, avgDy))
                     end
-                    dragFired      = true
                     gestureDragged = true
-                    local fn = handlers.drag[initialFingerCount]
-                    if fn then fn(dragDirection) end
+                    if hasOneShot and not dragFired then
+                        handlers.drag[initialFingerCount](dragDirection)
+                    end
+                    if hasStep then
+                        handlers.dragStep[initialFingerCount](dragDirection)
+                    end
+                    dragFired = true
+                    if hasStep then
+                        if not dragAxisLock then
+                            dragAxisLock = (dragDirection == "left" or dragDirection == "right")
+                                and "horizontal" or "vertical"
+                        end
+                        snapshotInitial(touches, touchCount)
+                        dragArmed     = false
+                        dragDirection = nil
+                    end
                 end
             end
         end
@@ -352,6 +383,12 @@ end
 function M.onDrag(n, fn)
     if type(n) ~= "number" or n < 2 then return end
     handlers.drag[n] = fn
+    if n > clusterCap then clusterCap = n end
+end
+
+function M.onDragStep(n, fn)
+    if type(n) ~= "number" or n < 2 then return end
+    handlers.dragStep[n] = fn
     if n > clusterCap then clusterCap = n end
 end
 

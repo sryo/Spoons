@@ -87,9 +87,11 @@ local function moveWindowInOrder(direction)
 
     local targetIndex
     if direction == "forward" then
-        targetIndex = (focusedIndex < #sorted) and (focusedIndex + 1) or 1
+        if focusedIndex >= #sorted then return end
+        targetIndex = focusedIndex + 1
     else
-        targetIndex = (focusedIndex > 1) and (focusedIndex - 1) or #sorted
+        if focusedIndex <= 1 then return end
+        targetIndex = focusedIndex - 1
     end
 
     sorted[focusedIndex], sorted[targetIndex] = sorted[targetIndex], sorted[focusedIndex]
@@ -151,9 +153,11 @@ local function focusAdjacentWindow(direction)
 
     local targetIndex
     if direction == "forward" or direction == "next" then
-        targetIndex = (focusedIndex % #screenWindows) + 1
+        if focusedIndex >= #screenWindows then return end
+        targetIndex = focusedIndex + 1
     else
-        targetIndex = focusedIndex > 1 and (focusedIndex - 1) or #screenWindows
+        if focusedIndex <= 1 then return end
+        targetIndex = focusedIndex - 1
     end
 
     local targetWin = screenWindows[targetIndex]

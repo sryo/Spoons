@@ -31,7 +31,7 @@ end)
 TTTaps.onPlusOne(4, function(side)
     WindowScape.moveToAdjacentScreen(side == "left" and "previous" or "next")
 end)
-TTTaps.onDrag(3, function(direction)
+TTTaps.onDragStep(3, function(direction)
     if direction == "left" then
         WindowScape.focusAdjacent("backward")
     elseif direction == "right" then
@@ -39,14 +39,17 @@ TTTaps.onDrag(3, function(direction)
     end
 end)
 TTTaps.onDrag(4, function(direction)
+    if direction == "up" then
+        WindowScape.toggleFullscreen()
+    elseif direction == "down" then
+        WindowScape.minimize()
+    end
+end)
+TTTaps.onDragStep(4, function(direction)
     if direction == "left" then
         WindowScape.moveInOrder("backward")
     elseif direction == "right" then
         WindowScape.moveInOrder("forward")
-    elseif direction == "up" then
-        WindowScape.toggleFullscreen()
-    elseif direction == "down" then
-        WindowScape.minimize()
     end
 end)
 TTTaps.start()

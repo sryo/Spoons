@@ -38,6 +38,43 @@ local function freshHandler()
     return g._onGesture
 end
 
+local function freshStepHandler()
+    package.loaded["TTTaps"] = nil
+    local g = require("TTTaps")
+    g.onDragStep(3, function(direction)
+        table.insert(calls, "step(3," .. direction .. ")")
+    end)
+    g.onDragStep(4, function(direction)
+        table.insert(calls, "step(4," .. direction .. ")")
+    end)
+    assert(type(g._onGesture) == "function", "TTTaps._onGesture missing")
+    return g._onGesture
+end
+
+-- Mirrors the init.lua wiring: 4-finger horizontal scrubs (reorder), 4-finger
+-- vertical is one-shot (maximize / minimize). Handler filters mirror init.lua.
+local function freshMixedHandler()
+    package.loaded["TTTaps"] = nil
+    local g = require("TTTaps")
+    g.onDragStep(3, function(direction)
+        if direction == "left" or direction == "right" then
+            table.insert(calls, "step(3," .. direction .. ")")
+        end
+    end)
+    g.onDrag(4, function(direction)
+        if direction == "up" or direction == "down" then
+            table.insert(calls, "drag(4," .. direction .. ")")
+        end
+    end)
+    g.onDragStep(4, function(direction)
+        if direction == "left" or direction == "right" then
+            table.insert(calls, "step(4," .. direction .. ")")
+        end
+    end)
+    assert(type(g._onGesture) == "function", "TTTaps._onGesture missing")
+    return g._onGesture
+end
+
 local function mockEvent(touches)
     return {
         getType         = function(_) return hs_eventtap.event.types.gesture end,
@@ -60,10 +97,10 @@ local currentHandle = nil
 local function feed(touches) currentHandle(mockEvent(touches)) end
 
 local results = {}
-local function scenario(name, expectedCalls, body)
+local function scenario(name, expectedCalls, body, makeHandler)
     fakeTime = 0
     calls = {}
-    currentHandle = freshHandler()
+    currentHandle = (makeHandler or freshHandler)()
     local ok, err = pcall(body)
     if not ok then
         table.insert(results, { name = name, want = "", got = "<error: " .. tostring(err) .. ">", pass = false })
@@ -302,6 +339,132 @@ scenario("P: stationary 3-cluster with no drag, no plusone bound for 3 -> nothin
     tick(20)
     feed({})
 end)
+
+-- ---------- Step (onDragStep) scenarios ----------
+
+scenario("Q: 4-finger step drag right with 3 commits' worth of travel fires 3 times",
+    { "step(4,right)", "step(4,right)", "step(4,right)" }, function()
+    feed({ touch("a", 0.05, 0.5), touch("b", 0.15, 0.5),
+           touch("c", 0.25, 0.5), touch("d", 0.35, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.08, 0.5), touch("b", 0.18, 0.5),
+           touch("c", 0.28, 0.5), touch("d", 0.38, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.20, 0.5), touch("b", 0.30, 0.5),
+           touch("c", 0.40, 0.5), touch("d", 0.50, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.35, 0.5), touch("b", 0.45, 0.5),
+           touch("c", 0.55, 0.5), touch("d", 0.65, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.50, 0.5), touch("b", 0.60, 0.5),
+           touch("c", 0.70, 0.5), touch("d", 0.80, 0.5) })
+    tick(20)
+    feed({})
+end, freshStepHandler)
+
+scenario("R: step drag right then reverse to left within same gesture fires both",
+    { "step(4,right)", "step(4,left)" }, function()
+    feed({ touch("a", 0.40, 0.5), touch("b", 0.50, 0.5),
+           touch("c", 0.60, 0.5), touch("d", 0.70, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.43, 0.5), touch("b", 0.53, 0.5),
+           touch("c", 0.63, 0.5), touch("d", 0.73, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.55, 0.5), touch("b", 0.65, 0.5),
+           touch("c", 0.75, 0.5), touch("d", 0.85, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.52, 0.5), touch("b", 0.62, 0.5),
+           touch("c", 0.72, 0.5), touch("d", 0.82, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.40, 0.5), touch("b", 0.50, 0.5),
+           touch("c", 0.60, 0.5), touch("d", 0.70, 0.5) })
+    tick(20)
+    feed({})
+end, freshStepHandler)
+
+scenario("S: step drag locks axis on first commit; later vertical drift does not fire",
+    { "step(4,right)" }, function()
+    feed({ touch("a", 0.30, 0.30), touch("b", 0.40, 0.30),
+           touch("c", 0.50, 0.30), touch("d", 0.60, 0.30) })
+    tick(20)
+    feed({ touch("a", 0.33, 0.30), touch("b", 0.43, 0.30),
+           touch("c", 0.53, 0.30), touch("d", 0.63, 0.30) })
+    tick(20)
+    -- Horizontal commit: fires step(4,right), locks horizontal.
+    feed({ touch("a", 0.45, 0.30), touch("b", 0.55, 0.30),
+           touch("c", 0.65, 0.30), touch("d", 0.75, 0.30) })
+    tick(20)
+    -- Pure vertical drift afterward must not arm.
+    feed({ touch("a", 0.45, 0.50), touch("b", 0.55, 0.50),
+           touch("c", 0.65, 0.50), touch("d", 0.75, 0.50) })
+    tick(20)
+    feed({ touch("a", 0.45, 0.70), touch("b", 0.55, 0.70),
+           touch("c", 0.65, 0.70), touch("d", 0.75, 0.70) })
+    tick(20)
+    feed({})
+end, freshStepHandler)
+
+scenario("T: 3-finger step drag right fires per commit-distance step",
+    { "step(3,right)", "step(3,right)" }, function()
+    feed({ touch("a", 0.10, 0.5), touch("b", 0.20, 0.5), touch("c", 0.30, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.13, 0.5), touch("b", 0.23, 0.5), touch("c", 0.33, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.25, 0.5), touch("b", 0.35, 0.5), touch("c", 0.45, 0.5) })
+    tick(20)
+    feed({ touch("a", 0.40, 0.5), touch("b", 0.50, 0.5), touch("c", 0.60, 0.5) })
+    tick(20)
+    feed({})
+end, freshStepHandler)
+
+-- ---------- Mixed (init.lua style) scenarios ----------
+
+scenario("U: mixed 4-finger vertical up fires drag(4,up) once even with continued travel",
+    { "drag(4,up)" }, function()
+    feed({ touch("a", 0.30, 0.10), touch("b", 0.40, 0.10),
+           touch("c", 0.50, 0.10), touch("d", 0.60, 0.10) })
+    tick(20)
+    feed({ touch("a", 0.30, 0.13), touch("b", 0.40, 0.13),
+           touch("c", 0.50, 0.13), touch("d", 0.60, 0.13) })
+    tick(20)
+    feed({ touch("a", 0.30, 0.25), touch("b", 0.40, 0.25),
+           touch("c", 0.50, 0.25), touch("d", 0.60, 0.25) })
+    tick(20)
+    -- Continued upward motion past the commit-distance again: drag must NOT
+    -- re-fire (it's one-shot), and the step handler filters up/down so no
+    -- step record either.
+    feed({ touch("a", 0.30, 0.40), touch("b", 0.40, 0.40),
+           touch("c", 0.50, 0.40), touch("d", 0.60, 0.40) })
+    tick(20)
+    feed({ touch("a", 0.30, 0.55), touch("b", 0.40, 0.55),
+           touch("c", 0.50, 0.55), touch("d", 0.60, 0.55) })
+    tick(20)
+    feed({})
+end, freshMixedHandler)
+
+scenario("V: mixed 4-finger horizontal scrub then vertical drift never fires drag(up)",
+    { "step(4,right)", "step(4,right)" }, function()
+    feed({ touch("a", 0.20, 0.30), touch("b", 0.30, 0.30),
+           touch("c", 0.40, 0.30), touch("d", 0.50, 0.30) })
+    tick(20)
+    feed({ touch("a", 0.23, 0.30), touch("b", 0.33, 0.30),
+           touch("c", 0.43, 0.30), touch("d", 0.53, 0.30) })
+    tick(20)
+    feed({ touch("a", 0.35, 0.30), touch("b", 0.45, 0.30),
+           touch("c", 0.55, 0.30), touch("d", 0.65, 0.30) })
+    tick(20)
+    feed({ touch("a", 0.50, 0.30), touch("b", 0.60, 0.30),
+           touch("c", 0.70, 0.30), touch("d", 0.80, 0.30) })
+    tick(20)
+    -- Now drift upward; axis is locked horizontal, so no drag(up) fire.
+    feed({ touch("a", 0.50, 0.50), touch("b", 0.60, 0.50),
+           touch("c", 0.70, 0.50), touch("d", 0.80, 0.50) })
+    tick(20)
+    feed({ touch("a", 0.50, 0.70), touch("b", 0.60, 0.70),
+           touch("c", 0.70, 0.70), touch("d", 0.80, 0.70) })
+    tick(20)
+    feed({})
+end, freshMixedHandler)
 
 -- ---------- Cleanup ----------
 
