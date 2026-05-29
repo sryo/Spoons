@@ -14,6 +14,8 @@ require "NoTunes"
 --require "DigUp"
 --require "UndoClose"
 local CloudPad = require("CloudPad"); CloudPad.start()
+
+local Rebar = require("Rebar"); Rebar.start()
 --require "TimeTrail"
 
 
