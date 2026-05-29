@@ -132,13 +132,16 @@ post b up;       sleep $GAP
 post space up;   sleep $SETTLE
 row 3 "space+B (mapped Left) on empty doc" "v sp v b ^ b ^ sp" "exact" "" "$(read_doc)"
 
-# 4. Hold space, tap UNMAPPED 'a' — prime suspect for the leak.
+# 4-6. Hold space, tap UNMAPPED key(s). Expects a trailing space: ZXNav no
+# longer cancels the lone-space synthesis on non-mapped keys, because doing so
+# ate spaces during fast typing where the next letter's keyDown overlaps with
+# space still held. Trade-off: intentional "space + unmapped" produces both.
 clear_doc
 post space down; sleep $GAP
 post a down;     sleep $GAP
 post a up;       sleep $GAP
 post space up;   sleep $SETTLE
-row 4 "space + unmapped 'a'" "v sp v a ^ a ^ sp" "no-trailing" "" "$(read_doc)"
+row 4 "space + unmapped 'a'" "v sp v a ^ a ^ sp" "trailing" "" "$(read_doc)"
 
 # 5. Hold space, tap UNMAPPED digit '1'.
 clear_doc
@@ -146,7 +149,7 @@ post space down; sleep $GAP
 post 1 down;     sleep $GAP
 post 1 up;       sleep $GAP
 post space up;   sleep $SETTLE
-row 5 "space + unmapped '1'" "v sp v 1 ^ 1 ^ sp" "no-trailing" "" "$(read_doc)"
+row 5 "space + unmapped '1'" "v sp v 1 ^ 1 ^ sp" "trailing" "" "$(read_doc)"
 
 # 6. Hold space, tap TWO unmapped letters.
 clear_doc
@@ -156,7 +159,7 @@ post a up;       sleep $GAP
 post q down;     sleep $GAP
 post q up;       sleep $GAP
 post space up;   sleep $SETTLE
-row 6 "space + 'a' + 'q' (both unmapped)" "v sp v a ^ a v q ^ q ^ sp" "no-trailing" "" "$(read_doc)"
+row 6 "space + 'a' + 'q' (both unmapped)" "v sp v a ^ a v q ^ q ^ sp" "trailing" "" "$(read_doc)"
 
 # 7. Release space BEFORE the mapped key — asymmetric STOP/GO at lines 426/430.
 clear_doc

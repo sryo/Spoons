@@ -39,7 +39,7 @@ local config = {
     middleRadius = 170,
     innerRadius = 140,
     fontSize = 14,
-    showDelay = 0
+    showDelay = 0.15
 }
 
 -- Function to get system colors
@@ -55,6 +55,14 @@ end
 
 local STOP, GO = true, false
 local DOWN, UP = true, false
+
+-- Tag synthetic events so our own watchers ignore them. Stop / start of the
+-- eventtap around a synthetic post is racy: events are queued and delivered
+-- after :post() returns, so the just-restarted watcher swallows the very
+-- space it just sent.
+local CLICK_TAG     = 0x5A584E -- "ZXN"
+local PROP_USERDATA = hs.eventtap.event.properties.eventSourceUserData
+
 local modifierDown = false
 local normalKey = ""
 local originalKey = "" -- track the original key pressed
@@ -67,6 +75,49 @@ local SAFETY_TIMEOUT = 8 -- seconds
 -- Track ALL held mapped keys
 -- Key: action key name, Value: {mods = {}, key = "keyname"}
 local heldMappedKeys = {}
+
+-- Customization: click a slice to rebind, long-press to reset, esc / outside
+-- click to cancel. Bindings persist via hs.settings.
+local customBindings   = {}     -- { [SliceLetter] = { key = "...", label = "..." } }
+local editMode         = nil    -- nil | { slice = "Z" }
+local longPressTimer   = nil
+local longPressSlice   = nil
+local editDismissTap   = nil
+local LONG_PRESS_SEC   = 0.5
+local EDIT_FILL        = hs.drawing.color.asRGB({ alpha = 0.9, hex = "#FF9500" })
+
+local PURE_MODIFIERS   = {
+    cmd = true, alt = true, shift = true, ctrl = true,
+    fn = true, capslock = true, rightcmd = true, rightalt = true,
+    rightshift = true, rightctrl = true,
+}
+
+local KEY_LABELS = {
+    pageup = "PgUp", pagedown = "PgDn",
+    left = "←", right = "→", up = "↑", down = "↓",
+    forwarddelete = "Del", delete = "Bksp",
+    ["return"] = "↵", tab = "⇥", escape = "Esc",
+    home = "Home", ["end"] = "End", space = "Spc",
+}
+
+local function renderLabel(key)
+    return KEY_LABELS[key] or key:upper()
+end
+
+local function loadBindings()
+    customBindings = hs.settings.get("ZXNav.customBindings") or {}
+end
+
+local function saveBindings()
+    hs.settings.set("ZXNav.customBindings", customBindings)
+end
+
+local function defaultLabelFor(letter)
+    for _, m in ipairs(config.innerMappings) do
+        if m[1] == letter then return m[2] end
+    end
+    return ""
+end
 
 -- Release ALL held mapped keys (called when spacebar is released)
 local function releaseAllMappedKeys()
@@ -82,7 +133,8 @@ local function drawRing(keyBar, mappings, outerR, innerR, size, colors, isDark, 
     local startAngle = math.pi
 
     for i, mapping in ipairs(mappings) do
-        local key, action = mapping[1], mapping[2]
+        local key = mapping[1]
+        local action = (customBindings[key] and customBindings[key].label) or mapping[2]
         local sliceAngle = arcSpan / keyCount
         local angle1 = startAngle - (i - 1) * sliceAngle
         local angle2 = startAngle - i * sliceAngle
@@ -110,7 +162,9 @@ local function drawRing(keyBar, mappings, outerR, innerR, size, colors, isDark, 
             coordinates = path,
             fillColor = colors.barBackgroundColor,
             closed = true,
-            id = "slice_" .. key
+            id = "slice_" .. key,
+            trackMouseDown = true,
+            trackMouseUp = true,
         })
 
         keyBar:appendElements({
@@ -157,6 +211,31 @@ local function setupKeyBar()
     })
     keyBar:level(hs.canvas.windowLevels.overlay)
     keyBar:behavior("canJoinAllSpaces")
+    keyBar:canvasMouseEvents(true, true)
+    keyBar:mouseCallback(function(_, msg, id, _, _)
+        if not id then return end
+        local letter = id:match("^slice_(.+)$") or id:match("^key_(.+)$")
+        if not letter then return end
+        if msg == "mouseDown" then
+            longPressSlice = letter
+            if longPressTimer then longPressTimer:stop() end
+            longPressTimer = hs.timer.doAfter(LONG_PRESS_SEC, function()
+                longPressTimer = nil
+                if longPressSlice == letter then
+                    longPressSlice = nil
+                    resetSliceToDefault(letter)
+                end
+            end)
+        elseif msg == "mouseUp" then
+            if longPressTimer then
+                longPressTimer:stop()
+                longPressTimer = nil
+                longPressSlice = nil
+                produceModifier = false
+                enterEditMode(letter)
+            end
+        end
+    end)
 
     local colors = getSystemColors()
     local isDark = hs.host.interfaceStyle() == "Dark"
@@ -208,6 +287,74 @@ local function hideKeyBar()
         safetyTimer:stop()
         safetyTimer = nil
     end
+end
+
+local function repaintSlice(letter)
+    local label = (customBindings[letter] and customBindings[letter].label) or defaultLabelFor(letter)
+    local colors = getSystemColors()
+    for i = 1, #keyBar do
+        local el = keyBar[i]
+        if el.id == "key_" .. letter then
+            keyBar[i].text = letter .. "\n" .. label
+        elseif el.id == "slice_" .. letter then
+            keyBar[i].fillColor = colors.barBackgroundColor
+        end
+    end
+end
+
+local function stopEditDismissTap()
+    if editDismissTap then editDismissTap:stop(); editDismissTap = nil end
+end
+
+local function cancelEditMode()
+    if not editMode then return end
+    local letter = editMode.slice
+    editMode = nil
+    stopEditDismissTap()
+    repaintSlice(letter)
+    hideKeyBar()
+end
+
+local function startEditDismissTap()
+    stopEditDismissTap()
+    editDismissTap = hs.eventtap.new({ hs.eventtap.event.types.leftMouseDown }, function(e)
+        if not editMode or not keyBar then return false end
+        local f = keyBar:frame()
+        local p = e:location()
+        local inside = p.x >= f.x and p.x <= f.x + f.w
+            and p.y >= f.y and p.y <= f.y + f.h
+        if not inside then cancelEditMode() end
+        return false
+    end):start()
+end
+
+local function enterEditMode(letter)
+    editMode = { slice = letter }
+    for i = 1, #keyBar do
+        local el = keyBar[i]
+        if el.id == "slice_" .. letter then
+            keyBar[i].fillColor = EDIT_FILL
+        elseif el.id == "key_" .. letter then
+            keyBar[i].text = letter .. "\n…?"
+        end
+    end
+    startEditDismissTap()
+end
+
+local function exitEditMode()
+    if not editMode then return end
+    local letter = editMode.slice
+    editMode = nil
+    stopEditDismissTap()
+    repaintSlice(letter)
+    hideKeyBar()
+end
+
+local function resetSliceToDefault(letter)
+    customBindings[letter] = nil
+    saveBindings()
+    repaintSlice(letter)
+    hs.alert.show("ZXNav: reset " .. letter, 0.4)
 end
 
 local function cancelTouchCursor()
@@ -320,8 +467,24 @@ local function findMapping(key)
 end
 
 local function handleKeyDown(event)
+    if event:getProperty(PROP_USERDATA) == CLICK_TAG then return GO end
+
     local currKey = hs.keycodes.map[event:getKeyCode()]
     local flags = event:getFlags()
+
+    if editMode then
+        if currKey == "escape" then
+            cancelEditMode()
+            return STOP
+        end
+        if PURE_MODIFIERS[currKey] or currKey == "space" then
+            return STOP
+        end
+        customBindings[editMode.slice] = { key = currKey, label = renderLabel(currKey) }
+        saveBindings()
+        exitEditMode()
+        return STOP
+    end
 
     if currKey == "escape" and not modifierDown then
         return GO
@@ -369,27 +532,29 @@ local function handleKeyDown(event)
 
         local mapping = findMapping(currKey)
         if mapping then
-            local action = actionMap[mapping[2]]
+            local sliceLetter = mapping[1]
+            local custom = customBindings[sliceLetter]
+            local action = custom
+                and { key = custom.key, mods = {} }
+                or actionMap[mapping[2]]
             if action then
                 produceModifier = false
                 normalKey = action.key
                 originalKey = currKey
-                highlightKey(mapping[1])
-                -- Track this held key
+                highlightKey(sliceLetter)
                 heldMappedKeys[currKey] = action
                 hs.eventtap.event.newKeyEvent(action.mods, action.key, DOWN):post()
                 return STOP
             end
         end
-
-        -- Any non-mapped key consumed during the chord cancels the lone-space-on-release.
-        produceModifier = false
     end
 
     return GO
 end
 
 local function handleKeyUp(event)
+    if event:getProperty(PROP_USERDATA) == CLICK_TAG then return GO end
+
     local currKey = hs.keycodes.map[event:getKeyCode()]
     local flags = event:getFlags()
     modifiersDown = flags
@@ -412,19 +577,21 @@ local function handleKeyUp(event)
         modifierDown = false
         -- Release ALL held mapped keys
         releaseAllMappedKeys()
-        hideKeyBar()
+        if not editMode then hideKeyBar() end
         normalKey = ""
         originalKey = ""
         -- If no nav key was pressed, produce a space
         if produceModifier and not (flags.cmd or flags.alt or flags.shift or flags.ctrl) then
             produceModifier = false -- Prevent re-entry
-            -- Defer keystroke to after this callback returns, with eventtaps stopped
+            -- Tagged synthetic events bypass our handlers via the CLICK_TAG
+            -- check at the top of handleKeyDown / handleKeyUp.
             hs.timer.doAfter(0, function()
-                if module._downWatcher then module._downWatcher:stop() end
-                if module._upWatcher then module._upWatcher:stop() end
-                hs.eventtap.keyStroke({}, "space", 0)
-                if module._downWatcher then module._downWatcher:start() end
-                if module._upWatcher then module._upWatcher:start() end
+                local d = hs.eventtap.event.newKeyEvent({}, "space", DOWN)
+                local u = hs.eventtap.event.newKeyEvent({}, "space", UP)
+                d:setProperty(PROP_USERDATA, CLICK_TAG)
+                u:setProperty(PROP_USERDATA, CLICK_TAG)
+                d:post()
+                u:post()
             end)
             return STOP
         end
@@ -434,6 +601,7 @@ local function handleKeyUp(event)
 end
 
 function module.start()
+    loadBindings()
     setupKeyBar()
 
     module._downWatcher = hs.eventtap.new(

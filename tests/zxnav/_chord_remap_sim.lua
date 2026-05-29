@@ -27,11 +27,37 @@ local saved = {
     hostStyle           = hs.host.interfaceStyle,
     timerDoAfter        = hs.timer.doAfter,
     alertShow           = hs.alert.show,
+    settingsGet         = hs.settings.get,
+    settingsSet         = hs.settings.set,
 }
 
 local capturedKeyDownCb
 local capturedKeyUpCb
 local postedEvents -- list of {mods, key, isDown}
+local settingsStore -- table backing the stubbed hs.settings
+
+local function getUv(fn, name)
+    local i = 1
+    while true do
+        local n, v = debug.getupvalue(fn, i)
+        if not n then return nil end
+        if n == name then return v end
+        i = i + 1
+    end
+end
+
+local function setUv(fn, name, value)
+    local i = 1
+    while true do
+        local n = debug.getupvalue(fn, i)
+        if not n then return false end
+        if n == name then
+            debug.setupvalue(fn, i, value)
+            return true
+        end
+        i = i + 1
+    end
+end
 
 local function fakeCanvas()
     local elements = {}
@@ -55,6 +81,7 @@ local function installStubs()
     capturedKeyDownCb = nil
     capturedKeyUpCb   = nil
     postedEvents      = {}
+    settingsStore     = {}
 
     hs.eventtap.new = function(types, callback)
         -- ZXNav installs separate taps for keyDown and keyUp.
@@ -76,12 +103,21 @@ local function installStubs()
     end
 
     hs.eventtap.event.newKeyEvent = function(mods, key, isDown)
-        return { post = function() table.insert(postedEvents, { mods = mods, key = key, isDown = isDown }) end }
+        local ev
+        ev = {
+            post        = function() table.insert(postedEvents, { mods = mods, key = key, isDown = isDown }) end,
+            setProperty = function(_, _, _) return ev end,
+        }
+        return ev
     end
 
     hs.canvas.new = function(_) return fakeCanvas() end
     hs.screen.primaryScreen = function()
-        return { frame = function() return { x = 0, y = 0, w = 1440, h = 900 } end }
+        local rect = { x = 0, y = 0, w = 1440, h = 900 }
+        return {
+            frame     = function() return rect end,
+            fullFrame = function() return rect end,
+        }
     end
     hs.screen.watcher.new = function(_) return { start = function() end, stop = function() end } end
     hs.distributednotifications.new = function(_) return { start = function() end, stop = function() end } end
@@ -89,6 +125,8 @@ local function installStubs()
     hs.host.interfaceStyle = function() return "Light" end
     hs.timer.doAfter = function(_, _) return { stop = function() end } end
     hs.alert.show = function() end
+    hs.settings.get = function(k) return settingsStore[k] end
+    hs.settings.set = function(k, v) settingsStore[k] = v end
 end
 
 local function restoreLive()
@@ -102,6 +140,8 @@ local function restoreLive()
     hs.host.interfaceStyle           = saved.hostStyle
     hs.timer.doAfter                 = saved.timerDoAfter
     hs.alert.show                    = saved.alertShow
+    hs.settings.get                  = saved.settingsGet
+    hs.settings.set                  = saved.settingsSet
 end
 
 local function freshModule()
@@ -119,11 +159,12 @@ end
 
 -- ---------- Mock key events ----------
 
-local function keyEvent(keyName, flags)
+local function keyEvent(keyName, flags, props)
     local kc = hs.keycodes.map[keyName] or 0
     return {
-        getKeyCode = function() return kc end,
-        getFlags   = function() return flags or {} end,
+        getKeyCode  = function() return kc end,
+        getFlags    = function() return flags or {} end,
+        getProperty = function(_, p) return (props or {})[p] end,
     }
 end
 
@@ -219,20 +260,69 @@ scenario("space released alone (no nav key pressed) yields a clean space keystro
     -- and verify what it posts.
     local deferred
     hs.timer.doAfter = function(_, fn) deferred = fn; return { stop = function() end } end
-    -- Also stub hs.eventtap.keyStroke (used inside the deferred function).
-    local strokeCalls = {}
-    local origKeyStroke = hs.eventtap.keyStroke
-    hs.eventtap.keyStroke = function(mods, key, delay) table.insert(strokeCalls, { mods = mods, key = key }) end
 
     local down, up, _ = freshModule()
     down(keyEvent("space"))      -- enter modifier mode
     up(keyEvent("space"))        -- release without pressing any nav key
-    assert(type(deferred) == "function", "expected a deferred space keystroke to be scheduled")
+    assert(type(deferred) == "function", "expected a deferred space synth to be scheduled")
+    local before = #postedEvents
     deferred()
-    assertEq(#strokeCalls, 1, "exactly one keyStroke synthesised")
-    assertEq(strokeCalls[1].key, "space", "space key synthesised")
+    local synthesized = #postedEvents - before
+    assertEq(synthesized, 2, "deferred posts exactly one space-down + space-up")
+    assertEq(postedEvents[before + 1].key, "space", "first synth event is space")
+    assertEq(postedEvents[before + 1].isDown, true, "first synth event is keyDown")
+    assertEq(postedEvents[before + 2].isDown, false, "second synth event is keyUp")
+end)
 
-    hs.eventtap.keyStroke = origKeyStroke
+scenario("custom binding from hs.settings overrides default action on chord", function()
+    settingsStore["ZXNav.customBindings"] = { Z = { key = "pageup", label = "PgUp" } }
+    local down, _, _ = freshModule()
+    down(keyEvent("space"))
+    down(keyEvent("z"))
+    assert(findPost("pageup", true), "rebound Z slice should post 'pageup'")
+    assert(not findPost("home", true), "default 'home' must not fire when Z is rebound")
+end)
+
+scenario("editMode key capture saves bare key + label and clears editMode", function()
+    local down, _, _ = freshModule()
+    setUv(down, "editMode", { slice = "Z" })
+    down(keyEvent("p"))
+    assertEq(getUv(down, "editMode"), nil, "editMode cleared after capture")
+    local saved = settingsStore["ZXNav.customBindings"]
+    assert(saved and saved.Z, "Z entry persisted")
+    assertEq(saved.Z.key, "p", "captured key")
+    assertEq(saved.Z.label, "P", "label rendered as upper-case letter")
+end)
+
+scenario("editMode renders friendly label for nav keys", function()
+    local down, _, _ = freshModule()
+    setUv(down, "editMode", { slice = "Z" })
+    down(keyEvent("pageup"))
+    assertEq(settingsStore["ZXNav.customBindings"].Z.label, "PgUp", "PgUp label")
+end)
+
+scenario("editMode rejects pure modifiers without saving", function()
+    local down, _, _ = freshModule()
+    setUv(down, "editMode", { slice = "Z" })
+    down(keyEvent("shift"))
+    assertEq(settingsStore["ZXNav.customBindings"], nil, "no binding saved")
+    assert(getUv(down, "editMode"), "editMode persists; user can still press a real key")
+end)
+
+scenario("editMode rejects bare space (would shadow the modifier itself)", function()
+    local down, _, _ = freshModule()
+    setUv(down, "editMode", { slice = "Z" })
+    down(keyEvent("space"))
+    assertEq(settingsStore["ZXNav.customBindings"], nil, "space not bindable")
+    assert(getUv(down, "editMode"), "editMode persists")
+end)
+
+scenario("escape during editMode cancels without saving", function()
+    local down, _, _ = freshModule()
+    setUv(down, "editMode", { slice = "Z" })
+    down(keyEvent("escape"))
+    assertEq(getUv(down, "editMode"), nil, "editMode cleared")
+    assertEq(settingsStore["ZXNav.customBindings"], nil, "no binding saved")
 end)
 
 -- ---------- Cleanup ----------
