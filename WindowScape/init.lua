@@ -249,6 +249,15 @@ return {
     minimize             = windowScapeMinimize,
     isFullscreen         = windowScapeIsFullscreen,
     isMinimized          = windowScapeIsMinimized,
+    restoreSnapshot      = snapshots.restoreFromSnapshot,
+    exitFullscreenFor    = function(winId)
+        local fsState = core.fullscreenState
+        if fsState.active and fsState.window and fsState.window:id() == winId then
+            fullscreen.exit()
+            return true
+        end
+        return false
+    end,
     getConfig            = function() return cfg end,
     focusAdjacent        = operations.focusAdjacentWindow,
     moveInOrder          = operations.moveWindowInOrder,
