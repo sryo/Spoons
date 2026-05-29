@@ -1,21 +1,29 @@
--- WindowScape session restore: persist per-space window order + weights to a
--- JSON sidecar so the hand-arranged layout survives hs.reload().
+-- WindowScape session restore: persist per-space window order + weights and
+-- the currently-minimized snapshots to a JSON sidecar so the hand-arranged
+-- layout and minimize state survive hs.reload().
 --
--- Save shape:
---   { "<spaceID>": [ { bundleID, title, weight }, ... ], ... }
+-- Save shape (v2):
+--   {
+--     spaces    = { "<spaceID>": [ { bundleID, title, weight }, ... ], ... },
+--     snapshots = [ { winId, bundleID, title, originalFrame, screenId, snapSize }, ... ],
+--   }
 --
--- spaceID is the integer hs.spaces returns, stringified by JSON. Title is the
--- first 40 chars and is used only as a tiebreaker when multiple windows of the
--- same app are live in the same space.
+-- Legacy v1 (a bare spaces map with no wrapper) is read transparently.
+--
+-- Snapshots match on winId only (`hs.window.get`). winIds survive hs.reload
+-- but not app close or system reboot. Layout slots fall back to bundleID +
+-- title so layout restoration is more forgiving across restarts.
 
-local json  = require("hs.json")
-local timer = require("hs.timer")
+local json   = require("hs.json")
+local timer  = require("hs.timer")
+local window = require("hs.window")
 
 local M = {}
 
 local cfg
 local core
 local tiler
+local snapshotCreate
 
 local path
 local saveTimer
@@ -24,8 +32,7 @@ local TITLE_HINT_LEN = 40
 
 local function titleHint(win)
     if not win then return "" end
-    local t = win:title() or ""
-    return string.sub(t, 1, TITLE_HINT_LEN)
+    return string.sub(win:title() or "", 1, TITLE_HINT_LEN)
 end
 
 local function bundleIDOf(win)
@@ -35,10 +42,11 @@ local function bundleIDOf(win)
     return app:bundleID()
 end
 
--- Atomic write so a failed write doesn't lose the sidecar.
 local function writeSync()
     if not path then return end
-    local payload = {}
+
+    local payload = { spaces = {}, snapshots = {} }
+
     for spaceId, order in pairs(core.windowOrderBySpace) do
         local slots = {}
         for _, win in ipairs(order) do
@@ -53,7 +61,28 @@ local function writeSync()
             end
         end
         if #slots > 0 then
-            payload[tostring(spaceId)] = slots
+            payload.spaces[tostring(spaceId)] = slots
+        end
+    end
+
+    if core.snapshotsState then
+        for _, winId in ipairs(core.snapshotsState.order) do
+            local data = core.snapshotsState.windows[winId]
+            local win = data and data.win
+            local bid = win and bundleIDOf(win)
+            if data and win and bid and data.originalFrame and data.snapSize then
+                table.insert(payload.snapshots, {
+                    winId         = winId,
+                    bundleID      = bid,
+                    title         = titleHint(win),
+                    originalFrame = {
+                        x = data.originalFrame.x, y = data.originalFrame.y,
+                        w = data.originalFrame.w, h = data.originalFrame.h,
+                    },
+                    screenId      = data.screenId,
+                    snapSize      = { w = data.snapSize.w, h = data.snapSize.h },
+                })
+            end
         end
     end
 
@@ -77,36 +106,75 @@ function M.scheduleSave()
     saveTimer = timer.doAfter(SAVE_DEBOUNCE, writeSync)
 end
 
--- Read the sidecar and reorder core.windowOrderBySpace + restore weights for
--- windows currently live. Unmatched saved slots are dropped; live windows not
--- claimed by any slot keep their existing position appended after the matched ones.
-function M.load()
-    if not path then return end
-    local payload = json.read(path)
-    if type(payload) ~= "table" then return end
+-- Returns (spacesMap, snapshotsArray). Handles both v2 (wrapped) and v1 (flat)
+-- save shapes; on v1, snapshotsArray is empty.
+function M.readPayload()
+    if not path then return {}, {} end
+    local raw = json.read(path)
+    if type(raw) ~= "table" then return {}, {} end
+    if raw.spaces or raw.snapshots then
+        return raw.spaces or {}, raw.snapshots or {}
+    end
+    return raw, {}
+end
 
-    for spaceKey, slots in pairs(payload) do
+-- Iterate saved snapshots, find the matching live window by winId, and
+-- re-register the snapshot via snapshotCreate.createSnapshot in restore mode.
+-- Must run BEFORE core.updateWindowOrder so the rehydrated windows are
+-- excluded from tiling (core.isAppIncluded skips winIds present in
+-- snapshotsState.windows).
+function M.loadSnapshots(snapshotPayload)
+    if not snapshotCreate then return end
+    if snapshotPayload == nil then
+        _, snapshotPayload = M.readPayload()
+    end
+    for _, entry in ipairs(snapshotPayload) do
+        local savedWinId = entry.winId
+        if savedWinId then
+            local win = window.get(savedWinId)
+            if win and bundleIDOf(win) == entry.bundleID then
+                snapshotCreate.createSnapshot(win, {
+                    originalFrame = entry.originalFrame,
+                    snapSize      = entry.snapSize,
+                    screenId      = entry.screenId,
+                })
+            end
+        end
+    end
+end
+
+-- Reorder core.windowOrderBySpace + restore weights for windows present in the
+-- spaces payload. Must run AFTER core.updateWindowOrder so windowOrderBySpace
+-- is populated. Unmatched saved slots are dropped; live windows not claimed by
+-- any slot keep their existing position appended after the matched ones.
+function M.loadLayout(spacesPayload)
+    if spacesPayload == nil then
+        spacesPayload = M.readPayload()
+    end
+
+    for spaceKey, slots in pairs(spacesPayload) do
         local spaceId = tonumber(spaceKey) or spaceKey
         local liveOrder = core.windowOrderBySpace[spaceId]
         if liveOrder and #liveOrder > 0 and type(slots) == "table" then
-            local claimed = {}  -- winId -> true
-            local matched = {}  -- in saved-slot order
+            local claimed = {}
+            local matched = {}
 
-            -- Pass 1: prefer windows whose title starts with the saved hint.
             for _, slot in ipairs(slots) do
                 local target = slot.bundleID
                 local hint   = slot.title or ""
                 local pick
-                for _, win in ipairs(liveOrder) do
-                    local winId = win:id()
-                    if winId and not claimed[winId] and bundleIDOf(win) == target then
-                        if hint ~= "" and string.sub(win:title() or "", 1, TITLE_HINT_LEN) == hint then
-                            pick = win
-                            break
+
+                if hint ~= "" then
+                    for _, win in ipairs(liveOrder) do
+                        local winId = win:id()
+                        if winId and not claimed[winId] and bundleIDOf(win) == target then
+                            if string.sub(win:title() or "", 1, TITLE_HINT_LEN) == hint then
+                                pick = win
+                                break
+                            end
                         end
                     end
                 end
-                -- Pass 2: any window with the right bundleID.
                 if not pick then
                     for _, win in ipairs(liveOrder) do
                         local winId = win:id()
@@ -141,16 +209,18 @@ function M.load()
     end
 end
 
+-- Legacy single-call API kept for any external caller; equivalent to loadLayout.
+function M.load() M.loadLayout() end
+
 function M.init(config, deps)
-    cfg   = config
-    core  = deps.core
-    tiler = deps.tiler
-    path  = (hs and hs.configdir or os.getenv("HOME") .. "/.hammerspoon") .. "/WindowScape_layout.json"
+    cfg            = config
+    core           = deps.core
+    tiler          = deps.tiler
+    snapshotCreate = deps.snapshotCreate
+    path = (hs and hs.configdir or os.getenv("HOME") .. "/.hammerspoon") .. "/WindowScape_layout.json"
 end
 
-function M.getPath()
-    return path
-end
+function M.getPath() return path end
 
 function M.cleanup()
     if saveTimer then saveTimer:stop(); saveTimer = nil end

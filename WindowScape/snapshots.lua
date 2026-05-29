@@ -152,6 +152,7 @@ local function cleanupResources(winId)
     if data.canvas then data.canvas:delete() end
     snapshots.windows[winId] = nil
     removeFromOrder(winId)
+    if callbacks.onLayoutChange then callbacks.onLayoutChange() end
 end
 
 local function updateLayout()

@@ -30,6 +30,7 @@ core.loadList()
 local snapshotCallbacks = {
     safeGetApplication = core.safeGetApplication,
     log = core.log,
+    onLayoutChange = function() if core.onLayoutChange then core.onLayoutChange() end end,
 }
 snapshots.init(cfg, CONST, snapshotCallbacks)
 core.snapshotsState = snapshots.getState()
@@ -145,10 +146,13 @@ keybinds.init(cfg, {
 events.start()
 keybinds.bind()
 
--- Populate windowOrderBySpace, restore saved layout, then tile against it.
-restore.init(cfg, { core = core, tiler = tiler })
+-- Rehydrate minimized snapshots first so updateWindowOrder excludes them,
+-- then reorder + reweight the remaining tiled windows from the sidecar.
+restore.init(cfg, { core = core, tiler = tiler, snapshotCreate = snapshotCreate })
+local savedSpaces, savedSnapshots = restore.readPayload()
+restore.loadSnapshots(savedSnapshots)
 core.updateWindowOrder()
-restore.load()
+restore.loadLayout(savedSpaces)
 core.onLayoutChange = restore.scheduleSave
 
 tiler.tileWindows()
