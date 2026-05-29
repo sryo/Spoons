@@ -449,7 +449,7 @@
             <div class="feature">
                 <div class="feature-content">
                     <h3>WindowScape</h3>
-                    <p>Automatic window tiling that transforms chaos into order. Windows arrange themselves intelligently, adapting to your workflow without manual intervention. Multiple layouts, weighted sizing, and seamless multi-monitor support.</p>
+                    <p>Stop arranging windows. The desktop tiles itself, the layout adapts to what you're doing, and minimized windows come back the way you left them.</p>
                     <div class="shortcut">
                         <kbd>^</kbd><kbd>Cmd</kbd><kbd>L</kbd> <span style="color: var(--text-subtle); font-size: 0.8rem; margin-left: 0.5rem;">Cycle layouts</span>
                     </div>
@@ -459,6 +459,47 @@
                         <rect x="5" y="5" width="50" height="70" rx="4" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
                         <rect x="60" y="5" width="55" height="32" rx="4" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
                         <rect x="60" y="42" width="55" height="33" rx="4" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-content">
+                    <h3>Palette</h3>
+                    <p>Run any menu item, open any file, calculate, search, launch. Drive the Mac by what you want, not by where it's filed.</p>
+                    <div class="shortcut">
+                        <kbd>^</kbd><kbd>Cmd</kbd><kbd>Space</kbd> <span style="color: var(--text-subtle); font-size: 0.8rem; margin-left: 0.5rem;">Or 5-finger trackpad tap</span>
+                    </div>
+                </div>
+                <div class="feature-visual">
+                    <svg width="160" height="90" viewBox="0 0 160 90" fill="none">
+                        <rect x="10" y="10" width="140" height="20" rx="6" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+                        <rect x="14" y="16" width="2" height="8" fill="currentColor" opacity="0.8"/>
+                        <text x="22" y="24" fill="currentColor" font-size="9" opacity="0.7">type to search</text>
+                        <rect x="10" y="36" width="140" height="12" rx="3" fill="currentColor" opacity="0.12"/>
+                        <text x="14" y="46" fill="currentColor" font-size="8" opacity="0.7">1  Open File</text>
+                        <text x="14" y="60" fill="currentColor" font-size="8" opacity="0.45">2  Save As</text>
+                        <text x="14" y="74" fill="currentColor" font-size="8" opacity="0.45">3  Reveal in Finder</text>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-content">
+                    <h3>Muse</h3>
+                    <p>Ask an AI without leaving where you're typing. Whatever you had selected becomes context, and the answer drops in where your cursor was.</p>
+                    <div class="shortcut">
+                        <kbd>Cmd</kbd><kbd>Cmd</kbd> <span style="color: var(--text-subtle); font-size: 0.8rem; margin-left: 0.5rem;">Double-tap right Command</span>
+                    </div>
+                </div>
+                <div class="feature-visual">
+                    <svg width="140" height="80" viewBox="0 0 140 80" fill="none">
+                        <rect x="20" y="20" width="100" height="40" rx="8" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+                        <circle cx="35" cy="40" r="3" fill="currentColor" opacity="0.7"/>
+                        <path d="M45 40 L105 40" stroke="currentColor" stroke-width="1" opacity="0.35"/>
+                        <rect x="108" y="36" width="2" height="8" fill="currentColor" opacity="0.9">
+                            <animate attributeName="opacity" values="0;1;0" dur="1.1s" repeatCount="indefinite"/>
+                        </rect>
                     </svg>
                 </div>
             </div>
@@ -562,6 +603,24 @@
 
         <div class="interactions-grid">
             <div class="interaction-card">
+                <div class="interaction-icon">|</div>
+                <h3>Rebar</h3>
+                <p>What you want at the top of your screen, instead of what Apple picks.</p>
+            </div>
+
+            <div class="interaction-card">
+                <div class="interaction-icon">@</div>
+                <h3>DigUp</h3>
+                <p>Remember everything you've seen on screen. If you saw it once, you can find it again.</p>
+            </div>
+
+            <div class="interaction-card">
+                <div class="interaction-icon">+</div>
+                <h3>TTTaps</h3>
+                <p>Make the trackpad do more than scroll and swipe. Hands stay where they already are.</p>
+            </div>
+
+            <div class="interaction-card">
                 <div class="interaction-icon">~</div>
                 <h3>BarNone</h3>
                 <p>Stop the menu bar and dock from appearing when you don't want them. Full control over your screen edges.</p>
@@ -571,12 +630,6 @@
                 <div class="interaction-icon">></div>
                 <h3>HyperlinkHijacker</h3>
                 <p>Choose which browser opens each link. Your links, your rules. Includes clipboard option.</p>
-            </div>
-
-            <div class="interaction-card">
-                <div class="interaction-icon">#</div>
-                <h3>MenuMaestro</h3>
-                <p>Fuzzy search through all menu items with a visual interface. Find any command instantly.</p>
             </div>
 
             <div class="interaction-card">
@@ -592,9 +645,21 @@
             </div>
 
             <div class="interaction-card">
+                <div class="interaction-icon">/</div>
+                <h3>SideSwipe</h3>
+                <p>Volume and brightness, without leaving the trackpad.</p>
+            </div>
+
+            <div class="interaction-card">
                 <div class="interaction-icon">*</div>
                 <h3>WanderFocus</h3>
                 <p>Focus follows the mouse. Hover to activate, no clicking required. Classic Unix behavior, modernized.</p>
+            </div>
+
+            <div class="interaction-card">
+                <div class="interaction-icon">o</div>
+                <h3>NoTunes</h3>
+                <p>Block iTunes and Music from launching, and open Spotify instead. Keeps media keys honest.</p>
             </div>
 
             <div class="interaction-card">
@@ -614,12 +679,11 @@
     <section id="credits">
         <span class="section-label">About</span>
         <h2 class="section-title">Desktop Reimagined</h2>
-        <p class="section-desc">A collection of Hammerspoon experiments exploring alternative approaches to desktop interaction. Inspired by Mercury OS, Jef Raskin's humane interface principles, and the belief that we deserve better than the status quo.</p>
+        <p class="section-desc">A collection of Hammerspoon experiments exploring alternative approaches to desktop interaction. Inspired by Jef Raskin's humane interface principles and the belief that we deserve better than the status quo.</p>
 
         <div class="links">
             <a href="https://github.com/sryo/Spoons">GitHub</a>
             <a href="https://www.hammerspoon.org/">Hammerspoon</a>
-            <a href="https://www.mercuryos.com/">Mercury OS</a>
         </div>
     </section>
 
