@@ -5,7 +5,7 @@ require "Sssssssscroll"
 local WindowScape = require "WindowScape"
 require "FrameMaster"
 --require "EdgeHopper"
---require "WanderFocus"
+local WanderFocus = require("WanderFocus"); WanderFocus.start()
 require "SideSwipe"
 require "AutoDMG"
 --require "AppTimeout"
