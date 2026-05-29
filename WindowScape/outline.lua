@@ -30,6 +30,7 @@ local targetColor = nil
 local colorAnimTimer = nil
 local trackedCornerRadius = nil
 local appliedCornerRadius = nil
+local trackedColor = nil
 
 local function getCornerRadius(win)
     if not win then return 0 end
@@ -132,9 +133,10 @@ local function updateFrame(frame, win)
     if not frame then return end
 
     local adjustedFrame = { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
-    local color = getColorForWindow(win)
-    -- trackedCornerRadius is computed once per focus change in draw(); reuse
-    -- it here so the 30 fps refresh doesn't hit AX on every tick.
+    -- trackedColor and trackedCornerRadius are computed once per focus change
+    -- in draw(); reuse them so the 30 fps refresh doesn't call back into
+    -- getColorForWindow or AX on every tick.
+    local color = trackedColor or getColorForWindow(win)
     local radius = trackedCornerRadius or 16
 
     if not activeOutline then
@@ -169,11 +171,20 @@ local function updateFrame(frame, win)
     activeOutline:show()
 end
 
+local function clearTracked()
+    trackedWinId = nil
+    lastFrame = nil
+    trackedCornerRadius = nil
+    appliedCornerRadius = nil
+    trackedColor = nil
+end
+
 local function refresh()
     local win = window.focusedWindow()
     if not win then
         if activeOutline then activeOutline:hide() end
         stopRefresh()
+        clearTracked()
         return
     end
 
@@ -181,6 +192,7 @@ local function refresh()
     if winId ~= trackedWinId then
         if activeOutline then activeOutline:hide() end
         stopRefresh()
+        clearTracked()
         return
     end
 
@@ -221,14 +233,12 @@ local function draw(win)
 
         trackedWinId = win:id()
         trackedCornerRadius = getCornerRadius(win)
+        trackedColor = getColorForWindow(win)
         if log then log("outline frame: " .. frame.x .. "," .. frame.y .. " " .. frame.w .. "x" .. frame.h) end
         updateFrame(frame, win)
         startRefresh(win)
     else
-        trackedWinId = nil
-        lastFrame = nil
-        trackedCornerRadius = nil
-        appliedCornerRadius = nil
+        clearTracked()
         stopRefresh()
         if activeOutline then
             activeOutline:hide()
