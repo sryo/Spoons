@@ -4,7 +4,7 @@
 -- Tahoe uses per-window corner radii based on window style:
 --   - 26 pt for titled windows with a toolbar (Finder, etc.)
 --   - 16 pt for titled windows without a toolbar (Terminal, etc.)
---   -  8 pt for borderless windows
+--   -  0 pt for borderless windows
 -- Inferred via AXUIElement toolbar detection (AXChildren → AXRole=="AXToolbar").
 
 local canvas              = require("hs.canvas")
