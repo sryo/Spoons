@@ -3,7 +3,7 @@
 local cfg = {
     outlineColor          = { red = .1, green = .3, blue = .9, alpha = 0.8 },
     outlineColorPinned    = { red = .9, green = .6, blue = .1, alpha = 0.8 },
-    outlineThickness      = 16,  -- active window border thickness
+    outlineThickness      = 12,  -- active window border thickness
     tileGap               = 0,   -- pixels between tiled windows
     collapsedWindowHeight = 12,  -- windows this height or less stack at bottom
     mods                  = { "ctrl", "cmd" },          -- window operation hotkeys
