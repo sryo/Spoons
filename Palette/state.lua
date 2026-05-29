@@ -16,6 +16,7 @@ M.raw          = {}        -- unfiltered items for this stage
 M.items        = {}        -- ranked items for state.query
 M.focused      = 1         -- 1-based index into items
 M.scrollOffset = 0         -- how many items at the top are scrolled off-screen
+M.hovered      = nil       -- mouse-hover row index (independent of focused)
 
 -- Set when stage > "noun". The chosen noun for the verb stage.
 M.selectedItem = nil
@@ -37,6 +38,7 @@ function M.reset()
     M.items        = {}
     M.focused      = 1
     M.scrollOffset = 0
+    M.hovered      = nil
     M.selectedItem = nil
     M.selectedVerb = nil
     M.history      = {}

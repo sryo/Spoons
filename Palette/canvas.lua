@@ -67,6 +67,7 @@ local C = {
     muted  = { white = 0, alpha = 0.55 },
     accent = { red = 0.1, green = 0.3, blue = 0.9, alpha = 1 },
     hilite = { red = 0.1, green = 0.3, blue = 0.9, alpha = 0.10 },
+    hover  = { red = 0.1, green = 0.3, blue = 0.9, alpha = 0.05 },
 }
 
 local textShadow = {
@@ -82,12 +83,14 @@ local function loadAppearance()
         C.fg.white,    C.fg.alpha    = 1,    1
         C.muted.white, C.muted.alpha = 1,    0.55
         C.hilite      = { red = 0.45, green = 0.65, blue = 1.0, alpha = 0.16 }
+        C.hover       = { red = 0.45, green = 0.65, blue = 1.0, alpha = 0.08 }
         textShadow.color.alpha = 1
     else
         C.bg.white,    C.bg.alpha    = 1,    0.98
         C.fg.white,    C.fg.alpha    = 0,    1
         C.muted.white, C.muted.alpha = 0,    0.55
         C.hilite      = { red = 0.1, green = 0.3, blue = 0.9, alpha = 0.10 }
+        C.hover       = { red = 0.1, green = 0.3, blue = 0.9, alpha = 0.05 }
         textShadow.color.alpha = 0
     end
 end
@@ -445,6 +448,17 @@ local function drawLeftBox(state)
         if not it then break end
         local rowY      = listY + (i - 1) * cfg.rowH
         local focused   = (globalIdx == state.focused)
+        local hovered   = (state.hovered == globalIdx) and not focused
+
+        if hovered then
+            card[#card + 1] = {
+                type             = "rectangle",
+                action           = "fill",
+                roundedRectRadii = { xRadius = 6, yRadius = 6 },
+                fillColor        = C.hover,
+                frame            = { x = innerX, y = rowY, w = innerW, h = cfg.rowH - 4 },
+            }
+        end
 
         if focused then
             card[#card + 1] = {

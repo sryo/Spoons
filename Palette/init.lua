@@ -124,6 +124,9 @@ local function refresh()
     state.items = matcher.rank(buildPool(), state.query)
     state.focused = math.min(math.max(1, state.focused), math.max(1, #state.items))
     clampScroll()
+    -- List rebuilt; whatever was under the cursor is a different item now.
+    -- A fresh mouseMoved will restore hover if the cursor is still over a row.
+    state.hovered = nil
     draw()
 end
 
@@ -173,6 +176,7 @@ local function popStage()
     state.scrollOffset = prev.scrollOffset or 0
     state.selectedItem = prev.selectedItem
     state.selectedVerb = prev.selectedVerb
+    state.hovered      = nil
     scrollAccum        = 0
     canvas.draw(state)
     return true
@@ -282,7 +286,7 @@ local function startDismissTap()
     local etypes = hs.eventtap.event.types
     local props  = hs.eventtap.event.properties
     dismissTap = hs.eventtap.new(
-        { etypes.leftMouseDown, etypes.rightMouseDown, etypes.scrollWheel },
+        { etypes.leftMouseDown, etypes.rightMouseDown, etypes.scrollWheel, etypes.mouseMoved },
         function(e)
             if not state.open then return false end
             local f = canvas.frame()
@@ -291,6 +295,18 @@ local function startDismissTap()
             local inside = p.x >= f.x and p.x <= f.x + f.w
                 and p.y >= f.y and p.y <= f.y + f.h
             local etype = e:getType()
+
+            if etype == etypes.mouseMoved then
+                local newHovered
+                if inside then
+                    newHovered = canvas.hitTestRow({ x = p.x - f.x, y = p.y - f.y })
+                end
+                if state.hovered ~= newHovered then
+                    state.hovered = newHovered
+                    canvas.draw(state, hotkeyListForFocused())
+                end
+                return false
+            end
 
             if etype == etypes.scrollWheel then
                 if not inside then return false end
@@ -317,8 +333,14 @@ local function startDismissTap()
                 if step ~= 0 then
                     local newFocus = math.max(1, math.min(n, state.focused + step))
                     if newFocus ~= state.focused then
+                        local prevScroll = state.scrollOffset
                         state.focused = newFocus
                         clampScroll()
+                        -- If the visible window slid, the row under the cursor
+                        -- changed; let the next mouseMoved restore hover.
+                        if state.scrollOffset ~= prevScroll then
+                            state.hovered = nil
+                        end
                         canvas.draw(state, hotkeyListForFocused())
                     end
                     -- Drop overshoot at the ends so reversing direction feels immediate.
@@ -431,15 +453,19 @@ local function open()
         end,
         up = function()
             if state.focused > 1 then
+                local prevScroll = state.scrollOffset
                 state.focused = state.focused - 1
                 clampScroll()
+                if state.scrollOffset ~= prevScroll then state.hovered = nil end
                 draw()
             end
         end,
         down = function()
             if state.focused < #state.items then
+                local prevScroll = state.scrollOffset
                 state.focused = state.focused + 1
                 clampScroll()
+                if state.scrollOffset ~= prevScroll then state.hovered = nil end
                 draw()
             end
         end,
