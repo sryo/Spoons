@@ -87,6 +87,10 @@ local function isTabSwitch(newWindows, removedWindows, currentWindowData)
 end
 
 -- Focus the previously focused window, skipping minimized / hidden ones.
+-- When focusHistory is exhausted (short history, or all candidates are
+-- minimized/closed), fall back to the topmost non-minimized standard window
+-- via hs.window.orderedWindows() so focus never gets stranded on the just-
+-- minimized window sitting off-screen.
 function M.focusPreviousWindow(excludeWinId)
     for _, winId in ipairs(core.focusHistory) do
         if winId ~= excludeWinId then
@@ -95,6 +99,17 @@ function M.focusPreviousWindow(excludeWinId)
                 win:focus()
                 return true
             end
+        end
+    end
+    for _, win in ipairs(window.orderedWindows()) do
+        local winId = win:id()
+        if winId and winId ~= excludeWinId
+            and win:isStandard()
+            and win:isVisible()
+            and not snapshots.isMinimized(winId)
+            and not core.isSystem(win) then
+            win:focus()
+            return true
         end
     end
     return false
