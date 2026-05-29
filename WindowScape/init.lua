@@ -18,6 +18,7 @@ local tiler          = require("WindowScape.tiler")
 local snapshotCreate = require("WindowScape.snapshot_create")
 local events         = require("WindowScape.events")
 local keybinds       = require("WindowScape.keybinds")
+local restore        = require("WindowScape.restore")
 
 core.init(cfg)
 animation.init(cfg, {
@@ -79,6 +80,14 @@ operations.init(cfg, {
     tileWindows      = tiler.tileWindows,
     drawOutline      = outline.draw,
     hideOutline      = function() outline.stopRefresh(); outline.hide() end,
+    getWindowWeight  = tiler.getWindowWeight,
+    setWindowWeight  = tiler.setWindowWeight,
+    updateFullscreenOverlays = fullscreen.updateButtonOverlaysWithRetry,
+    clearAllWeights        = function() core.windowWeights = {} end,
+    resetTilingCount       = function() core.tilingCount = 0 end,
+    clearSnapshotCreating  = function()
+        if core.snapshotsState then core.snapshotsState.isCreating = false end
+    end,
 })
 
 -- The earlier inits captured these callback tables by reference, so backfilling
@@ -135,6 +144,13 @@ keybinds.init(cfg, {
 
 events.start()
 keybinds.bind()
+
+-- Populate windowOrderBySpace, restore saved layout, then tile against it.
+restore.init(cfg, { core = core, tiler = tiler })
+core.updateWindowOrder()
+restore.load()
+core.onLayoutChange = restore.scheduleSave
+
 tiler.tileWindows()
 fullscreen.updateButtonOverlays()
 
@@ -186,7 +202,40 @@ local function cleanup()
     animation.cancelAllAnimations()
     outline.cleanup()
     fullscreen.cleanup()
+    restore.writeSync()
+    restore.cleanup()
     core.warn("WindowScape cleanup complete")
+end
+
+local verbs = {
+    grow             = operations.grow,
+    shrink           = operations.shrink,
+    cycleWidth       = operations.cycleWidth,
+    focusNext        = function() operations.focusAdjacentWindow("forward")  end,
+    focusPrev        = function() operations.focusAdjacentWindow("backward") end,
+    moveNext         = function() operations.moveWindowInOrder("forward")    end,
+    movePrev         = function() operations.moveWindowInOrder("backward")   end,
+    moveScreenNext   = function() operations.moveWindowToAdjacentScreen("next")     end,
+    moveScreenPrev   = function() operations.moveWindowToAdjacentScreen("previous") end,
+    resetWeights     = operations.resetAllWeights,
+    toggleFullscreen = function() windowScapeToggleFullscreen() end,
+    minimize         = function() windowScapeMinimize() end,
+    forceRetile      = operations.forceRetile,
+    toggleExcluded   = function() keybinds.toggleFocusedWindowInList() end,
+    toggleDebug      = function()
+        cfg.debugLogging = not cfg.debugLogging
+        print("[WindowScape] Debug logging: " .. (cfg.debugLogging and "ON" or "OFF"))
+    end,
+    tile             = tiler.tileWindows,
+}
+
+local function ipc(verbName, ...)
+    local fn = verbs[verbName]
+    if not fn then
+        core.warn("Unknown WindowScape verb: " .. tostring(verbName))
+        return nil
+    end
+    return fn(...)
 end
 
 return {
@@ -200,4 +249,6 @@ return {
     focusAdjacent        = operations.focusAdjacentWindow,
     moveInOrder          = operations.moveWindowInOrder,
     moveToAdjacentScreen = operations.moveWindowToAdjacentScreen,
+    ipc                  = ipc,
+    verbs                = verbs,
 }

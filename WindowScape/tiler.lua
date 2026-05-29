@@ -55,7 +55,10 @@ function M.setWindowWeight(win, weight)
     if not win then return end
     local winId = win:id()
     if not winId then return end
-    core.windowWeights[winId] = math.max(0.1, weight)
+    local clamped = math.max(0.1, weight)
+    if core.windowWeights[winId] == clamped then return end
+    core.windowWeights[winId] = clamped
+    if core.onLayoutChange then core.onLayoutChange() end
 end
 
 -- Drop weight/history/screen entries for windows that no longer exist.

@@ -17,6 +17,10 @@ local cfg = {
     animationFPS          = 60,
     showPinButton         = false, -- pin button (right of traffic lights) toggles app in/out of tiling
     debugLogging          = false, -- verbose tier; toggle with Ctrl+Cmd+D
+    widthStep             = 0.25,  -- focused-window weight delta per grow/shrink
+    widthMin              = 0.25,  -- min focused-window weight (tiler floors at 0.1 regardless)
+    widthMax              = 8.0,   -- max focused-window weight (prevents runaway presses)
+    widthDefault          = 1.0,   -- focused-window weight after cycle/reset
 }
 
 local CONST = {

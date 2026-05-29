@@ -60,12 +60,7 @@ function M.bind()
     hotkey.bind(cfg.screenMods, "Left",  function() operations.moveWindowToAdjacentScreen("previous") end)
     hotkey.bind(cfg.screenMods, "Right", function() operations.moveWindowToAdjacentScreen("next")     end)
 
-    -- Reset all window weights to equal
-    hotkey.bind(cfg.mods, "0", function()
-        core.windowWeights = {}
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-    end)
+    hotkey.bind(cfg.mods, "0", operations.resetAllWeights)
 
     -- Toggle simulated fullscreen
     hotkey.bind(cfg.mods, "F", function()
@@ -78,33 +73,14 @@ function M.bind()
         end
     end)
 
-    -- Force retile (reset stuck flags and retile)
     hotkey.bind(cfg.mods, "R", function()
         core.log("Force retile triggered")
-        core.tilingCount = 0
-        if core.snapshotsState then core.snapshotsState.isCreating = false end
-        core.updateWindowOrder()
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
+        operations.forceRetile()
     end)
 
-    hotkey.bind(cfg.mods, "=", function()
-        local win = window.focusedWindow()
-        if not win then return end
-        tiler.setWindowWeight(win, tiler.getWindowWeight(win) + 0.1)
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-        core.log("Increased weight to " .. string.format("%.1f", tiler.getWindowWeight(win)))
-    end)
-
-    hotkey.bind(cfg.mods, "-", function()
-        local win = window.focusedWindow()
-        if not win then return end
-        tiler.setWindowWeight(win, tiler.getWindowWeight(win) - 0.1)
-        tiler.tileWindows()
-        fullscreen.updateButtonOverlaysWithRetry()
-        core.log("Decreased weight to " .. string.format("%.1f", tiler.getWindowWeight(win)))
-    end)
+    hotkey.bind(cfg.mods, "=", operations.grow)
+    hotkey.bind(cfg.mods, "-", operations.shrink)
+    hotkey.bind(cfg.mods, "W", operations.cycleWidth)
 
     -- Ctrl+Cmd+P: toggle focused window's app in/out of the exclusion list
     -- (synonym for Ctrl+Cmd+",").

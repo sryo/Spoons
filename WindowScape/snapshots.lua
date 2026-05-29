@@ -28,6 +28,15 @@ local PADDING = 8
 local GAP = 4
 local COLUMN_WIDTH = 140
 
+-- Per-screen scroll offset for the snapshot strip (in pixels along the strip's
+-- axis). 0 means anchored at the home edge; positive means the strip has been
+-- scrolled forward to reveal later snapshots when the strip overflows.
+local stripScrollOffsetByScreen = {}
+
+-- Held at module scope so the eventtap isn't GC'd. See
+-- [[project_hammerspoon_eventtap_retention]] in memory.
+local scrollEventtap = nil
+
 -- Tooltip state
 local tooltipCanvas = nil
 local tooltipFadeTimer = nil
@@ -157,6 +166,9 @@ local function updateLayout()
     for _, scr in ipairs(screen.allScreens()) do
         screensById[scr:id()] = scr
     end
+    for scrId in pairs(stripScrollOffsetByScreen) do
+        if not screensById[scrId] then stripScrollOffsetByScreen[scrId] = nil end
+    end
     for _, winId in ipairs(snapshots.order) do
         local data = snapshots.windows[winId]
         if data and data.canvas and data.screenId and not screensById[data.screenId] then
@@ -194,8 +206,21 @@ local function updateLayout()
             local frame = scr:frame()
             local isLandscape = frame.w > frame.h
 
-            local currentY = frame.y + PADDING
-            local currentX = frame.x + PADDING
+            -- Total length the strip occupies along its axis and the available
+            -- visible length. The diff is the scrollable range.
+            local contentLen = 0
+            for i, item in ipairs(screenSnapshots) do
+                local snapSize = item.data.snapSize or getSnapshotSize()
+                contentLen = contentLen + (isLandscape and snapSize.h or snapSize.w)
+                if i > 1 then contentLen = contentLen + GAP end
+            end
+            local visibleLen = (isLandscape and frame.h or frame.w) - PADDING * 2
+            local maxOffset = math.max(0, contentLen - visibleLen)
+            local offset = math.max(0, math.min(stripScrollOffsetByScreen[scrId] or 0, maxOffset))
+            stripScrollOffsetByScreen[scrId] = offset
+
+            local currentY = frame.y + PADDING - (isLandscape and offset or 0)
+            local currentX = frame.x + PADDING - (isLandscape and 0 or offset)
 
             for _, item in ipairs(screenSnapshots) do
                 local data = item.data
@@ -211,8 +236,62 @@ local function updateLayout()
                     currentX = currentX + snapSize.w + GAP
                 end
                 data.canvas:topLeft({ x = x, y = y })
+                -- Keep the zoom-anchor (used by snapshot_create.lua's
+                -- animateZoom) in sync so a hovered snapshot doesn't get
+                -- pulled back to its pre-scroll position by the running zoom.
+                data.baseX = x
+                data.baseY = y
             end
         end
+    end
+end
+
+-- Returns the screen whose snapshot strip's reserved area currently contains
+-- (x, y), or nil if none.
+local function screenForStripAt(x, y)
+    for _, scr in ipairs(screen.allScreens()) do
+        local reserved = getReservedArea(scr)
+        if reserved
+            and x >= reserved.x and x < reserved.x + reserved.w
+            and y >= reserved.y and y < reserved.y + reserved.h then
+            return scr
+        end
+    end
+    return nil
+end
+
+local function startScrollEventtap()
+    if scrollEventtap then return end
+    local types = eventtap.event.types
+    local props = eventtap.event.properties
+    scrollEventtap = eventtap.new({ types.scrollWheel }, function(event)
+        if #snapshots.order == 0 then return false end
+        local loc = event:location()
+        local scr = screenForStripAt(loc.x, loc.y)
+        if not scr then return false end
+        local frame = scr:frame()
+        local isLandscape = frame.w > frame.h
+        local dy = event:getProperty(props.scrollWheelEventPointDeltaAxis1) or 0
+        local dx = event:getProperty(props.scrollWheelEventPointDeltaAxis2) or 0
+        -- Prefer the axis aligned with the strip; fall back to the other if
+        -- zero so a single-axis swipe still scrolls a transverse strip.
+        local primary, secondary
+        if isLandscape then primary, secondary = dy, dx
+        else                primary, secondary = dx, dy end
+        local delta = (primary ~= 0) and primary or secondary
+        if delta == 0 then return true end
+        local scrId = scr:id()
+        stripScrollOffsetByScreen[scrId] = (stripScrollOffsetByScreen[scrId] or 0) - delta
+        updateLayout()
+        return true
+    end)
+    scrollEventtap:start()
+end
+
+local function stopScrollEventtap()
+    if scrollEventtap then
+        scrollEventtap:stop()
+        scrollEventtap = nil
     end
 end
 
@@ -491,6 +570,14 @@ local function getState()
     return snapshots
 end
 
+local function getStripScrollOffsets()
+    return stripScrollOffsetByScreen
+end
+
+local function setStripScrollOffset(screenId, offset)
+    stripScrollOffsetByScreen[screenId] = offset
+end
+
 local function startRefreshTimer()
     if snapshots.refreshTimer then return end
     snapshots.refreshTimer = timer.doEvery(0.5, refreshSnapshots)
@@ -501,6 +588,7 @@ local function init(config, constants, cbs)
     CONST = constants
     callbacks = cbs or {}
     startRefreshTimer()
+    startScrollEventtap()
 end
 
 local function cleanup()
@@ -511,6 +599,7 @@ local function cleanup()
     if tooltipFadeTimer then tooltipFadeTimer:stop() end
     if tooltipHideTimer then tooltipHideTimer:stop() end
     if tooltipCanvas then tooltipCanvas:delete(); tooltipCanvas = nil end
+    stopScrollEventtap()
     clearAll()
 end
 
@@ -532,4 +621,6 @@ return {
     PADDING = PADDING,
     GAP = GAP,
     COLUMN_WIDTH = COLUMN_WIDTH,
+    getStripScrollOffsets = getStripScrollOffsets,
+    setStripScrollOffset = setStripScrollOffset,
 }

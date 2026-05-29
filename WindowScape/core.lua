@@ -36,6 +36,10 @@ M.cfg = nil
 M.listPath = hs.configdir .. "/WindowScape_apps.json"
 M.listedApps = {}
 
+-- Layout-change hook. restore.lua assigns a debounced save here; if unset,
+-- mutations to windowOrderBySpace / windowWeights are simply not persisted.
+M.onLayoutChange = nil
+
 -- Window state
 M.windowOrderBySpace    = {}
 M.windowWeights         = {} -- winId -> weight (default 1.0)
@@ -254,6 +258,7 @@ function M.updateWindowOrder()
 
         M.windowOrderBySpace[screenSpace] = newOrder
     end
+    if M.onLayoutChange then M.onLayoutChange() end
 end
 
 function M.init(cfg)

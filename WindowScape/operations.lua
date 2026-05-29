@@ -278,6 +278,54 @@ local function calculateDropPosition(dropFrame, screenWindows, screenFrame)
     return insertIndex
 end
 
+-- Adjust focused window weight by `delta` (positive = grow, negative = shrink).
+-- Clamps against cfg.widthMin / cfg.widthMax; tiler also floors at 0.1.
+local function adjustFocusedWidth(delta)
+    local win = window.focusedWindow()
+    if not win then return end
+    if not (callbacks.getWindowWeight and callbacks.setWindowWeight) then return end
+    local current = callbacks.getWindowWeight(win)
+    local target  = math.max(cfg.widthMin, math.min(cfg.widthMax, current + delta))
+    callbacks.setWindowWeight(win, target)
+    if callbacks.tileWindows then callbacks.tileWindows() end
+    if callbacks.updateFullscreenOverlays then callbacks.updateFullscreenOverlays() end
+    log(string.format("Width %s to %.2f", delta >= 0 and "grew" or "shrank", target))
+end
+
+local function grow()
+    adjustFocusedWidth(cfg.widthStep)
+end
+
+local function shrink()
+    adjustFocusedWidth(-cfg.widthStep)
+end
+
+-- Reset the focused window's weight to cfg.widthDefault. Other windows untouched
+-- (the Ctrl+Cmd+0 hotkey clears the whole weights table; this is per-window).
+local function cycleWidth()
+    local win = window.focusedWindow()
+    if not win then return end
+    if not callbacks.setWindowWeight then return end
+    callbacks.setWindowWeight(win, cfg.widthDefault)
+    if callbacks.tileWindows then callbacks.tileWindows() end
+    if callbacks.updateFullscreenOverlays then callbacks.updateFullscreenOverlays() end
+    log(string.format("Width reset to %.2f", cfg.widthDefault))
+end
+
+local function resetAllWeights()
+    if callbacks.clearAllWeights then callbacks.clearAllWeights() end
+    if callbacks.tileWindows then callbacks.tileWindows() end
+    if callbacks.updateFullscreenOverlays then callbacks.updateFullscreenOverlays() end
+end
+
+local function forceRetile()
+    if callbacks.resetTilingCount then callbacks.resetTilingCount() end
+    if callbacks.clearSnapshotCreating then callbacks.clearSnapshotCreating() end
+    if callbacks.updateWindowOrder then callbacks.updateWindowOrder() end
+    if callbacks.tileWindows then callbacks.tileWindows() end
+    if callbacks.updateFullscreenOverlays then callbacks.updateFullscreenOverlays() end
+end
+
 local function init(config, cbs)
     cfg = config
     callbacks = cbs or {}
@@ -290,4 +338,9 @@ return {
     focusAdjacentWindow = focusAdjacentWindow,
     moveWindowToAdjacentScreen = moveWindowToAdjacentScreen,
     calculateDropPosition = calculateDropPosition,
+    grow = grow,
+    shrink = shrink,
+    cycleWidth = cycleWidth,
+    resetAllWeights = resetAllWeights,
+    forceRetile = forceRetile,
 }

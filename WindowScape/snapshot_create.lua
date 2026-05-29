@@ -200,14 +200,16 @@ function M.createSnapshot(win)
                 local data = windowSnapshots.windows[winId]
                 if not data then return end
 
-                local baseX = data.baseX or canv:frame().x
-                local baseY = data.baseY or canv:frame().y
-
                 zoomAnimTimer = timer.doEvery(interval, function()
                     local elapsed = timer.secondsSinceEpoch() - startTime
                     local t2 = math.min(elapsed / duration, 1)
                     local ease2 = animation.easeOutCubic(t2)
                     local currentScale = animation.lerp(fromScale, toScale, ease2)
+
+                    -- Re-read data.baseX/Y each tick so the strip can scroll
+                    -- under a zoomed snapshot without the zoom dragging it back.
+                    local baseX = data.baseX or canv:frame().x
+                    local baseY = data.baseY or canv:frame().y
 
                     local newW2 = data.snapSize.w * currentScale
                     local newH2 = data.snapSize.h * currentScale
