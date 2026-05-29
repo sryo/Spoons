@@ -132,6 +132,14 @@ seed_single_window_app() {
   seed_windows "$1" 1
 }
 
+# seed_two_window_ids <app>
+# Seed exactly 2 windows and echo their ids as "id1,id2" in :allWindows() order.
+seed_two_window_ids() {
+  local app="$1"
+  seed_windows "$app" 2
+  hsx "local ws=hs.application.get('$app'):allWindows(); return ws[1]:id() .. ',' .. ws[2]:id()"
+}
+
 # -- Input synthesis -----------------------------------------------------------
 
 # click_with_modifier <mod> <x> <y>

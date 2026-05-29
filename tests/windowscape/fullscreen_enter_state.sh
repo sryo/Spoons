@@ -12,13 +12,10 @@ teardown() {
 }
 trap teardown EXIT
 
-# 1. Reset state, launch app, open two windows.
+# 1. Reset state, launch app, open two windows and capture ids.
 windowscape_reset
 launch_app "$APP"
-seed_windows "$APP" 2
-
-# 2. Capture window ids in :allWindows() order.
-ids="$(hsx "local ws=hs.application.get('$APP'):allWindows(); return ws[1]:id() .. ',' .. ws[2]:id()")"
+ids="$(seed_two_window_ids "$APP")"
 id1="${ids%%,*}"
 id2="${ids##*,}"
 
