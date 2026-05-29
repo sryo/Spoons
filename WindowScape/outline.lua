@@ -4,39 +4,39 @@
 -- Tahoe uses per-window corner radii based on window style:
 --   - 26 pt for titled windows with a toolbar (Finder, etc.)
 --   - 16 pt for titled windows without a toolbar (Terminal, etc.)
---   -  0 pt for borderless windows
+--   -  8 pt for borderless windows
 -- Inferred via AXUIElement toolbar detection (AXChildren → AXRole=="AXToolbar").
 
-local canvas      = require("hs.canvas")
-local geometry    = require("hs.geometry")
-local timer       = require("hs.timer")
-local window      = require("hs.window")
-local axuielement = require("hs.axuielement")
+local canvas              = require("hs.canvas")
+local geometry            = require("hs.geometry")
+local timer               = require("hs.timer")
+local window              = require("hs.window")
+local axuielement         = require("hs.axuielement")
 
 local cfg, CONST, animation
 local getColorForWindow -- callback to get outline color
-local isSnapshotted -- callback to check if window is snapshotted
-local isAXSlow -- callback to check if a window's app has slow AX (skip queries)
-local log -- logging function
+local isSnapshotted     -- callback to check if window is snapshotted
+local isAXSlow          -- callback to check if a window's app has slow AX (skip queries)
+local log               -- logging function
 
-local FAST_INTERVAL = 0.033
-local SLOW_INTERVAL = 0.2
-local IDLE_TICKS = 6
+local FAST_INTERVAL       = 0.033
+local SLOW_INTERVAL       = 0.2
+local IDLE_TICKS          = 6
 
-local activeOutline = nil
-local refreshTimer = nil
-local refreshInterval = nil
-local lastFrame = nil
-local trackedWinId = nil
-local hideCounter = 0
-local stableTickCount = 0
+local activeOutline       = nil
+local refreshTimer        = nil
+local refreshInterval     = nil
+local lastFrame           = nil
+local trackedWinId        = nil
+local hideCounter         = 0
+local stableTickCount     = 0
 
-local currentColor = nil
-local targetColor = nil
-local colorAnimTimer = nil
+local currentColor        = nil
+local targetColor         = nil
+local colorAnimTimer      = nil
 local trackedCornerRadius = nil
 local appliedCornerRadius = nil
-local trackedColor = nil
+local trackedColor        = nil
 
 local function getCornerRadius(win)
     if not win then return 0 end
@@ -287,7 +287,9 @@ end
 
 local function cleanup()
     stopRefresh()
-    if colorAnimTimer then colorAnimTimer:stop(); colorAnimTimer = nil end
+    if colorAnimTimer then
+        colorAnimTimer:stop(); colorAnimTimer = nil
+    end
     if activeOutline then activeOutline:hide() end
     appliedCornerRadius = nil
 end
