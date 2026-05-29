@@ -599,60 +599,62 @@ local function drawRightBox(state, hotkeyList)
         return
     end
 
-    local cursorY = boxY + pad
-
-    -- Big-ish icon if the item has one (apps). For accessory-only items
-    -- (menu shortcuts), render the accessory glyph as oversized text instead.
+    -- Fixed-height lead slot so title and hotkey block don't shift when the
+    -- user arrows across items with mixed icon / accessory / none.
+    local slotY = boxY + pad
+    local slotH = 56
     if focusedItem.icon then
-        local sz = 56
         card[#card + 1] = {
             type         = "image",
             image        = focusedItem.icon,
             imageScaling = "scaleProportionally",
-            frame        = { x = innerX + (innerW - sz) / 2, y = cursorY, w = sz, h = sz },
+            frame        = { x = innerX + (innerW - slotH) / 2, y = slotY, w = slotH, h = slotH },
         }
-        cursorY = cursorY + sz + 8
     elseif focusedItem.accessory then
         card[#card + 1] = {
             type          = "text",
             text          = styled(focusedItem.accessory, C.accent, 28),
             textAlignment = "center",
-            frame         = { x = innerX, y = cursorY + 6, w = innerW, h = 40 },
+            frame         = { x = innerX, y = slotY + 6, w = innerW, h = 40 },
         }
-        cursorY = cursorY + 56
-    else
-        cursorY = cursorY + 8
     end
+    local cursorY = slotY + slotH + 8
 
-    -- Title only. The subtitle (menu path / window count / etc) is already
-    -- shown in the left row, no need to repeat it.
+    -- Hotkey block pins to the bottom of the box so the title above it can
+    -- grow into the leftover space.
+    local hkRowH    = 24
+    local hkColW    = 36
+    local hkCount   = (hotkeyList and #hotkeyList) or 0
+    local hkBlockH  = hkCount * hkRowH
+    local hkTopY    = boxY + boxH - pad - hkBlockH
+
+    -- Title wraps so long entries (deep menu paths, long filenames) stay
+    -- readable. Height runs from the icon's bottom to just above the hotkey
+    -- block.
+    local titleAvailH = math.max(22, hkTopY - cursorY - 8)
     card[#card + 1] = {
         type          = "text",
         text          = styledWithMatches(focusedItem.title or "", C.fg,
-            cfg.previewTitleSize, nil, focusedItem.matchPositions),
+            cfg.previewTitleSize, "wordWrap", focusedItem.matchPositions),
         textAlignment = "center",
-        frame         = { x = innerX, y = cursorY, w = innerW, h = 22 },
+        frame         = { x = innerX, y = cursorY, w = innerW, h = titleAvailH },
     }
-    cursorY = cursorY + 22 + 14
 
-    -- Hotkey list. hotkeyList is built by init.lua and looks like
-    -- { { hotkey = "⏎", label = "Activate" }, { hotkey = "⌘1", label = "Ask Muse" }, ... }
-    if hotkeyList and #hotkeyList > 0 then
-        local rowH = 24
-        local hkColW = 36
+    if hkCount > 0 then
+        local hkY = hkTopY
         for _, hk in ipairs(hotkeyList) do
             card[#card + 1] = {
                 type          = "text",
                 text          = styled(hk.hotkey or "", C.accent, cfg.verbHotkeySize),
                 textAlignment = "right",
-                frame         = { x = innerX, y = cursorY + 4, w = hkColW, h = rowH },
+                frame         = { x = innerX, y = hkY + 4, w = hkColW, h = hkRowH },
             }
             card[#card + 1] = {
                 type  = "text",
                 text  = styled(hk.label or "", C.fg, cfg.verbLabelSize),
-                frame = { x = innerX + hkColW + 10, y = cursorY + 4, w = innerW - hkColW - 10, h = rowH },
+                frame = { x = innerX + hkColW + 10, y = hkY + 4, w = innerW - hkColW - 10, h = hkRowH },
             }
-            cursorY = cursorY + rowH
+            hkY = hkY + hkRowH
         end
     end
 end
