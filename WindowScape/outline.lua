@@ -19,11 +19,17 @@ local isSnapshotted -- callback to check if window is snapshotted
 local isAXSlow -- callback to check if a window's app has slow AX (skip queries)
 local log -- logging function
 
+local FAST_INTERVAL = 0.033
+local SLOW_INTERVAL = 0.2
+local IDLE_TICKS = 6
+
 local activeOutline = nil
 local refreshTimer = nil
+local refreshInterval = nil
 local lastFrame = nil
 local trackedWinId = nil
 local hideCounter = 0
+local stableTickCount = 0
 
 local currentColor = nil
 local targetColor = nil
@@ -66,6 +72,7 @@ local function stopRefresh()
         refreshTimer:stop()
         refreshTimer = nil
     end
+    refreshInterval = nil
 end
 
 local function animateColor(newTargetColor)
@@ -207,15 +214,35 @@ local function refresh()
     hideCounter = 0
 
     local frame = win:frame()
-    if frame then
-        updateFrame(frame, win)
+    if not frame then return end
+
+    if framesEqual(frame, lastFrame) then
+        stableTickCount = stableTickCount + 1
+    else
+        stableTickCount = 0
+    end
+
+    updateFrame(frame, win)
+
+    -- Idle backoff: after IDLE_TICKS of stillness, slow the polling rate.
+    -- Any frame change while slow brings us straight back to fast.
+    if refreshInterval == FAST_INTERVAL and stableTickCount >= IDLE_TICKS then
+        refreshTimer:stop()
+        refreshInterval = SLOW_INTERVAL
+        refreshTimer = timer.doEvery(SLOW_INTERVAL, refresh)
+    elseif refreshInterval == SLOW_INTERVAL and stableTickCount == 0 then
+        refreshTimer:stop()
+        refreshInterval = FAST_INTERVAL
+        refreshTimer = timer.doEvery(FAST_INTERVAL, refresh)
     end
 end
 
 local function startRefresh(win)
     stopRefresh()
     hideCounter = 0
-    refreshTimer = timer.doEvery(0.033, refresh)
+    stableTickCount = 0
+    refreshInterval = FAST_INTERVAL
+    refreshTimer = timer.doEvery(FAST_INTERVAL, refresh)
 end
 
 local function draw(win)
