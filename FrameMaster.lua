@@ -55,6 +55,25 @@ local lastKilledApp, lastKilledAppName = nil, nil
 local fadeTimer, hideTooltipTimer = nil, nil
 local lastCorner = nil
 
+-- True when another screen sits along the given edge of `screen`, so the
+-- cursor needs to be able to cross out that edge into the neighbour. Without
+-- this, killMenu/killDock would consume the mouseMoved at the boundary and
+-- the cursor would get pinned, never reaching the neighbouring display.
+local function hasNeighbour(screen, edge)
+    local f = screen:frame()
+    for _, s in ipairs(hs.screen.allScreens()) do
+        if s ~= screen then
+            local sf = s:frame()
+            local xOverlap = sf.x < f.x + f.w and sf.x + sf.w > f.x
+            if xOverlap then
+                if edge == "top"    and sf.y + sf.h <= f.y     then return true end
+                if edge == "bottom" and sf.y        >= f.y + f.h then return true end
+            end
+        end
+    end
+    return false
+end
+
 local function showReopenDialog()
     if not cfg.reopenAfterKill or not lastKilledAppName then return end
     local name, bundleID = lastKilledAppName, lastKilledApp
@@ -384,11 +403,13 @@ if cfg.showTooltips then
                 if cfg.killMenu and not shift
                     and loc.y < screenFrame.y + cfg.buffer
                     and loc.x > screenFrame.x + cfg.buffer
-                    and loc.x < screenFrame.x + screenFrame.w - cfg.buffer then
+                    and loc.x < screenFrame.x + screenFrame.w - cfg.buffer
+                    and not hasNeighbour(screen, "top") then
                     return true
                 end
                 if cfg.killDock and not shift
-                    and isDockEdgeHit(dockPos, loc.x, loc.y, screenFrame, cfg.buffer) then
+                    and isDockEdgeHit(dockPos, loc.x, loc.y, screenFrame, cfg.buffer)
+                    and not hasNeighbour(screen, "bottom") then
                     return true
                 end
             end
